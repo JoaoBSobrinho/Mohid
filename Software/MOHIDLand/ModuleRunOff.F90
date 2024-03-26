@@ -11011,7 +11011,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         do i = ILB, IUB
         
             if (Me%ExtVar%RiverPoints(i, j) == BasinPoint .and. ChannelsActiveState(i, j) == BasinPoint) then
-                !Teste escrita
+
                 if (ChannelsWaterLevel (i, j) > Me%myWaterLevel(i, j)) then
                 
                     ChannelHeight = Me%ExtVar%Topography(i, j) - ChannelsBottomLevel(i, j)                                       
