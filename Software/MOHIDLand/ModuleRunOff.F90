@@ -7152,7 +7152,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
 
-                        Me%myWaterColumnOld(i, j) = WaterColumn(i, j) !This way in modifyRunOff there is no need to do setmatrixvalue
+                        Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
                         Me%myWaterColumn(i, j)    = WaterColumn(i, j)
 
                         Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
@@ -7175,7 +7175,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
 
-                        Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
+                        Me%myWaterColumnOld(i, j) = WaterColumn(i, j) !This way in modifyRunOff there is no need to do setmatrixvalue
                         Me%myWaterColumn(i, j)    = WaterColumn(i, j)
 
                         Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
@@ -7343,7 +7343,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         logical                                     :: Restart
         integer                                     :: Niter, iter
         integer                                     :: n_restart
-        logical                                     :: IsFinalFile
+        logical                                     :: IsFinalFile, firstRestart
         !----------------------------------------------------------------------
 
         STAT_ = UNKNOWN_
@@ -7377,11 +7377,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             Restart = .true.
             n_restart = 0
 
-
-            
             if (Me%CV%NextNiteration > 1 .and. Me%ExtVar%DT < (Me%CV%CurrentDT * Me%CV%NextNiteration)) then
                 Me%CV%NextNiteration = max(aint(Me%ExtVar%DT / Me%CV%CurrentDT), 1.0)
-            endif            
+            endif
+            
+            firstRestart = .True.
             
             do while (Restart)
             
@@ -7402,8 +7402,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0))
                 call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0))
-                call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX)
-                call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY)
+                
+                if (firstRestart) then
+                    !using Me%InitialFlowX and Me%InitialFlowY directly
+                else
+                    call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX)
+                    call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY)
+                endif
+                
                 call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0)
                 call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
                 if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)
@@ -7416,8 +7422,13 @@ doIter:         do while (iter <= Niter)
                     !Stores WaterVolume for convergence test
                     call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume)
 
-                    call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX)
-                    call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY)
+                    if (firstRestart) then
+                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX)
+                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY)
+                    else
+                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX)
+                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY)
+                    endif
 
                     !Updates Geometry
                     call ModifyGeometryAndMapping
