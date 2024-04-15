@@ -1013,9 +1013,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                         STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructRunOff - ModuleRunOff - ERR020'
             
-            call AllocateVariables
-            
             call ReadDataFile
+            
+            call AllocateVariables
 
             call InitializeVariables
 
@@ -4884,18 +4884,22 @@ do2:        do
         Me%iFlowToChannels      = 0.0   !Sets values initially to zero, so 
         Me%lFlowToChannels      = 0.0   !model can run without DNet
         
-        allocate(Me%lFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !allocate(Me%lFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%iFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%lFlowBoundary        = 0.0   !Sets values initially to zero, so 
+        !Me%lFlowBoundary        = 0.0   !Sets values initially to zero, so 
         Me%iFlowBoundary        = 0.0   !model can run without BC
 
-        allocate(Me%lFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%iFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%lFlowDischarge        = 0.0   !Sets values initially to zero, so 
-        Me%iFlowDischarge        = 0.0   !model can run without Dis
+        if (Me%Discharges) then
+            allocate(Me%lFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            allocate(Me%iFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%lFlowDischarge        = 0.0   !Sets values initially to zero, so 
+            Me%iFlowDischarge        = 0.0   !model can run without Dis
+        endif
 
-        allocate(Me%iFlowRouteDFour  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%iFlowRouteDFour       = 0.0   !Sets values initially to zero, so  
+        if (Me%RouteDFourPoints) then
+            allocate(Me%iFlowRouteDFour  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%iFlowRouteDFour       = 0.0   !Sets values initially to zero, so  
+        endif
         
         allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%BoundaryCells = 0
@@ -7100,13 +7104,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
     !--------------------------------------------------------------------------
 
-    subroutine SetBasinColumnToRunoff(ObjRunOffID, WaterColumnOld, WaterColumn, STAT)
+    subroutine SetBasinColumnToRunoff(ObjRunOffID, WaterColumnOld, WaterColumn, Calibrating1D, STAT)
         
         !Arguments-------------------------------------------------------------
         integer                                         :: ObjRunOffID
         real(8), dimension(:, :), pointer               :: WaterColumnOld
         real(8), dimension(:, :), pointer               :: WaterColumn
         integer, intent(OUT), optional                  :: STAT
+        logical, intent(IN)                             :: Calibrating1D
 
         !Local-----------------------------------------------------------------
         integer                                         :: STAT_, STAT_CALL, ready_
@@ -7140,28 +7145,54 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                    STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'SetBasinColumnToRunoff - ModuleRunOff - ERR020'
         
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+            if (Calibrating1D) then
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
 
-                    Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
-                    Me%myWaterColumn(i, j)    = WaterColumn(i, j)
+                        Me%myWaterColumnOld(i, j) = WaterColumn(i, j) !This way in modifyRunOff there is no need to do setmatrixvalue
+                        Me%myWaterColumn(i, j)    = WaterColumn(i, j)
 
-                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                    !Here the water column is the uniformly distributed one. Inside 
-                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                        !Here the water column is the uniformly distributed one. Inside 
+                        Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
 
-!                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-!                    Me%myWaterColumn(i, j) = Me%myWaterVolume(i, j) / Me%FreeGridCellArea(i, j)
-!                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+    !                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+    !                    Me%myWaterColumn(i, j) = Me%myWaterVolume(i, j) / Me%FreeGridCellArea(i, j)
+    !                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                    
-                endif
-            enddo
-            enddo            
-            !$OMP END DO
-            !$OMP END PARALLEL
+                    endif
+                enddo
+                enddo            
+                !$OMP END DO
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+
+                        Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
+                        Me%myWaterColumn(i, j)    = WaterColumn(i, j)
+
+                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                        !Here the water column is the uniformly distributed one. Inside 
+                        Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+
+    !                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+    !                    Me%myWaterColumn(i, j) = Me%myWaterVolume(i, j) / Me%FreeGridCellArea(i, j)
+    !                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                   
+                    endif
+                enddo
+                enddo            
+                !$OMP END DO
+                !$OMP END PARALLEL
+            endif
+            
 
             call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'SetBasinColumnToRunoff - ModuleRunOff - ERR030'
@@ -7332,7 +7363,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             
             !Stores initial values = from basin
-            call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
+            !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
             call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX)
             call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY)            
           
@@ -7375,7 +7406,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY)
                 call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0)
                 call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
-                call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)
+                if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)
                 
 doIter:         do while (iter <= Niter)
 
@@ -13627,7 +13658,12 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                         deallocate(Me%OutPut%TimeSerieDischProp)
                         deallocate(Me%OutPut%TimeSerieDischID)                    
                         
-                    endif                     
+                    endif
+                    
+                    deallocate(Me%lFlowDischarge)
+                    deallocate(Me%iFlowDischarge)
+                    nullify    (Me%lFlowDischarge)
+                    nullify    (Me%iFlowDischarge)
                 endif
 
                 if (Me%ImposeBoundaryValue) then
@@ -13703,9 +13739,9 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 deallocate (Me%lFlowY)
                 deallocate (Me%iFlowToChannels)
                 deallocate (Me%lFlowToChannels)
-                deallocate (Me%lFlowBoundary)
+                !deallocate (Me%lFlowBoundary)
                 deallocate (Me%iFlowBoundary)
-                deallocate (Me%iFlowRouteDFour)
+                if (Me%RouteDFourPoints) deallocate (Me%iFlowRouteDFour)
 
                 deallocate (Me%BoundaryCells)
 
@@ -13715,9 +13751,9 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 nullify    (Me%lFlowY)
                 nullify    (Me%iFlowToChannels)
                 nullify    (Me%lFlowToChannels)
-                nullify    (Me%lFlowBoundary)
+                !nullify    (Me%lFlowBoundary)
                 nullify    (Me%iFlowBoundary)
-                nullify    (Me%iFlowRouteDFour)
+                if (Me%RouteDFourPoints) nullify    (Me%iFlowRouteDFour)
 
 
                 !Deallocates Instance
