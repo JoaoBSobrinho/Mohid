@@ -8162,7 +8162,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine ModifyWaterDischarges  
     
     !--------------------------------------------------------------------------
-
     subroutine ModifyGeometryAndMapping
 
         !Arguments-------------------------------------------------------------
@@ -8170,129 +8169,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: WCL, WCR, WCA, Bottom
         integer                                     :: CHUNK
-
+        
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
-
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
-
-        !$OMP PARALLEL PRIVATE(I,J, WCL, WCR, WCA, Bottom)
-
-
-        !X
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = JLB, JUB
-        do i = ILB, IUB
-
-            if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                if (Me%FaceWaterColumn == WCMaxBottom_) then
-                    !Maximum Bottom Level
-                    Bottom = max(Me%ExtVar%Topography(i, j-1), Me%ExtVar%Topography(i, j))
-                elseif (Me%FaceWaterColumn == WCAverageBottom_) then
-                    !Average Bottom Level
-                    Bottom = (Me%ExtVar%Topography(i,j) + Me%ExtVar%Topography(i,j-1)) / 2.0                
-                endif
-                
-                !Water Column Left (above MaxBottom)
-                WCL       = max(Me%myWaterLevel(i, j-1) - Bottom, dble(AlmostZero))
-            
-                !Water Column Right (above MaxBottom)
-                WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
-
-                !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-                if (Me%HydrodynamicApproximation == KinematicWave_) then
-                    if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
-                        WCA = WCL
-                    else
-                        WCA = WCR
-                    endif
-                else
-                    !Average Water Column
-                    WCA = (WCL + WCR) / 2.0
-                    if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j) ) then
-                        WCA = WCL
-                    else
-                        WCA = WCR
-                    endif
-                endif
-                
-                !Area  = Water Column * Side lenght of cell
-                Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
-                
-                if (WCA > Me%MinimumWaterColumn) then
-                    Me%ComputeFaceU(i, j) = 1
-                else
-                    Me%ComputeFaceU(i, j) = 0
-                endif
-
-            endif
-            
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-        !$OMP END PARALLEL
-
-        !$OMP PARALLEL PRIVATE(I,J, WCL, WCR, WCA, Bottom)
-        !Y
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = JLB, JUB
-        do i = ILB, IUB
-            if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                if (Me%FaceWaterColumn == WCMaxBottom_) then
-                    !Maximum Bottom Level
-                    Bottom = max(Me%ExtVar%Topography(i-1, j), Me%ExtVar%Topography(i, j))
-                elseif (Me%FaceWaterColumn == WCAverageBottom_) then
-                    !Average Bottom Level
-                    Bottom = (Me%ExtVar%Topography(i,j) +  Me%ExtVar%Topography(i-1,j)) / 2.0                
-                endif
-                
-                !Water Column Left
-                WCL       = max(Me%myWaterLevel(i-1, j) - Bottom, dble(AlmostZero))
-            
-                !Water Column Right
-                WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
-               
-                !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-                if (Me%HydrodynamicApproximation == KinematicWave_) then
-                    if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
-                        WCA = WCL
-                    else
-                        WCA = WCR
-                    endif
-                else
-                    !Average Water Column
-                    !WCA = (WCL + WCR) / 2.0
-                    if (Me%myWaterLevel(i-1, j) > Me%myWaterLevel(i, j)) then
-                        WCA = WCL
-                    else
-                        WCA = WCR
-                    endif
-                endif
-
-                !Area  = Water Column * Side lenght of cell
-                Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
-                
-                if (WCA > Me%MinimumWaterColumn) then
-                    Me%ComputeFaceV(i, j) = 1
-                else
-                    Me%ComputeFaceV(i, j) = 0
-                endif
-
-            endif
-            
-        enddo
-        enddo    
-        !$OMP END DO NOWAIT
-
-        !$OMP END PARALLEL
+        
+        call ModifyGeometryAndMapping_X
+        
+        call ModifyGeometryAndMapping_Y
         
         !$OMP PARALLEL PRIVATE(I,J)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
@@ -8305,13 +8190,481 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
         enddo
         enddo    
-        !$OMP END DO NOWAIT
+        !$OMP END DO
+        !$OMP END PARALLEL
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+        
+    end subroutine ModifyGeometryAndMapping
+    
+    !--------------------------------------------------------------------------
+
+    subroutine ModifyGeometryAndMapping_X
+
+        !Arguments-------------------------------------------------------------
+        
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: WCL, WCR, WCA, Bottom
+        integer                                     :: CHUNK
+
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_X")
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        
+        !$OMP PARALLEL PRIVATE(I,J, WCL, WCR, WCA, Bottom)
+        if (Me%FaceWaterColumn == WCMaxBottom_ .and. Me%HydrodynamicApproximation == KinematicWave_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j-1) + Me%ExtVar%BasinPoints(i, j) > 1) then
+                
+                    !Maximum Bottom Level
+                    Bottom = max(Me%ExtVar%Topography(i, j-1), Me%ExtVar%Topography(i, j))
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i, j-1) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceU(i, j) = 1
+                    else
+                        Me%ComputeFaceU(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+        
+        elseif ((Me%FaceWaterColumn == WCMaxBottom_) .and. (.not. Me%HydrodynamicApproximation == KinematicWave_)) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !Maximum Bottom Level
+                    Bottom = max(Me%ExtVar%Topography(i, j-1), Me%ExtVar%Topography(i, j))
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i, j-1) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    !Average Water Column
+                    WCA = (WCL + WCR) / 2.0
+                    if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j) ) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceU(i, j) = 1
+                    else
+                        Me%ComputeFaceU(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            
+        elseif (Me%FaceWaterColumn == WCAverageBottom_ .and. Me%HydrodynamicApproximation == KinematicWave_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !Average Bottom Level
+                    Bottom = (Me%ExtVar%Topography(i,j) + Me%ExtVar%Topography(i,j-1)) / 2.0                
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i, j-1) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+                    
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceU(i, j) = 1
+                    else
+                        Me%ComputeFaceU(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            
+        elseif ((Me%FaceWaterColumn == WCAverageBottom_) .and. (.not. Me%HydrodynamicApproximation == KinematicWave_)) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !Average Bottom Level
+                    Bottom = (Me%ExtVar%Topography(i,j) + Me%ExtVar%Topography(i,j-1)) / 2.0
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i, j-1) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceU(i, j) = 1
+                    else
+                        Me%ComputeFaceU(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO 
+        endif
         !$OMP END PARALLEL
 
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_X")
 
     
-    end subroutine ModifyGeometryAndMapping
+    end subroutine ModifyGeometryAndMapping_X
+
+    !--------------------------------------------------------------------------
+    
+    subroutine ModifyGeometryAndMapping_Y
+
+        !Arguments-------------------------------------------------------------
+        
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: WCL, WCR, WCA, Bottom
+        integer                                     :: CHUNK
+
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_Y")
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        
+        !$OMP PARALLEL PRIVATE(I,J, WCL, WCR, WCA, Bottom)
+        if (Me%FaceWaterColumn == WCMaxBottom_ .and. Me%HydrodynamicApproximation == KinematicWave_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) > 1) then
+                
+                    !Maximum Bottom Level
+                    Bottom = max(Me%ExtVar%Topography(i-1, j), Me%ExtVar%Topography(i, j))
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i-1, j) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceV(i, j) = 1
+                    else
+                        Me%ComputeFaceV(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+        
+        elseif ((Me%FaceWaterColumn == WCMaxBottom_) .and. (.not. Me%HydrodynamicApproximation == KinematicWave_)) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !Maximum Bottom Level
+                    Bottom = max(Me%ExtVar%Topography(i-1, j), Me%ExtVar%Topography(i, j))
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i-1, j) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    !Average Water Column
+                    WCA = (WCL + WCR) / 2.0
+                    if (Me%myWaterLevel(i-1, j) > Me%myWaterLevel(i, j) ) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceV(i, j) = 1
+                    else
+                        Me%ComputeFaceV(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            
+        elseif (Me%FaceWaterColumn == WCAverageBottom_ .and. Me%HydrodynamicApproximation == KinematicWave_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !Average Bottom Level
+                    Bottom = (Me%ExtVar%Topography(i,j) + Me%ExtVar%Topography(i-1,j)) / 2.0                
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i-1, j) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+                    
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceV(i, j) = 1
+                    else
+                        Me%ComputeFaceV(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            
+        elseif ((Me%FaceWaterColumn == WCAverageBottom_) .and. (.not. Me%HydrodynamicApproximation == KinematicWave_)) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !Average Bottom Level
+                    Bottom = (Me%ExtVar%Topography(i,j) + Me%ExtVar%Topography(i-1,j)) / 2.0
+                    !Water Column Left (above MaxBottom)
+                    WCL       = max(Me%myWaterLevel(i-1, j) - Bottom, dble(AlmostZero))
+                    !Water Column Right (above MaxBottom)
+                    WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+
+                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                    if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
+                        WCA = WCL
+                    else
+                        WCA = WCR
+                    endif
+                
+                    !Area  = Water Column * Side lenght of cell
+                    Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                    if (WCA > Me%MinimumWaterColumn) then
+                        Me%ComputeFaceV(i, j) = 1
+                    else
+                        Me%ComputeFaceV(i, j) = 0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+        endif
+        !$OMP END PARALLEL
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_Y")
+
+    
+    end subroutine ModifyGeometryAndMapping_Y
+    
+!--------------------------------------------------------------------------------------------------------
+    
+    !subroutine ModifyGeometryAndMapping
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j
+    !    integer                                     :: ILB, IUB, JLB, JUB
+    !    real                                        :: WCL, WCR, WCA, Bottom
+    !    integer                                     :: CHUNK
+    !
+    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !    
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+    !
+    !    ILB = Me%WorkSize%ILB
+    !    IUB = Me%WorkSize%IUB
+    !    JLB = Me%WorkSize%JLB
+    !    JUB = Me%WorkSize%JUB
+    !
+    !    !$OMP PARALLEL PRIVATE(I,J, WCL, WCR, WCA, Bottom)
+    !    !X
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = JLB, JUB
+    !    do i = ILB, IUB
+    !
+    !        if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+    !            
+    !            if (Me%FaceWaterColumn == WCMaxBottom_) then
+    !                !Maximum Bottom Level
+    !                Bottom = max(Me%ExtVar%Topography(i, j-1), Me%ExtVar%Topography(i, j))
+    !            elseif (Me%FaceWaterColumn == WCAverageBottom_) then
+    !                !Average Bottom Level
+    !                Bottom = (Me%ExtVar%Topography(i,j) + Me%ExtVar%Topography(i,j-1)) / 2.0                
+    !            endif
+    !            
+    !            !Water Column Left (above MaxBottom)
+    !            WCL       = max(Me%myWaterLevel(i, j-1) - Bottom, dble(AlmostZero))
+    !        
+    !            !Water Column Right (above MaxBottom)
+    !            WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+    !
+    !            !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+    !            if (Me%HydrodynamicApproximation == KinematicWave_) then
+    !                if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
+    !                    WCA = WCL
+    !                else
+    !                    WCA = WCR
+    !                endif
+    !            else
+    !                !Average Water Column
+    !                WCA = (WCL + WCR) / 2.0
+    !                if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j) ) then
+    !                    WCA = WCL
+    !                else
+    !                    WCA = WCR
+    !                endif
+    !            endif
+    !            
+    !            !Area  = Water Column * Side lenght of cell
+    !            Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+    !            
+    !            if (WCA > Me%MinimumWaterColumn) then
+    !                Me%ComputeFaceU(i, j) = 1
+    !            else
+    !                Me%ComputeFaceU(i, j) = 0
+    !            endif
+    !
+    !        endif
+    !        
+    !    enddo
+    !    enddo
+    !    !$OMP END DO NOWAIT
+    !    !$OMP END PARALLEL
+    !
+    !    !$OMP PARALLEL PRIVATE(I,J, WCL, WCR, WCA, Bottom)
+    !    !Y
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = JLB, JUB
+    !    do i = ILB, IUB
+    !        if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+    !            
+    !            if (Me%FaceWaterColumn == WCMaxBottom_) then
+    !                !Maximum Bottom Level
+    !                Bottom = max(Me%ExtVar%Topography(i-1, j), Me%ExtVar%Topography(i, j))
+    !            elseif (Me%FaceWaterColumn == WCAverageBottom_) then
+    !                !Average Bottom Level
+    !                Bottom = (Me%ExtVar%Topography(i,j) +  Me%ExtVar%Topography(i-1,j)) / 2.0                
+    !            endif
+    !            
+    !            !Water Column Left
+    !            WCL       = max(Me%myWaterLevel(i-1, j) - Bottom, dble(AlmostZero))
+    !        
+    !            !Water Column Right
+    !            WCR       = max(Me%myWaterLevel(i, j  ) - Bottom, dble(AlmostZero))
+    !           
+    !            !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+    !            if (Me%HydrodynamicApproximation == KinematicWave_) then
+    !                if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
+    !                    WCA = WCL
+    !                else
+    !                    WCA = WCR
+    !                endif
+    !            else
+    !                !Average Water Column
+    !                !WCA = (WCL + WCR) / 2.0
+    !                if (Me%myWaterLevel(i-1, j) > Me%myWaterLevel(i, j)) then
+    !                    WCA = WCL
+    !                else
+    !                    WCA = WCR
+    !                endif
+    !            endif
+    !
+    !            !Area  = Water Column * Side lenght of cell
+    !            Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+    !            
+    !            if (WCA > Me%MinimumWaterColumn) then
+    !                Me%ComputeFaceV(i, j) = 1
+    !            else
+    !                Me%ComputeFaceV(i, j) = 0
+    !            endif
+    !
+    !        endif
+    !        
+    !    enddo
+    !    enddo    
+    !    !$OMP END DO NOWAIT
+    !
+    !    !$OMP END PARALLEL
+    !    
+    !    !$OMP PARALLEL PRIVATE(I,J)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = JLB, JUB
+    !    do i = ILB, IUB
+    !        if (Me%myWaterColumn(i, j) .gt. Me%MinimumWaterColumn) then
+    !            Me%OpenPoints(i,j) = 1
+    !        else
+    !            Me%OpenPoints(i,j) = 0
+    !        endif
+    !    enddo
+    !    enddo    
+    !    !$OMP END DO NOWAIT
+    !    !$OMP END PARALLEL
+    !
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+    !
+    !
+    !end subroutine ModifyGeometryAndMapping
 
     !--------------------------------------------------------------------------
 
