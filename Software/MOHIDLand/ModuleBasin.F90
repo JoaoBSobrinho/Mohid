@@ -5040,43 +5040,43 @@ cd0:    if (Exist) then
             !$OMP END DO
             !$OMP END PARALLEL
         else
-        
-        
-        !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+            
+            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
 
-                CurrentFlux = PrecipitationFlux(i, j)                     
+                    CurrentFlux = PrecipitationFlux(i, j)                     
                 
-                !Gross Rain 
-                !m                 = m3/s                    * s            /  m2
-                GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                    !Gross Rain 
+                    !m                 = m3/s                    * s            /  m2
+                    GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
                             
-                !Precipitation Rate for (output only)
-                !mm/ hour            m3/s                    / m2                 * 1000 mm/m * 3600 s/h
-                Me%PrecipRate  (i,j) = CurrentFlux / Me%ExtVar%GridCellArea(i, j) * 3600000.0
+                    !Precipitation Rate for (output only)
+                    !mm/ hour            m3/s                    / m2                 * 1000 mm/m * 3600 s/h
+                    Me%PrecipRate  (i,j) = CurrentFlux / Me%ExtVar%GridCellArea(i, j) * 3600000.0
 
-                !Accumulated rainfall
-                !m
-                Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                    !Accumulated rainfall
+                    !m
+                    Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
 
-                ! For now uncovered rain is total. it will be changed ir there are leafs
-                Me%RainUncovered(i, j) = GrossPrecipitation
-                Me%ThroughFall(i, j)    = GrossPrecipitation
+                    ! For now uncovered rain is total. it will be changed ir there are leafs
+                    Me%RainUncovered(i, j) = GrossPrecipitation
+                    Me%ThroughFall(i, j)    = GrossPrecipitation
                 
-                !Put rain on water column - it will facilitate the structure of the property mixture
-                Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j) 
+                    !Put rain on water column - it will facilitate the structure of the property mixture
+                    Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j) 
                     
-                !mm/ hour                   m                       s         1000mm/m   *  3600s/h
-                Me%ThroughRate(i, j) = Me%ThroughFall(i, j) / Me%CurrentDT * 3600000.0            
+                    !mm/ hour                   m                       s         1000mm/m   *  3600s/h
+                    Me%ThroughRate(i, j) = Me%ThroughFall(i, j) / Me%CurrentDT * 3600000.0            
                     
-            endif
-        enddo
-        enddo
-        !$OMP END DO
-        !$OMP END PARALLEL
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        endif
 
     end subroutine DividePrecipitation
 #endif _SEWERGEMSENGINECOUPLER_

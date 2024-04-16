@@ -7175,9 +7175,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
 
-                        Me%myWaterColumnOld(i, j) = WaterColumn(i, j) !This way in modifyRunOff there is no need to do setmatrixvalue
+                        !Me%myWaterColumnOld(i, j) = WaterColumn(i, j) !This way in modifyRunOff there is no need to do setmatrixvalue
+                        !Me%myWaterColumn(i, j)    = WaterColumn(i, j)
+                        Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
                         Me%myWaterColumn(i, j)    = WaterColumn(i, j)
-
+                        
                         Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                         !Here the water column is the uniformly distributed one. Inside 
                         Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
@@ -7363,7 +7365,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             
             !Stores initial values = from basin
-            !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
+            call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
             call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX)
             call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY)            
           
