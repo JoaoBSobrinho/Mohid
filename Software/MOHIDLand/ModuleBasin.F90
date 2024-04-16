@@ -82,7 +82,7 @@ Module ModuleBasin
                                      GetRunoffTotalStoredVolume, GetMassError,           &
                                      GetRunOffStoredVolumes, GetRunOffBoundaryFlowVolume,& 
                                      GetRunOffTotalDischargeFlowVolume,                  &
-                                     SetBasinStatsToRunoff
+                                     SetBasinStatsToRunoff, ActualizeWaterColumn_RunOff
                                      
                                      
     use ModuleRunoffProperties,                                                          &
@@ -4951,8 +4951,7 @@ cd0:    if (Exist) then
         !Verifies if the hourly average rainfall is to be concentrated in a shorted time period...
         !Only do this if DT is already shorten by DTDuringRain variable.
         ChangeRain = .false.
-        if (Me%CurrentDT <= Me%DTDuringRain)
-            ChangeRain = .true.
+        if (Me%CurrentDT <= Me%DTDuringRain) ChangeRain = .true.
       
         if (ChangeRain) then
             !Gets time
@@ -8114,55 +8113,69 @@ cd0:    if (Exist) then
     subroutine ActualizeWaterColumn ()
 
         !Arguments-------------------------------------------------------------
-        !character (Len = *), intent(in)             :: WarningString
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, CHUNK, STAT_CALL
-
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn")
-
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-
-            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                Me%ExtUpdate%WatercolumnOld(i,j) = Me%ExtUpdate%Watercolumn(i,j)
-                
-                Me%ExtUpdate%Watercolumn(i, j) = Me%ExtUpdate%WaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
-
-                if (Me%ExtUpdate%Watercolumn(i, j) < 0.0) then
-                    
-                    !Mass Error
-                    Me%ExtVar%MassError     (i, j) = Me%ExtVar%MassError (i, j) -        &
-                                                     Me%ExtUpdate%Watercolumn(i, j) *    &
-                                                     Me%ExtVar%GridCellArea(i, j)
-
-                    Me%ExtUpdate%Watercolumn(i, j) = 0.0
-                    Me%ExtUpdate%WaterLevel (i, j) = Me%ExtVar%Topography(i, j)
-                
-                end if
-            endif
-
-        enddo
-        enddo
-        !$OMP END DO
-        !$OMP END PARALLEL
+        integer                                     :: STAT_CALL
         
-        !Send water column to runoff - the beholder of the water column
-        call SetBasinColumnToRunoff (ObjRunOffID             = Me%ObjRunoff,                 &
-                                     WaterColumnOld          = Me%ExtUpdate%WatercolumnOld,  &
-                                     WaterColumn             = Me%ExtUpdate%Watercolumn,     &
-                                     Calibrating1D           = .FALSE.                  ,    &
-                                     STAT                    = STAT_CALL)        
+        !Update Runoff WaterColumns and level
+        call ActualizeWaterColumn_RunOff (ObjRunOffID = Me%ObjRunoff, STAT = STAT_CALL)        
         if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'        
 
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ActualizeWaterColumn")
-
     end subroutine ActualizeWaterColumn
+    
+    !--------------------------------------------------------------------------
+    
+    !subroutine ActualizeWaterColumn ()
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    !character (Len = *), intent(in)             :: WarningString
+    !
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j, CHUNK, STAT_CALL
+    !
+    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn")
+    !
+    !    !$OMP PARALLEL PRIVATE(I,J)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+    !
+    !        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+    !            
+    !            Me%ExtUpdate%WatercolumnOld(i,j) = Me%ExtUpdate%Watercolumn(i,j)
+    !            
+    !            Me%ExtUpdate%Watercolumn(i, j) = Me%ExtUpdate%WaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
+    !
+    !            if (Me%ExtUpdate%Watercolumn(i, j) < 0.0) then
+    !                
+    !                !Mass Error
+    !                Me%ExtVar%MassError     (i, j) = Me%ExtVar%MassError (i, j) -        &
+    !                                                 Me%ExtUpdate%Watercolumn(i, j) *    &
+    !                                                 Me%ExtVar%GridCellArea(i, j)
+    !
+    !                Me%ExtUpdate%Watercolumn(i, j) = 0.0
+    !                Me%ExtUpdate%WaterLevel (i, j) = Me%ExtVar%Topography(i, j)
+    !            
+    !            end if
+    !        endif
+    !
+    !    enddo
+    !    enddo
+    !    !$OMP END DO
+    !    !$OMP END PARALLEL
+    !    
+    !    !Send water column to runoff - the beholder of the water column
+    !    call SetBasinColumnToRunoff (ObjRunOffID             = Me%ObjRunoff,                 &
+    !                                 WaterColumnOld          = Me%ExtUpdate%WatercolumnOld,  &
+    !                                 WaterColumn             = Me%ExtUpdate%Watercolumn,     &
+    !                                 STAT                    = STAT_CALL)        
+    !    if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'        
+    !
+    !    if (MonitorPerformance) call StopWatch ("ModuleBasin", "ActualizeWaterColumn")
+    !
+    !end subroutine ActualizeWaterColumn
 
     !--------------------------------------------------------------------------
 

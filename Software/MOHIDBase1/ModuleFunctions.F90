@@ -1253,7 +1253,7 @@ Module ModuleFunctions
         integer                                         :: CHUNK
 
         !Begin-----------------------------------------------------------------
-
+        if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValues2D_R8_FromMatrix")
         CHUNK = CHUNK_J(Size%JLB, Size%JUB)
 
         if (present(MapMatrix)) then
@@ -1279,6 +1279,8 @@ Module ModuleFunctions
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
         endif
+        
+        if (MonitorPerformance) call StopWatch ("ModuleFunctions", "SetMatrixValues2D_R8_FromMatrix")
 
     end subroutine SetMatrixValues2D_R8_FromMatrix
 
