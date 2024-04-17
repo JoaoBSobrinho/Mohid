@@ -7451,6 +7451,7 @@ doIter:         do while (iter <= Niter)
                     if (firstRestart) then
                         call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX)
                         call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY)
+                        firstRestart = .false.
                     else
                         call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX)
                         call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY)
