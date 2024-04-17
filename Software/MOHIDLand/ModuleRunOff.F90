@@ -1209,6 +1209,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR070'
 
         if (BlockFound) then
+            allocate(Me%InitialWaterColumn   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%InitialWaterColumn      = null_real
+            
             call ConstructFillMatrix  ( PropertyID       = InitialWaterColumnID,         &
                                         EnterDataID      = Me%ObjEnterData,              &
                                         TimeID           = Me%ObjTime,                   &
@@ -1239,6 +1242,10 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR091'
 
             if (BlockFound) then
+                
+                allocate(Me%InitialWaterLevel    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                Me%InitialWaterLevel       = null_real
+                
                 call ConstructFillMatrix  ( PropertyID       = InitialWaterLevelID,          &
                                             EnterDataID      = Me%ObjEnterData,              &
                                             TimeID           = Me%ObjTime,                   &
@@ -1323,7 +1330,12 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0160'
 
             
-            if (Me%CalculateAdvection) then    
+            if (Me%CalculateAdvection) then
+                
+                allocate(Me%ComputeAdvectionU    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                allocate(Me%ComputeAdvectionV    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                Me%ComputeAdvectionU    = 1
+                Me%ComputeAdvectionV    = 1
                 
                 !Minimum Water Column for advection computation
                 call GetData(Me%MinimumWaterColumnAdvection,                                     &
@@ -1346,20 +1358,22 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0170a'
                 
                 if(Me%NoAdvectionZones)then
+                    allocate(Me%NoAdvectionPoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                    Me%NoAdvectionPoints    = 0.0
                     
                     call ConstructAdvectionZones
                     
                 else
                     
                     call SetMatrixValue(Me%ComputeAdvectionU, Me%Size, 1)
-                    call SetMatrixValue(Me%ComputeAdvectionU, Me%Size, 1)
+                    call SetMatrixValue(Me%ComputeAdvectionV, Me%Size, 1)
                     
                 endif
                 
             else
 
                 call SetMatrixValue(Me%ComputeAdvectionU, Me%Size, 0)
-                call SetMatrixValue(Me%ComputeAdvectionU, Me%Size, 0)
+                call SetMatrixValue(Me%ComputeAdvectionV, Me%Size, 0)
              
             endif
             
@@ -1729,6 +1743,17 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                     STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0480'
         if (BlockFound) then
+            
+            allocate(Me%OverLandCoefficient  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            allocate(Me%OverLandCoefficientDelta (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            allocate(Me%OverLandCoefficientX (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            allocate(Me%OverLandCoefficientY (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            
+            Me%OverLandCoefficient       = null_real
+            Me%OverLandCoefficientDelta  = null_real
+            Me%OverLandCoefficientX      = null_real
+            Me%OverLandCoefficientY      = null_real
+            
             call ConstructFillMatrix  ( PropertyID       = Me%OverLandCoefficientID,     &
                                         EnterDataID      = Me%ObjEnterData,              &
                                         TimeID           = Me%ObjTime,                   &
@@ -4429,38 +4454,40 @@ do2:        do
             enddo            
         endif
         
-        !Finds lowest neighbor for from D8
-        do j = Me%Size%JLB, Me%Size%JUB
-        do i = Me%Size%ILB, Me%Size%IUB
+        if (Me%RouteDFourPoints) then
+            !Finds lowest neighbor for from D8
+            do j = Me%Size%JLB, Me%Size%JUB
+            do i = Me%Size%ILB, Me%Size%IUB
             
-            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
             
-                !Finds lowest neighbour
-                lowestValue = Me%ExtVar%Topography(i, j)
-                do dj = -1, 1
-                do di = -1, 1
+                    !Finds lowest neighbour
+                    lowestValue = Me%ExtVar%Topography(i, j)
+                    do dj = -1, 1
+                    do di = -1, 1
                     
-                    if (dj /= 0 .and. di /= 0 .and. Me%ExtVar%BasinPoints(i+di, j+dj) == BasinPoint) then
+                        if (dj /= 0 .and. di /= 0 .and. Me%ExtVar%BasinPoints(i+di, j+dj) == BasinPoint) then
                     
-                        !Checks lowest neighbor
-                        if (Me%ExtVar%Topography(i + di, j + dj) < lowestValue) then
+                            !Checks lowest neighbor
+                            if (Me%ExtVar%Topography(i + di, j + dj) < lowestValue) then
                             
-                            lowestValue = Me%ExtVar%Topography(i + di, j + dj)
-                            Me%LowestNeighborI(i, j) = i + di
-                            Me%LowestNeighborJ(i, j) = j + dj
+                                lowestValue = Me%ExtVar%Topography(i + di, j + dj)
+                                Me%LowestNeighborI(i, j) = i + di
+                                Me%LowestNeighborJ(i, j) = j + dj
 
-                        endif
+                            endif
                         
-                    endif
+                        endif
                     
-                enddo
-                enddo        
+                    enddo
+                    enddo        
 
-            endif
+                endif
         
-        enddo
-        enddo
-
+            enddo
+            enddo
+        endif
+        
         !If drainage network module is associated and simple interaction, then don't apply stability
         !to river points
         if (Me%ObjDrainageNetwork /= 0 .and. Me%SimpleChannelInteraction) then
@@ -4884,9 +4911,7 @@ do2:        do
         Me%iFlowToChannels      = 0.0   !Sets values initially to zero, so 
         Me%lFlowToChannels      = 0.0   !model can run without DNet
         
-        !allocate(Me%lFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%iFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !Me%lFlowBoundary        = 0.0   !Sets values initially to zero, so 
         Me%iFlowBoundary        = 0.0   !model can run without BC
 
         if (Me%Discharges) then
@@ -4911,16 +4936,16 @@ do2:        do
         allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumePred   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%myWaterVolumePred = null_real
-        allocate(Me%InitialWaterColumn   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%InitialWaterLevel    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !allocate(Me%InitialWaterColumn   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
+        !allocate(Me%InitialWaterLevel    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
         allocate(Me%myWaterVolume        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterColumnOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%myWaterLevel            = null_real
         Me%myWaterColumn           = null_real
-        Me%InitialWaterColumn      = null_real
-        Me%InitialWaterLevel       = null_real
+        !Me%InitialWaterColumn      = null_real Sobrinho
+        !Me%InitialWaterLevel       = null_real Sobrinho
         Me%myWaterVolume           = 0.0        !For OpenMI
         Me%myWaterColumnOld        = null_real
         Me%myWaterVolumeOld        = null_real
@@ -4940,9 +4965,9 @@ do2:        do
         allocate(Me%ComputeFaceU         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ComputeFaceV         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%OpenPoints           (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%NoAdvectionPoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%ComputeAdvectionU    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%ComputeAdvectionV    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !allocate(Me%NoAdvectionPoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
+        !allocate(Me%ComputeAdvectionU    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !allocate(Me%ComputeAdvectionV    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceU          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
@@ -4962,21 +4987,21 @@ do2:        do
         Me%ComputeFaceV         = 0
         Me%OpenPoints           = 0
         
-        Me%NoAdvectionPoints    = 0.0
-        Me%ComputeAdvectionU    = 1
-        Me%ComputeAdvectionV    = 1
+        !Me%NoAdvectionPoints    = 0.0 Sobrinho
+        !Me%ComputeAdvectionU    = 1
+        !Me%ComputeAdvectionV    = 1
 
         Me%VelModFaceU          = 0.0
         Me%VelModFaceV          = 0.0
 
-        allocate(Me%OverLandCoefficient  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%OverLandCoefficientDelta (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%OverLandCoefficientX (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%OverLandCoefficientY (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%OverLandCoefficient       = null_real
-        Me%OverLandCoefficientDelta  = null_real
-        Me%OverLandCoefficientX      = null_real
-        Me%OverLandCoefficientY      = null_real
+        !allocate(Me%OverLandCoefficient  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
+        !allocate(Me%OverLandCoefficientDelta (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !allocate(Me%OverLandCoefficientX (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !allocate(Me%OverLandCoefficientY (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        !Me%OverLandCoefficient       = null_real
+        !Me%OverLandCoefficientDelta  = null_real
+        !Me%OverLandCoefficientX      = null_real
+        !Me%OverLandCoefficientY      = null_real
 
 
        
@@ -5007,20 +5032,21 @@ do2:        do
         allocate (Me%Output%FloodArrivalTime (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         Me%Output%FloodArrivalTime = -99.0
 
-
-        allocate (Me%LowestNeighborI (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%LowestNeighborJ (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%DFourSinkPoint  (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        if (Me%RouteDFourPoints) then !Sobrinho
+            allocate (Me%LowestNeighborI (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%LowestNeighborJ (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%DFourSinkPoint  (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            Me%LowestNeighborI = null_int
+            Me%LowestNeighborJ = null_int
+            Me%DFourSinkPoint  = 0
+        endif
+        
         allocate (Me%StabilityPoints (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
                     
-        Me%LowestNeighborI = null_int
-        Me%LowestNeighborJ = null_int
-        Me%DFourSinkPoint  = 0
         Me%StabilityPoints = 0
         
         if (Me%ObjDrainageNetwork /= 0) then
-            !allocate(Me%BoundaryRiverLevel   (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            !Me%BoundaryRiverLevel      = null_real
+            
             allocate(Me%NodeRiverLevel   (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             Me%NodeRiverLevel      = null_real  
             
