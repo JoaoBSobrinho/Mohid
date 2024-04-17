@@ -8410,7 +8410,6 @@ cd0:    if (Exist) then
         call SetBasinColumnToRunoff (ObjRunOffID             = Me%ObjRunoff,                    &
                                      WaterColumnOld          = Me%ExtUpdate%WatercolumnOld,     &
                                      WaterColumn             = Me%ExtUpdate%Watercolumn,        &
-                                     Calibrating1D           = .TRUE.                  ,        &
                                      STAT                    = STAT_CALL)        
         if (STAT_CALL /= SUCCESS_) stop 'RemoveWaterColumn - ModuleBasin - ERR30'     
 
