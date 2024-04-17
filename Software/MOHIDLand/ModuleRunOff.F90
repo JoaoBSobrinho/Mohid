@@ -4454,38 +4454,40 @@ do2:        do
             enddo            
         endif
         
-        !Finds lowest neighbor for from D8
-        do j = Me%Size%JLB, Me%Size%JUB
-        do i = Me%Size%ILB, Me%Size%IUB
+        if (Me%RouteDFourPoints) then
+            !Finds lowest neighbor for from D8
+            do j = Me%Size%JLB, Me%Size%JUB
+            do i = Me%Size%ILB, Me%Size%IUB
             
-            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
             
-                !Finds lowest neighbour
-                lowestValue = Me%ExtVar%Topography(i, j)
-                do dj = -1, 1
-                do di = -1, 1
+                    !Finds lowest neighbour
+                    lowestValue = Me%ExtVar%Topography(i, j)
+                    do dj = -1, 1
+                    do di = -1, 1
                     
-                    if (dj /= 0 .and. di /= 0 .and. Me%ExtVar%BasinPoints(i+di, j+dj) == BasinPoint) then
+                        if (dj /= 0 .and. di /= 0 .and. Me%ExtVar%BasinPoints(i+di, j+dj) == BasinPoint) then
                     
-                        !Checks lowest neighbor
-                        if (Me%ExtVar%Topography(i + di, j + dj) < lowestValue) then
+                            !Checks lowest neighbor
+                            if (Me%ExtVar%Topography(i + di, j + dj) < lowestValue) then
                             
-                            lowestValue = Me%ExtVar%Topography(i + di, j + dj)
-                            Me%LowestNeighborI(i, j) = i + di
-                            Me%LowestNeighborJ(i, j) = j + dj
+                                lowestValue = Me%ExtVar%Topography(i + di, j + dj)
+                                Me%LowestNeighborI(i, j) = i + di
+                                Me%LowestNeighborJ(i, j) = j + dj
 
-                        endif
+                            endif
                         
-                    endif
+                        endif
                     
-                enddo
-                enddo        
+                    enddo
+                    enddo        
 
-            endif
+                endif
         
-        enddo
-        enddo
-
+            enddo
+            enddo
+        endif
+        
         !If drainage network module is associated and simple interaction, then don't apply stability
         !to river points
         if (Me%ObjDrainageNetwork /= 0 .and. Me%SimpleChannelInteraction) then
