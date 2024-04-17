@@ -7130,14 +7130,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
     !--------------------------------------------------------------------------
 
-    subroutine SetBasinColumnToRunoff(ObjRunOffID, WaterColumnOld, WaterColumn, Calibrating1D, STAT)
+    subroutine SetBasinColumnToRunoff(ObjRunOffID, WaterColumnOld, WaterColumn, STAT)
         
         !Arguments-------------------------------------------------------------
         integer                                         :: ObjRunOffID
         real(8), dimension(:, :), pointer               :: WaterColumnOld
         real(8), dimension(:, :), pointer               :: WaterColumn
         integer, intent(OUT), optional                  :: STAT
-        logical, intent(IN)                             :: Calibrating1D
 
         !Local-----------------------------------------------------------------
         integer                                         :: STAT_, STAT_CALL, ready_
@@ -7171,54 +7170,28 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                    STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'SetBasinColumnToRunoff - ModuleRunOff - ERR020'
         
-            if (Calibrating1D) then
-                !$OMP PARALLEL PRIVATE(I,J)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
-                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
 
-                        Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
-                        Me%myWaterColumn(i, j)    = WaterColumn(i, j)
+                    Me%myWaterColumnOld(i, j) = WaterColumnOld(i, j)
+                    Me%myWaterColumn(i, j)    = WaterColumn(i, j)
 
-                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                        !Here the water column is the uniformly distributed one. Inside 
-                        Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                    !Here the water column is the uniformly distributed one. Inside 
+                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
 
-    !                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-    !                    Me%myWaterColumn(i, j) = Me%myWaterVolume(i, j) / Me%FreeGridCellArea(i, j)
-    !                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+!                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+!                    Me%myWaterColumn(i, j) = Me%myWaterVolume(i, j) / Me%FreeGridCellArea(i, j)
+!                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                    
-                    endif
-                enddo
-                enddo            
-                !$OMP END DO
-                !$OMP END PARALLEL
-            else
-                !$OMP PARALLEL PRIVATE(I,J)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
-                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-
-                        Me%myWaterColumnOld(i, j) = WaterColumn(i, j) !This way in modifyRunOff there is no need to do setmatrixvalue
-                        Me%myWaterColumn(i, j)    = WaterColumn(i, j)
-
-                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                        !Here the water column is the uniformly distributed one. Inside 
-                        Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-
-    !                    Me%myWaterVolume(i, j) = WaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-    !                    Me%myWaterColumn(i, j) = Me%myWaterVolume(i, j) / Me%FreeGridCellArea(i, j)
-    !                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                   
-                    endif
-                enddo
-                enddo            
-                !$OMP END DO
-                !$OMP END PARALLEL
-            endif
-            
+                endif
+            enddo
+            enddo            
+            !$OMP END DO
+            !$OMP END PARALLEL
 
             call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'SetBasinColumnToRunoff - ModuleRunOff - ERR030'
@@ -7389,7 +7362,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             
             !Stores initial values = from basin
-            !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
+            call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
             call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX)
             call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY)            
           
