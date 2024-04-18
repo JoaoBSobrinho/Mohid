@@ -291,6 +291,7 @@ Module ModuleRunOff
     public  ::  GetMassError
     public  ::  GetNextRunOffDT
     public  ::  SetBasinColumnToRunoff
+    public  ::  ActualizeWaterColumn_RunOff
     public  ::  UnGetRunOff
     
 
@@ -913,6 +914,7 @@ Module ModuleRunOff
                                                                                      !when a transition between weir and dynamic wave
                                                                                      !equations is performed
         real                                        :: Transition_acoef_1D_2D = 100 ! "a" coeficient in ax+b=y
+        logical                                     :: UpdatedWaterColumnFromBasin
         
         type(T_RunOff), pointer                     :: Next                 => null()
     end type  T_RunOff
@@ -5131,6 +5133,7 @@ do2:        do
             if (STAT_CALL /= SUCCESS_) stop 'ConstructAdvectionZones - ModuleRunOff - ERR02'
             
             if (BlockFound) then
+                
                 call ConstructFillMatrix  ( PropertyID       = Me%NoAdvectionZonesID,        &
                                             EnterDataID      = Me%ObjEnterData,              &
                                             TimeID           = Me%ObjTime,                   &
@@ -7213,7 +7216,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     
     end subroutine SetBasinColumnToRunoff
 
-    !--------------------------------------------------------------------------
 
     !--------------------------------------------------------------------------
 
@@ -7255,7 +7257,90 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (present(STAT)) STAT = STAT_
                     
     end subroutine SetBasinStatsToRunoff
+                                                  
+    !--------------------------------------------------------------------------
+                                                  
+    subroutine ActualizeWaterColumn_RunOff (ObjRunOffID, STAT)
 
+        !Arguments-------------------------------------------------------------
+        integer, intent(OUT), optional                  :: STAT
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, CHUNK, STAT_CALL, STAT_, ObjRunOffID, ready_
+
+        STAT_ = UNKNOWN_
+
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        call Ready(ObjRunOffID, ready_)
+
+        if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
+            (ready_ .EQ. READ_LOCK_ERR_)) then
+
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn_RunOff")
+        
+            call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR01'
+
+            !Gets a pointer to Topography
+            call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR10'
+        
+            call GetGridCellArea  (Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea,STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR020'
+        
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                
+                    Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
+                
+                    Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
+
+                    if (Me%myWaterColumn(i, j) < 0.0) then
+                    
+                        !Mass Error
+                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+
+                        Me%myWaterColumn(i, j) = 0.0
+                        Me%myWaterLevel (i, j) = Me%ExtVar%Topography(i, j)
+                    else
+                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                        !Here the water column is the uniformly distributed one. Inside 
+                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+                    end if
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        
+            call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR030'
+
+            !Ungets the Topography
+            call UngetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR40'
+
+            call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR050'
+
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ActualizeWaterColumn_RunOff")
+            
+            STAT_ = SUCCESS_
+            
+            Me%UpdatedWaterColumnFromBasin = .True.
+            
+        else               
+            STAT_ = ready_
+        end if
+
+        if (present(STAT)) STAT = STAT_
+        
+    end subroutine ActualizeWaterColumn_RunOff
+    
     !--------------------------------------------------------------------------
 
     subroutine UnGetRunOff2D_R4(ObjRunOffID, Array, STAT)
@@ -7362,7 +7447,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             
             !Stores initial values = from basin
-            call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
+            if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
+            !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
+            
             call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX)
             call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY)            
           
@@ -7424,7 +7511,6 @@ doIter:         do while (iter <= Niter)
                     if (firstRestart) then
                         call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX)
                         call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY)
-                        firstRestart = .false.
                     else
                         call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX)
                         call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY)
@@ -9358,13 +9444,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: Margin1, Margin2
         integer                                     :: CHUNK, dj
         real                                        :: MaxBottom, WaterDepth
-
-
+    
+    
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX")
-
-
+    
+    
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-
+    
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
         JLB = Me%WorkSize%JLB
@@ -15313,58 +15399,35 @@ do2:        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
 !
 !    end subroutine  WriteChannelsLevelData
 
-
+    
     !----------------------------------------------------------------------------
    
     real function AdjustSlope (Slope)
     
         !Arguments--------------------------------------------------------------
         real                                    :: Slope
-
+        real                                    :: sign
+    
         !Slope correction given by City of Albuquerque, 1997, p.22-26
         !http://www.hkh-friend.net.np/rhdc/training/lectures/HEGGEN/Tc_3.pdf
-
-        ! Calculate the absolute value of Slope
-        Slope = abs(Slope)
-
-        ! Apply the correction formula
-        if (Slope >= 0.04) then
-            Slope = 0.05247 + 0.06363 * Slope - 0.182 * exp(-62.38 * Slope)
-        end if
-
-        ! Return the adjusted slope
-        AdjustSlope = Slope
-
-    end function AdjustSlope
     
-    !----------------------------------------------------------------------------
-   
-    !real function AdjustSlope (Slope)
-    !
-    !    !Arguments--------------------------------------------------------------
-    !    real                                    :: Slope
-    !    real                                    :: sign
-    !
-    !    !Slope correction given by City of Albuquerque, 1997, p.22-26
-    !    !http://www.hkh-friend.net.np/rhdc/training/lectures/HEGGEN/Tc_3.pdf
-    !
-    !
-    !    if (Slope .LT. 0.0) then
-    !        sign = -1.0
-    !    else
-    !        sign = 1.0
-    !    end if
-    !
-    !    Slope = abs (Slope)
-    !    
-    !    if (Slope.GE.0.04) then
-    !        Slope = 0.05247 + 0.06363 * Slope - 0.182 * exp (-62.38 * Slope)
-    !    end if
-    !    
-    !    AdjustSlope = sign * Slope
-    !    
-    !
-    !end function AdjustSlope
+    
+        if (Slope .LT. 0.0) then
+            sign = -1.0
+        else
+            sign = 1.0
+        end if
+    
+        Slope = abs (Slope)
+        
+        if (Slope.GE.0.04) then
+            Slope = 0.05247 + 0.06363 * Slope - 0.182 * exp (-62.38 * Slope)
+        end if
+        
+        AdjustSlope = sign * Slope
+        
+    
+    end function AdjustSlope
 
     !----------------------------------------------------------------------------
 

@@ -82,7 +82,7 @@ Module ModuleBasin
                                      GetRunoffTotalStoredVolume, GetMassError,           &
                                      GetRunOffStoredVolumes, GetRunOffBoundaryFlowVolume,& 
                                      GetRunOffTotalDischargeFlowVolume,                  &
-                                     SetBasinStatsToRunoff
+                                     SetBasinStatsToRunoff, ActualizeWaterColumn_RunOff
                                      
                                      
     use ModuleRunoffProperties,                                                          &
@@ -4947,8 +4947,7 @@ cd0:    if (Exist) then
         real                                        :: AreaFraction
         
         !Begin-----------------------------------------------------------------
-        
-
+            
         !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -4969,10 +4968,11 @@ cd0:    if (Exist) then
                 !m
                 Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
 
+                ! For now uncovered rain is total. it will be changed ir there are leafs
                 Me%ThroughFall(i, j)    = GrossPrecipitation
                 
                 !Put rain on water column - it will facilitate the structure of the property mixture
-                Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j) 
+                Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
                     
                 !mm/ hour                   m                       s         1000mm/m   *  3600s/h
                 Me%ThroughRate(i, j) = Me%ThroughFall(i, j) / Me%CurrentDT * 3600000.0            
@@ -5160,6 +5160,7 @@ cd0:    if (Exist) then
 !                call DateToGregorianDay(Me%CurrentTime, days)
 !                                                                     
                 if (Me%Coupled%Vegetation) then
+                    
                     
 !                    if (Me%ExtVar%CropCoefficient(i, j) < 0.0) then
 !                        write (*,*) 'Me%ExtVar%CropCoefficient(', i, ',', j, ') NEGATIVO em ', days, Year, &
@@ -8019,54 +8020,69 @@ cd0:    if (Exist) then
     subroutine ActualizeWaterColumn ()
 
         !Arguments-------------------------------------------------------------
-        !character (Len = *), intent(in)             :: WarningString
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, CHUNK, STAT_CALL
-
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn")
-
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-
-            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                Me%ExtUpdate%WatercolumnOld(i,j) = Me%ExtUpdate%Watercolumn(i,j)
-                
-                Me%ExtUpdate%Watercolumn(i, j) = Me%ExtUpdate%WaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
-
-                if (Me%ExtUpdate%Watercolumn(i, j) < 0.0) then
-                    
-                    !Mass Error
-                    Me%ExtVar%MassError     (i, j) = Me%ExtVar%MassError (i, j) -        &
-                                                     Me%ExtUpdate%Watercolumn(i, j) *    &
-                                                     Me%ExtVar%GridCellArea(i, j)
-
-                    Me%ExtUpdate%Watercolumn(i, j) = 0.0
-                    Me%ExtUpdate%WaterLevel (i, j) = Me%ExtVar%Topography(i, j)
-                
-                end if
-            endif
-
-        enddo
-        enddo
-        !$OMP END DO
-        !$OMP END PARALLEL
+        integer                                     :: STAT_CALL
         
-        !Send water column to runoff - the beholder of the water column
-        call SetBasinColumnToRunoff (ObjRunOffID             = Me%ObjRunoff,                 &
-                                     WaterColumnOld          = Me%ExtUpdate%WatercolumnOld,  &
-                                     WaterColumn             = Me%ExtUpdate%Watercolumn,     &
-                                     STAT                    = STAT_CALL)    
+        !Update Runoff WaterColumns and level
+        call ActualizeWaterColumn_RunOff (ObjRunOffID = Me%ObjRunoff, STAT = STAT_CALL)        
         if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'        
 
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ActualizeWaterColumn")
-
     end subroutine ActualizeWaterColumn
+    
+    !--------------------------------------------------------------------------
+    
+    !subroutine ActualizeWaterColumn ()
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    !character (Len = *), intent(in)             :: WarningString
+    !
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j, CHUNK, STAT_CALL
+    !
+    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn")
+    !
+    !    !$OMP PARALLEL PRIVATE(I,J)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+    !
+    !        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+    !            
+    !            Me%ExtUpdate%WatercolumnOld(i,j) = Me%ExtUpdate%Watercolumn(i,j)
+    !            
+    !            Me%ExtUpdate%Watercolumn(i, j) = Me%ExtUpdate%WaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
+    !
+    !            if (Me%ExtUpdate%Watercolumn(i, j) < 0.0) then
+    !                
+    !                !Mass Error
+    !                Me%ExtVar%MassError     (i, j) = Me%ExtVar%MassError (i, j) -        &
+    !                                                 Me%ExtUpdate%Watercolumn(i, j) *    &
+    !                                                 Me%ExtVar%GridCellArea(i, j)
+    !
+    !                Me%ExtUpdate%Watercolumn(i, j) = 0.0
+    !                Me%ExtUpdate%WaterLevel (i, j) = Me%ExtVar%Topography(i, j)
+    !            
+    !            end if
+    !        endif
+    !
+    !    enddo
+    !    enddo
+    !    !$OMP END DO
+    !    !$OMP END PARALLEL
+    !    
+    !    !Send water column to runoff - the beholder of the water column
+    !    call SetBasinColumnToRunoff (ObjRunOffID             = Me%ObjRunoff,                 &
+    !                                 WaterColumnOld          = Me%ExtUpdate%WatercolumnOld,  &
+    !                                 WaterColumn             = Me%ExtUpdate%Watercolumn,     &
+    !                                 STAT                    = STAT_CALL)        
+    !    if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'        
+    !
+    !    if (MonitorPerformance) call StopWatch ("ModuleBasin", "ActualizeWaterColumn")
+    !
+    !end subroutine ActualizeWaterColumn
 
     !--------------------------------------------------------------------------
 
