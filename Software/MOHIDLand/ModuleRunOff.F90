@@ -291,7 +291,6 @@ Module ModuleRunOff
     public  ::  GetMassError
     public  ::  GetNextRunOffDT
     public  ::  SetBasinColumnToRunoff
-    public  ::  ActualizeWaterColumn_RunOff
     public  ::  UnGetRunOff
     
 
@@ -914,7 +913,6 @@ Module ModuleRunOff
                                                                                      !when a transition between weir and dynamic wave
                                                                                      !equations is performed
         real                                        :: Transition_acoef_1D_2D = 100 ! "a" coeficient in ax+b=y
-        logical                                     :: UpdatedWaterColumnFromBasin
         
         type(T_RunOff), pointer                     :: Next                 => null()
     end type  T_RunOff
@@ -7260,90 +7258,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (present(STAT)) STAT = STAT_
                     
     end subroutine SetBasinStatsToRunoff
-                                                  
-    !--------------------------------------------------------------------------
-                                                  
-    subroutine ActualizeWaterColumn_RunOff (ObjRunOffID, STAT)
 
-        !Arguments-------------------------------------------------------------
-        integer, intent(OUT), optional                  :: STAT
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j, CHUNK, STAT_CALL, STAT_, ObjRunOffID, ready_
-
-        STAT_ = UNKNOWN_
-
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-
-        call Ready(ObjRunOffID, ready_)
-
-        if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
-            (ready_ .EQ. READ_LOCK_ERR_)) then
-
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn_RunOff")
-        
-            call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR01'
-
-            !Gets a pointer to Topography
-            call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR10'
-        
-            call GetGridCellArea  (Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea,STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR020'
-        
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                    Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
-                
-                    Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
-
-                    if (Me%myWaterColumn(i, j) < 0.0) then
-                    
-                        !Mass Error
-                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
-
-                        Me%myWaterColumn(i, j) = 0.0
-                        Me%myWaterLevel (i, j) = Me%ExtVar%Topography(i, j)
-                    else
-                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                        !Here the water column is the uniformly distributed one. Inside 
-                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-                    end if
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        
-            call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR030'
-
-            !Ungets the Topography
-            call UngetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR40'
-
-            call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR050'
-
-            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ActualizeWaterColumn_RunOff")
-            
-            STAT_ = SUCCESS_
-            
-            Me%UpdatedWaterColumnFromBasin = .True.
-            
-        else               
-            STAT_ = ready_
-        end if
-
-        if (present(STAT)) STAT = STAT_
-        
-    end subroutine ActualizeWaterColumn_RunOff
-    
     !--------------------------------------------------------------------------
 
     subroutine UnGetRunOff2D_R4(ObjRunOffID, Array, STAT)
@@ -7450,9 +7365,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             
             !Stores initial values = from basin
-            if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
-            !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
-            
+            call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
             call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX)
             call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY)            
           
