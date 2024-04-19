@@ -604,6 +604,7 @@ Module ModuleBasin
         real, dimension(:), pointer                 :: TimeSeriesBuffer2 => null()
         real, dimension(:), pointer                 :: TimeSeriesBuffer3 => null() !Properties Error
         real, dimension(:), pointer                 :: BWBBuffer         => null() !buffer to be used for Basin Water Balance
+        logical                                     :: ConstantCurveNumber = .false.
         
         !Basin Water Balance
         type (T_BasinWaterBalance)                  :: BWB
@@ -6214,7 +6215,158 @@ cd0:    if (Exist) then
     end subroutine SimpleInfiltration
 
     !--------------------------------------------------------------------------
-
+#ifdef _SEWERGEMSENGINECOUPLER_
+    subroutine SCSCNRunOffModel
+    
+        !Arguments-------------------------------------------------------------
+    
+        !Local-----------------------------------------------------------------
+        integer                                     :: I, J
+    
+        integer                                     :: Chunk
+        
+        real                                        :: previousInDayRain, rain, qNew, rain_m
+        real                                        :: qInTimeStep, FractionOfSimTime
+        
+        integer                                     :: STAT_CALL
+        
+        !Begin-----------------------------------------------------------------
+        
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
+        
+        CHUNK = ChunkJ
+        
+        Me%ConstantCurveNumber = .True.
+                 
+        if (Me%SCSCNRunOffModel%VegGrowthStage%ID%SolutionFromFile) then
+            call ModifyFillMatrix (FillMatrixID   = Me%SCSCNRunOffModel%VegGrowthStage%ID%ObjFillMatrix,            &
+                                   Matrix2D       = Me%SCSCNRunOffModel%VegGrowthStage%Field,                       &
+                                   PointsToFill2D = Me%ExtVar%BasinPoints,                                          &
+                                   STAT           = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'SCSCNRunOffModel - ModuleBasin - ERR010'
+        endif
+        
+        if (Me%SCSCNRunOffModel%ImpFrac%ID%SolutionFromFile) then
+            call ModifyFillMatrix (FillMatrixID   = Me%SCSCNRunOffModel%ImpFrac%ID%ObjFillMatrix,                   &
+                                   Matrix2D       = Me%SCSCNRunOffModel%ImpFrac%Field,                              &
+                                   PointsToFill2D = Me%ExtVar%BasinPoints,                                          &
+                                   STAT           = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'SCSCNRunOffModel - ModuleBasin - ERR020'
+        endif
+        
+        if (Me%SCSCNRunOffModel%CurveNumber%ID%SolutionFromFile) then
+            call ModifyFillMatrix (FillMatrixID   = Me%SCSCNRunOffModel%CurveNumber%ID%ObjFillMatrix,               &
+                                   Matrix2D       = Me%SCSCNRunOffModel%CurveNumber%Field,                          &
+                                   PointsToFill2D = Me%ExtVar%BasinPoints,                                          &
+                                   STAT           = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'SCSCNRunOffModel - ModuleBasin - ERR030'
+        endif 
+        
+        if (Me%CurrentTime > Me%SCSCNRunOffModel%NextRainAccStart) then
+            Me%SCSCNRunOffModel%NextRainAccStart = Me%CurrentTime + 86400
+                    
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC)
+            do J = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do I = Me%WorkSize%ILB, Me%WorkSize%IUB
+                
+                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2)
+                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3)
+                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4)
+                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
+                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5) = Me%SCSCNRunOffModel%DailyAccRain (i, j)
+                    
+                Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j) =      &
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) +    &
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) +    &
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) +    &
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) +    &
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
+                    
+                Me%SCSCNRunOffModel%DailyAccRain (i, j) = 0.0
+            
+            enddo
+            enddo
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL            
+        endif
+        
+        FractionOfSimTime = Me%CurrentDT / Me%SimulationTime
+        
+        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep)
+        !$OMP DO SCHEDULE(DYNAMIC)
+        do J = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do I = Me%WorkSize%ILB, Me%WorkSize%IUB
+    
+            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                            
+                if (Me%ThroughFall (i, j) > 0.0) then
+                    !       mm        =                mm
+                    previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
+                    
+                    rain_m = Me%ThroughFall (i, j)
+                    
+                    !mm  =              m                  * mm/m
+                    rain = rain_m * 1000.0
+                    !               mm                 =                 mm                 +  mm
+                    Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+        
+                    !mm  =        mm         +                     mm
+                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
+                                                     + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                            
+                    Me%SCSCNRunOffModel%S (i, j) = 25400.0 / Me%SCSCNRunOffModel%CurveNumber%Field (i, j) - 254.0
+                    
+                    
+                    if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
+                        
+                        !mm         = (mm - mm)**2 / (mm + mm)
+                        qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
+                                      (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
+                        
+                        qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
+                        
+                        Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
+                        !m/s = mm * 1E-3 m/mm / s
+                        Me%SCSCNRunOffModel%InfRate%Field(i,j) = ((rain - qInTimeStep) * 1E-3) / Me%CurrentDT
+                        
+                    else
+                        !m/s
+                        Me%SCSCNRunOffModel%InfRate%Field(i,j) = rain_m / Me%CurrentDT
+                    endif
+                    
+                    
+                else
+                    !m/s
+                    Me%SCSCNRunOffModel%InfRate%Field(i,j) = 0.0
+                    
+                endif
+                
+                
+                !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
+                Me%InfiltrationRate (i, j)    =  Me%SCSCNRunOffModel%InfRate%Field(i,j) * 3600000.0
+                
+                !m - Accumulated Infiltration of the entite area
+                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%InfiltrationRate(i, j) *     &
+                                                (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * Me%CurrentDT / 3600000.0
+                
+                !m                            = m - mm/hour * s / s/hour / mm/m
+                Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Me%InfiltrationRate(i, j) * &
+                                                (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * Me%CurrentDT / 3600000.0
+                
+            endif
+            
+        enddo
+        enddo
+        !$OMP END DO NOWAIT
+        !$OMP END PARALLEL
+    
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
+        
+    end subroutine SCSCNRunOffModel
+#endif _SEWERGEMSENGINECOUPLER_    
+    !--------------------------------------------------------------------------
+#ifndef _SEWERGEMSENGINECOUPLER_
     subroutine SCSCNRunOffModel
     
         !Arguments-------------------------------------------------------------
@@ -6222,7 +6374,6 @@ cd0:    if (Exist) then
         !Local-----------------------------------------------------------------
         integer                                     :: I, J
 
-        integer, parameter                          :: ChunkSize = 10
         integer                                     :: Chunk
         
         real                                        :: previousInDayRain, rain, qNew
@@ -6235,14 +6386,6 @@ cd0:    if (Exist) then
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
         
         CHUNK = ChunkJ
-                 
-        if (Me%SCSCNRunOffModel%VegGrowthStage%ID%SolutionFromFile) then
-            call ModifyFillMatrix (FillMatrixID   = Me%SCSCNRunOffModel%VegGrowthStage%ID%ObjFillMatrix,            &
-                                   Matrix2D       = Me%SCSCNRunOffModel%VegGrowthStage%Field,                       &
-                                   PointsToFill2D = Me%ExtVar%BasinPoints,                                          &
-                                   STAT           = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'SCSCNRunOffModel - ModuleBasin - ERR010'
-        endif
         
         if (Me%SCSCNRunOffModel%ImpFrac%ID%SolutionFromFile) then
             call ModifyFillMatrix (FillMatrixID   = Me%SCSCNRunOffModel%ImpFrac%ID%ObjFillMatrix,                   &
@@ -6399,8 +6542,8 @@ cd0:    if (Exist) then
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
     end subroutine SCSCNRunOffModel
-    
-    !--------------------------------------------------------------------------
+#endif _SEWERGEMSENGINECOUPLER_
+    !---------------------------------------------------------------------------------------------------------------
     
     subroutine OverLandProcesses
 
@@ -8692,11 +8835,19 @@ cd0:    if (Exist) then
         if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR072'   
 
 
-        if (Me%Coupled%SCSCNRunoffModel) then 
-            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
-                                 Data2D_8    = Me%SCSCNRunOffModel%ActualCurveNumber,   &                             
-                                 STAT        = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075'      
+        if (Me%Coupled%SCSCNRunoffModel) then
+            if (Me%ConstantCurveNumber) then !When using SewerGems
+                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
+                                     Data2D_8    = Me%SCSCNRunOffModel%CurveNumber%Field,   &                             
+                                     STAT        = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075_a'
+            else
+                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
+                                     Data2D_8    = Me%SCSCNRunOffModel%ActualCurveNumber,   &                             
+                                     STAT        = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075_b'
+            endif
+        
             
             call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
                                  Data2D_8    = Me%SCSCNRunOffModel%Current5DayAccRain,  &                             
