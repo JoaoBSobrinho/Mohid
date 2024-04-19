@@ -4947,7 +4947,7 @@ cd0:    if (Exist) then
         real                                        :: AreaFraction
         
         !Begin-----------------------------------------------------------------
-            
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")    
         !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -4982,6 +4982,7 @@ cd0:    if (Exist) then
         enddo
         !$OMP END DO
         !$OMP END PARALLEL
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation")
 
     end subroutine DividePrecipitation
 #endif _SEWERGEMSENGINECOUPLER_
