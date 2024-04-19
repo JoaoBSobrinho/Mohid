@@ -14004,25 +14004,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         n_restart = 0
         Restart = .false.
         
-        !Verifies negative volumes
         !$OMP PARALLEL PRIVATE(I,J)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-do1:    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 if (Me%myWaterVolume(i, j) < -AllmostZero) then
-!                    write(*,*) '-----'
-!                    write(*,*) 'OldVolume ', Me%myWaterVolumeOld(i, j)
-!                    write(*,*) 'Negative Volume - Me%myWaterVolume (', i, ', ', j, ') =', Me%myWaterVolume (i, j)
-!                    write(*,*) '-----'
-                    Restart = .true.                 
-                        !exit do1  //Commented this exit because don't know how it begave with OpenMP
+                    !$OMP CRITICAL
+                    Restart = .true.
+                    !$OMP END CRITICAL
+                    exit
                 else if (Me%myWaterVolume (i, j) < 0.0) then  
                     Me%myWaterVolume (i, j) = 0.0                 
                 endif
             endif
         enddo
-        enddo do1
+        enddo
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
 
