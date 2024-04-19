@@ -9647,7 +9647,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
                     
-                    YBottomAdv = 0.0.0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed                        
