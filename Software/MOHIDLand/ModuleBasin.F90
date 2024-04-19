@@ -4940,11 +4940,8 @@ cd0:    if (Exist) then
         !Local-----------------------------------------------------------------     
         integer                                     :: i, j
         real                                        :: GrossPrecipitation
-        real                                        :: CurrentFlux, Rand, SecondsPassed
-        real, dimension(6), target                  :: AuxTime
-        integer, save                               :: LastHour = -99
+        real                                        :: CurrentFlux
         logical                                     :: ChangeRain
-        real                                        :: AreaFraction
         
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")    
