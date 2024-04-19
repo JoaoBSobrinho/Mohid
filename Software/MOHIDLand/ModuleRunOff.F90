@@ -7295,8 +7295,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
-                    Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
-                
                     Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
 
                     if (Me%myWaterColumn(i, j) < 0.0) then
@@ -7311,6 +7309,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         !Here the water column is the uniformly distributed one. Inside 
                         Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
                     end if
+                    
+                    Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
                 endif
             enddo
             enddo
@@ -7511,6 +7511,7 @@ doIter:         do while (iter <= Niter)
                     if (firstRestart) then
                         call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX)
                         call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY)
+                        firstRestart = .false.
                     else
                         call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX)
                         call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY)
