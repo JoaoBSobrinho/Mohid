@@ -9525,10 +9525,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: MaxBottom, WaterDepth
         
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, WetPerimeter)
 
+        !X
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
         do i = ILB, IUB
@@ -9538,6 +9546,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 level_left  = Me%myWaterLevel(i, j-1)
                 level_right = Me%myWaterLevel(i, j)
                     
+                !!Slope
                 Slope           = AdjustSlope((level_left - level_right) / Me%ExtVar%DZX(i, j-1))
                  
                 WetPerimeter = Me%ExtVar%DYY(i, j)
@@ -9549,10 +9558,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
                     
                 !to check which cell to use since areaU depends on higher water level
-                !bottom Difference to adjacent cells (to check existence of “margins” on the side)
                 if (level_left > level_right) then
-                    Margin1 = Me%ExtVar%Topography(i+1, j-1) - MaxBottom
-                    Margin2 = Me%ExtVar%Topography(i-1, j-1) - MaxBottom
+                    Margin1 = Me%ExtVar%Topography(i+1, j -1) - MaxBottom
+                    Margin2 = Me%ExtVar%Topography(i-1, j -1) - MaxBottom
                 else
                     Margin1 = Me%ExtVar%Topography(i+1, j) - MaxBottom
                     Margin2 = Me%ExtVar%Topography(i-1, j) - MaxBottom
@@ -9567,8 +9575,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 
                 HydraulicRadius = Me%AreaU(i, j) / WetPerimeter
-       
-                !------------------------Sant Venant-----------
+                
+                !-------------------------Sant Venant-----------------------------------------
 
                 !Pressure
                 !m3/s             = s  * m/s2    * m2   * m/m
@@ -9583,10 +9591,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
-                   
+                    if (Me%ComputeFaceU(i, j+1)) then 
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
                             Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
@@ -9597,12 +9604,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 XRightAdv = Me%FlowXOld(i, j+1) * Me%FlowXOld(i, j+1) / Me%AreaU(i, j+1)
                             endif
                         endif
-
                     endif       
                     
-                    !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
+                    !Face XU(i,j). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j-1)) then  
+                        
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -9616,10 +9623,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
                     
-                    
                     YTopAdv = 0.0
                     if (Me%ComputeFaceV(i+1, j-1) +  Me%ComputeFaceV(i+1, j) > 0) then
-                        !if flows in same direction, advection is computed               
+
+                        !if flows in same direction, advection is computed                        
                         if ((Me%FlowYOld(i+1, j-1) * Me%FlowYOld(i+1, j)) >= 0.0) then
                             
                             Qf = (Me%FlowYOld(i+1, j-1) + Me%FlowYOld(i+1, j)) / 2.0
@@ -9639,12 +9646,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                         endif
                     endif       
-
-                    YBottomAdv = 0
+                    
+                    YBottomAdv = 0.0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
-                        !if flows in same direction, advection is computed              
-
+                        !if flows in same direction, advection is computed                        
                         if ((Me%FlowYOld(i, j-1) * Me%FlowYOld(i, j)) >= 0.0) then
                             
                             Qf = (Me%FlowYOld(i, j-1) + Me%FlowYOld(i, j)) / 2.0
@@ -9652,12 +9658,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             if (Qf > 0.0)then
                                 if(Me%ComputeFaceU(i-1,j) == Compute) then
                                     YBottomAdv =  Qf   * Me%FlowXOld(i-1, j) / Me%AreaU(i-1, j)
+                                    
                                 else
                                     if(Me%ComputeFaceU(i-1, j-1) == Compute)then
                                         YBottomAdv =  Qf * Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1) 
                                     elseif(Me%ComputeFaceU(i-1, j+1) == Compute)then
                                         YBottomAdv =  Qf * Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)
                                     endif
+                                    
                                 endif
                             elseif ((Qf < 0.0)) then
                                 YBottomAdv = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
@@ -9665,25 +9673,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
                     
+                    
                     Advection = (XLeftAdv - XRightAdv) * LocalDT / Me%ExtVar%DZX(i, j-1) + &
                                 (YBottomAdv - YTopAdv) * LocalDT / Me%ExtVar%DYY(i, j)
+                    
                 endif
 
                 Me%lFlowX(i, j) = (Me%FlowXOld(i, j) + Pressure + Advection) / (1.0 + Friction)
-
-                !Limit to critical flow. Using the critical flow limitation in all cells assumes "slow" flow or
-                !subcritical that is consistent with the formulation used (flow depends on downstream height)
-                !because in supercritical flow it is only dependent on upstream and descritization to describe it would have
-                !to change. Supercritical flow usually exists on hydraulic infraestructures (high drops) and a 
-                !hydraulic jump exists between fast flow and slow flow.
                                                             
                 if (Me%lFlowX(i, j) > 0.0) then           
                     WaterDepth = max(Me%MyWaterLevel(i,j-1) - MaxBottom, 0.0)
                 else
                     WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
-                endif                      
+                endif
                         
                 !Critical Flow
+                !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
                 !m3/s = m * m * m/s
                 CriticalFlow = WaterDepth * Me%ExtVar%DYY(i,j) * sqrt(Gravity * WaterDepth)
                         
@@ -9697,7 +9702,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 
             else
+            
                 Me%lFlowX(i, j) = 0.0
+
             endif
 
         enddo
@@ -9728,6 +9735,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth, Flow
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -9787,7 +9800,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -9844,7 +9857,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -9925,6 +9938,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -9960,7 +9979,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -10017,7 +10036,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -10105,6 +10124,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: Flow
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -10140,7 +10165,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -10197,7 +10222,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -10278,6 +10303,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -10313,7 +10344,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -10370,7 +10401,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -10459,6 +10490,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -10518,7 +10555,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -10575,7 +10612,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -10663,6 +10700,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth, Flow
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -10722,7 +10765,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -10779,7 +10822,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -10860,6 +10903,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
@@ -10895,7 +10944,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -10952,7 +11001,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -11040,7 +11089,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, Flow
         
-        
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP Margin1, Margin2, MaxBottom, WetPerimeter, Flow)
@@ -11075,7 +11129,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -11132,7 +11186,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
@@ -11213,7 +11267,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
-        
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, WetPerimeter)
@@ -11248,7 +11307,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    XRightAdv = 0
+                    XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
                     if (Me%ComputeFaceU(i, j+1)) then
                    
@@ -11305,7 +11364,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     endif       
 
-                    YBottomAdv = 0
+                    YBottomAdv = 0.0
                     if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) > 0) then
 
                         !if flows in same direction, advection is computed              
