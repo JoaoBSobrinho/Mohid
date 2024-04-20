@@ -7276,7 +7276,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             (ready_ .EQ. READ_LOCK_ERR_)) then
 
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn_RunOff")
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ActualizeWaterColumn_RunOff")
         
             call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR01'
