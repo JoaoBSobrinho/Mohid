@@ -14009,7 +14009,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                if (Me%myWaterVolume(i, j) < -AllmostZero) then
+                if (Me%myWaterVolume(i, j) < AllmostZeroNegative) then
                     !$OMP CRITICAL
                     Restart = .true.
                     !$OMP END CRITICAL
@@ -14026,6 +14026,63 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if ((.not. Restart) .and. Me%CV%Stabilize) then
 
+            if (.not. Me%CV%CheckDecreaseOnly) then
+                
+                !$OMP PARALLEL PRIVATE(I,J,variation)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : n_restart)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            
+                    if (Me%StabilityPoints(i, j) == BasinPoint) then
+
+                        if (Me%myWaterVolumeOld(i, j) / Me%ExtVar%GridCellArea(i, j) >= Me%CV%MinimumValueToStabilize) then
+                            
+                            variation = abs(Me%myWaterVolume(i, j) - Me%myWaterVolumeOld(i, j)) / Me%myWaterVolumeOld(i, j)
+                            
+                            if (variation > Me%CV%StabilizeFactor) then
+                                !Debug routine - may be usefull for using in debug situation
+                                !call DebugStability (i,j,variation)                                
+                                
+                                n_restart = n_restart + 1
+                                
+                            endif
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+            
+            else
+                
+                !$OMP PARALLEL PRIVATE(I,J,variation)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : n_restart)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            
+                    if (Me%StabilityPoints(i, j) == BasinPoint) then
+            
+                        if (Me%myWaterVolumeOld(i, j) > Me%myWaterVolume(i, j)) then
+                            if (Me%myWaterVolumeOld(i, j) / Me%ExtVar%GridCellArea(i, j) >= Me%CV%MinimumValueToStabilize) then
+                            
+                                variation = abs(Me%myWaterVolume(i, j) - Me%myWaterVolumeOld(i, j)) / Me%myWaterVolumeOld(i, j)
+                            
+                                if (variation > Me%CV%StabilizeFactor) then
+                                    !Debug routine - may be usefull for using in debug situation
+                                    !call DebugStability (i,j,variation)                                
+                                
+                                    n_restart = n_restart + 1
+                                
+                                endif
+                            endif
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+            endif
+            
             
             !$OMP PARALLEL PRIVATE(I,J,variation)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : n_restart)

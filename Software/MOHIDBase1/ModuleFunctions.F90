@@ -1255,7 +1255,7 @@ Module ModuleFunctions
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValues2D_R8_FromMatrix")
         CHUNK = CHUNK_J(Size%JLB, Size%JUB)
-
+        
         if (present(MapMatrix)) then
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
@@ -1270,7 +1270,7 @@ Module ModuleFunctions
             !$OMP END PARALLEL
         else
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 Matrix (i, j) = InMatrix(i, j)
@@ -1279,6 +1279,8 @@ Module ModuleFunctions
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
         endif
+        
+        
         if (MonitorPerformance) call StopWatch ("ModuleFunctions", "SetMatrixValues2D_R8_FromMatrix")
 
     end subroutine SetMatrixValues2D_R8_FromMatrix
