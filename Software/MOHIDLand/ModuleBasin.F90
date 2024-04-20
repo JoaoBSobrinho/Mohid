@@ -3449,6 +3449,7 @@ i1:         if (CoordON) then
                                          BasinGeometryID    = Me%ObjBasinGeometry,       &
                                          DrainageNetworkID  = Me%ObjDrainageNetwork,     &
                                          DischargesID       = Me%ObjDischargesRunoff,    &
+                                         HasRunoffProperties = Me%Coupled%RunoffProperties, &
                                          STAT               = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR070'
             

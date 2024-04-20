@@ -915,6 +915,7 @@ Module ModuleRunOff
                                                                                      !equations is performed
         real                                        :: Transition_acoef_1D_2D = 100 ! "a" coeficient in ax+b=y
         logical                                     :: UpdatedWaterColumnFromBasin
+        logical                                     :: HasRunoffProperties
         
         type(T_RunOff), pointer                     :: Next                 => null()
     end type  T_RunOff
@@ -945,6 +946,7 @@ Module ModuleRunOff
                                BasinGeometryID,                                 &
                                DrainageNetworkID,                               &
                                DischargesID,                                    &
+                               HasRunoffProperties,                             &
                                STAT)
 
         !Arguments---------------------------------------------------------------
@@ -7582,8 +7584,9 @@ doIter:         do while (iter <= Niter)
             !save water column before removes from next processes
             !important for property transport if river cells get out of water, conc has to be computed
             !after transport and not zero because there was no water left
-            call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, Me%myWaterColumn)
-            
+            if (Me%HasRunoffProperties) then
+                call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, Me%myWaterColumn)
+            endif
             !Gets ExternalVars
             call ReadLockExternalVar (StaticOnly = .false.)
 
