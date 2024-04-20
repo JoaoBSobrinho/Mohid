@@ -1686,6 +1686,112 @@ Module ModuleHDF5
     
     !--------------------------------------------------------------------------
 
+    !subroutine HDF5WriteDataR8_2D (HDF5ID, GroupName, Name, Units,                   &
+    !                               Array2D, OutputNumber, STAT)
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    integer                                         :: HDF5ID
+    !    character(len=*)                                :: GroupName
+    !    character(len=*)                                :: Name
+    !    character(len=*)                                :: Units
+    !    real(8), dimension(:, :)   , pointer            :: Array2D
+    !    integer, optional                               :: OutputNumber
+    !    integer, optional                               :: STAT
+    !
+    !    !Local-----------------------------------------------------------------
+    !    integer                                         :: STAT_, ready_
+    !    integer(HSIZE_T), dimension(7)                  :: dims
+    !    integer(HID_T)                                  :: Rank
+    !    integer(HID_T)                                  :: NumType
+    !    integer(HID_T)                                  :: space_id
+    !    integer(HID_T)                                  :: STAT_CALL
+    !    integer(HID_T)                                  :: dset_id, prp_id, gr_id
+    !    character(StringLength)                         :: AuxChar
+    !    real(4)                                         :: Minimum, Maximum
+    !    logical                                         :: AllocateMatrix
+    !
+    !
+    !    STAT_ = UNKNOWN_
+    !
+    !    call Ready (HDF5ID, ready_)
+    !
+    !    if (ready_ .EQ. IDLE_ERR_) then
+    !
+    !        NumType = H5T_NATIVE_DOUBLE 
+    !
+    !        Rank    = 2
+    !
+    !
+    !        Minimum = minival(Array2D,Me%Limits2D)
+    !        Maximum = maxival(Array2D,Me%Limits2D)
+    !
+    !
+    !        dims(1) = Me%Limits%IUB - Me%Limits%ILB + 1
+    !        dims(2) = Me%Limits%JUB - Me%Limits%JLB + 1
+    !
+    !        !Creates the dataset with default properties
+    !        if (present(OutputNumber)) then
+    !            call ConstructDSName (Name, OutputNumber, AuxChar)
+    !        else
+    !            AuxChar = Name
+    !        endif
+    !        
+    !        !Opens Group, Creates Dset, etc
+    !        call PrepareWrite (Me%FileID, Rank, dims, space_id, prp_id, gr_id,      &
+    !                           dset_id, NumType, GroupName, trim(adjustl(AuxChar)))
+    !                           
+    !        AllocateMatrix = .false.
+    !                               
+    !        if (.not.Associated(Me%AuxMatrixes%DataR8_2D)) then
+    !            
+    !            AllocateMatrix = .true.
+    !            
+    !        else if (Me%AuxMatrixes%dims_R8_2D(1) /= dims (1) .or.                      &
+    !                 Me%AuxMatrixes%dims_R8_2D(2) /= dims (2)) then
+    !
+    !            deallocate(Me%AuxMatrixes%DataR8_2D)
+    !            nullify   (Me%AuxMatrixes%DataR8_2D)
+    !            
+    !            AllocateMatrix = .true.
+    !            
+    !        endif
+    !        
+    !        if (AllocateMatrix) then
+    !            allocate(Me%AuxMatrixes%DataR8_2D(Me%Limits%ILB:Me%Limits%IUB,          &
+    !                                            Me%Limits%JLB:Me%Limits%JUB))
+    !            Me%AuxMatrixes%dims_R8_2D(1:2) = dims(1:2)
+    !        endif
+    !    
+    !        call SetMatrixValue(Me%AuxMatrixes%DataR8_2D, Me%Limits2D, Array2D)
+    !
+    !        !Writes the data to the file
+    !        call h5dwrite_f  (dset_id, NumType,                                         &
+    !                          Me%AuxMatrixes%DataR8_2D,                                 &
+    !                          dims, STAT_CALL)
+    !        if (STAT_CALL /= SUCCESS_) stop 'HDF5WriteDataR8 - ModuleHDF5 - ERR08a'
+    !        
+    !        !Creates attributes
+    !        call CreateMinMaxAttribute (dset_id, Units, Minimum, Maximum)
+    !
+    !        !Updates attributes of Group
+    !        call UpdateMinMaxAttribute (gr_id, Minimum, Maximum)
+    !
+    !        !Closes Group, Releases Dset, etc
+    !        call FinishWrite (space_id, prp_id, gr_id, dset_id)
+    !
+    !        STAT_ = SUCCESS_
+    !
+    !    else
+    !
+    !        STAT_ = ready_
+    !
+    !    endif
+    !
+    !    if (present(STAT)) STAT = STAT_
+    !
+    !end subroutine HDF5WriteDataR8_2D
+                                   
+                                   
     subroutine HDF5WriteDataR8_2D (HDF5ID, GroupName, Name, Units,                   &
                                    Array2D, OutputNumber, STAT)
 
@@ -1760,15 +1866,20 @@ Module ModuleHDF5
                 allocate(Me%AuxMatrixes%DataR8_2D(Me%Limits%ILB:Me%Limits%IUB,          &
                                                 Me%Limits%JLB:Me%Limits%JUB))
                 Me%AuxMatrixes%dims_R8_2D(1:2) = dims(1:2)
+                call SetMatrixValue(Me%AuxMatrixes%DataR8_2D, Me%Limits2D, Array2D)
+                
+                !Writes the data to the file
+                call h5dwrite_f  (dset_id, NumType,                                         &
+                                  Me%AuxMatrixes%DataR8_2D,                                 &
+                                  dims, STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'HDF5WriteDataR8 - ModuleHDF5 - ERR08a'
+            else
+                !Writes the data to the file
+                call h5dwrite_f  (dset_id, NumType,                                         &
+                                  Array2D,                                 &
+                                  dims, STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'HDF5WriteDataR8 - ModuleHDF5 - ERR08b'
             endif
-        
-            call SetMatrixValue(Me%AuxMatrixes%DataR8_2D, Me%Limits2D, Array2D)
-
-            !Writes the data to the file
-            call h5dwrite_f  (dset_id, NumType,                                         &
-                              Me%AuxMatrixes%DataR8_2D,                                 &
-                              dims, STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'HDF5WriteDataR8 - ModuleHDF5 - ERR08a'
             
             !Creates attributes
             call CreateMinMaxAttribute (dset_id, Units, Minimum, Maximum)

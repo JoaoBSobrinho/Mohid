@@ -960,6 +960,7 @@ Module ModuleRunOff
         integer                                         :: DrainageNetworkID
         integer, optional, intent(OUT)                  :: STAT     
         integer, intent (OUT)                           :: DischargesID
+        logical                                         :: HasRunoffProperties
 
         !External----------------------------------------------------------------
         integer                                         :: ready_         
