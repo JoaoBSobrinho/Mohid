@@ -14583,7 +14583,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues")
         
-        if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+        if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut) .or. Me%HasRunoffProperties) then
             
             CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
        
@@ -14671,36 +14671,59 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
 
-        
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            if(Me%Output%WriteMaxFlowModulus) then
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
 
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     
-                    Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
                 
-                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                        Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
-                    else
-                        Me%VelocityModulus(i,j) = 0.0
-                    end if
+                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                        else
+                            Me%VelocityModulus(i,j) = 0.0
+                        end if
 
-                    if(Me%Output%WriteMaxFlowModulus) then
                         if (Me%FlowModulus(i, j) > Me%Output%MaxFlowModulus(i, j)) then
                             Me%Output%MaxFlowModulus(i, j) = Me%FlowModulus(i, j)
                         end if
-                    end if
-                else
-                    Me%FlowModulus(i,j)     = 0.0
-                    Me%VelocityModulus(i,j) = 0.0
-                endif
+                    else
+                        Me%FlowModulus(i,j)     = 0.0
+                        Me%VelocityModulus(i,j) = 0.0
+                    endif
 
-            enddo
-            enddo
-            !$OMP END DO NOWAIT 
-            !$OMP END PARALLEL
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                
+                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                        else
+                            Me%VelocityModulus(i,j) = 0.0
+                        end if
+                    else
+                        Me%FlowModulus(i,j)     = 0.0
+                        Me%VelocityModulus(i,j) = 0.0
+                    endif
+
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            endif
         
         endif
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
