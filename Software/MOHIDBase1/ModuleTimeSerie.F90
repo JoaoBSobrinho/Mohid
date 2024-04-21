@@ -109,6 +109,7 @@ Module ModuleTimeSerie
         module procedure WriteTimeSerie1
         module procedure WriteTimeSerie3
         module procedure WriteTimeSerie4
+        module procedure WriteTimeSerie1_R4
     end interface WriteTimeSerie
 
     !Parameter-----------------------------------------------------------------
@@ -2429,173 +2430,140 @@ cd2 :       if (Me%Points) then
     end subroutine WriteTimeSerie1
 
     !-------------------------------------------------------------------------- João Sobrinho
-!    subroutine WriteTimeSerieR4(TimeSerieID, Data1D, Data2D, Data3D, Real4 &
-!                                            factor, STAT)
-!
-!        !Arguments-------------------------------------------------------------
-!        integer                                           :: TimeSerieID
-!        real, dimension(:),       optional, pointer       :: Data1D
-!        real, dimension(:, :),    optional, pointer       :: Data2D
-!        real, dimension(:, :, :), optional, pointer       :: Data3D
-!        real,    optional, intent(IN)                     :: factor
-!        logical, optional                                 :: Real4
-!        integer, optional, intent(OUT)                    :: STAT
-!
-!
-!        !Local-----------------------------------------------------------------
-!        integer                                     :: ready_ , STAT_        
-!        type (T_Time)                               :: CurrentTime
-!        integer                                     :: IPC, IBC, iTimeSerie
-!        integer                                     :: i, j, k
-!        real                                        :: DT_Residual, DTaux, factor_
-!        real(4)                                     :: DataValue
-!        !----------------------------------------------------------------------
-!
-!        STAT_ = UNKNOWN_
-!
-!        call Ready(TimeSerieID, ready_)    
-!
-!        !Shorten variavel name
-!        IPC = Me%InternalPropertyCount
-!
-!cd1 :   if (ready_ .EQ. IDLE_ERR_) then
-!cd2 :       if (Me%Points) then
-!
-!                !Actualize the Property Count
-!                IPC = IPC + 1
-!                if (IPC > Me%NumberOfProperties) IPC = 1
-!            
-!                !Stores the actual compute time
-!                call GetComputeCurrentTime(Me%ObjTime, CurrentTime, STAT)
-!
-!                if (present(factor))  then
-!                    factor_ = factor
-!                else
-!                    factor_ = 1.
-!                endif
-!
-!
-!                !Calculates the residual values
-!                do iTimeSerie = 1, Me%NumberOfTimeSeries
-!                
-!                    if (Me%TimeSerie(iTimeSerie)%IgnoreON) cycle
-!
-!                    i = Me%TimeSerie(iTimeSerie)%LocalizationI
-!                    j = Me%TimeSerie(iTimeSerie)%LocalizationJ
-!                    k = Me%TimeSerie(iTimeSerie)%LocalizationK
-!                    
-!                    if (Me%TimeSerie(iTimeSerie)%IgnoreON) then
-!                        DataValue = FillValueReal
-!                    
-!                    else
-!
-!                        if (present(Data1D))   DataValue = Data1D(i)
-!                        if (present(Data2D))   DataValue = Data2D(i, j)
-!                        if (present(Data3D))   DataValue = Data3D(i, j, k)
-!
-!                         DataValue = DataValue * factor_
-!
-!
-!                        if(Me%ComputeResidual)then
-!
-!                            DT_Residual = CurrentTime - Me%TimeSerie(iTimeSerie)%LastResidual
-!                            DTaux       = Me%TimeSerie(iTimeSerie)%ResidualTime + DT_Residual
-!
-!                            if (DTaux > 0) then
-!
-!                                !Updates the Residual Values
-!                                Me%TimeSerie(iTimeSerie)%ResidualValues(IPC) =              &
-!                                    (Me%TimeSerie(iTimeSerie)%ResidualValues(IPC)           &
-!                                   * Me%TimeSerie(iTimeSerie)%ResidualTime                  &
-!                                   + DataValue * DT_Residual)/ DTaux
-!                        
-!                                !Updates the times
-!                                if (IPC == Me%NumberOfProperties) then
-!                                    Me%TimeSerie(iTimeSerie)%ResidualTime = DTaux
-!                                    Me%TimeSerie(iTimeSerie)%LastResidual = CurrentTime
-!                                endif
-!
-!                            end if
-!
-!                        end if
-!                    
-!                    endif
-!
-!                    !Stores the data in the buffer
-!                    if (CurrentTime .ge. Me%TimeSerie(iTimeSerie)%NextOutPut) then
-!                    
-!                        !Increments the internal buffer count
-!                        if (IPC == 1) then
-!                            Me%TimeSerie(iTimeSerie)%BufferCount =                  &
-!                                Me%TimeSerie(iTimeSerie)%BufferCount + 1 
-!                        endif
-!
-!                        !Shorten Variable
-!                        IBC = Me%TimeSerie(iTimeSerie)%BufferCount
-!
-!                        !Stores the current time
-!                        if (IPC == 1)                                         &
-!                            Me%TimeSerie(iTimeSerie)%TimeBuffer(IBC) = CurrentTime
-!                        
-!                            
-!                        if (Present(Data1D))                                        &
-!                            Me%TimeSerie(iTimeSerie)%TimeSerieData_R4(IPC, IBC) = DataValue
-!                        
-!                        if (Present(Data2D))                                        &
-!                            Me%TimeSerie(iTimeSerie)%TimeSerieData_R4(IPC, IBC) = DataValue
-!                        
-!                        if (Present(Data3D))                                        &
-!                            Me%TimeSerie(iTimeSerie)%TimeSerieData_R4(IPC, IBC) = DataValue
-!
-!                        
-!                        
-!                        !if (Present(Data1D_4))                                      &
-!                        !    Me%TimeSerie(iTimeSerie)%TimeSerieData(IPC, IBC) = DataValue
-!                        !
-!                        !if (Present(Data2D_4))                                      &
-!                        !    Me%TimeSerie(iTimeSerie)%TimeSerieData(IPC, IBC) = DataValue
-!                        !
-!                        !if (Present(Data3D_4))                                      &
-!                        !    Me%TimeSerie(iTimeSerie)%TimeSerieData(IPC, IBC) = DataValue
-!
-!
-!                        !Sets next output time
-!                        if (IPC == Me%NumberOfProperties)                           &
-!                            !Me%TimeSerie(iTimeSerie)%NextOutPut =                   &
-!                            !    CurrentTime + Me%TimeSerie(iTimeSerie)%DT
-!                            Me%TimeSerie(iTimeSerie)%NextOutPut =                   &
-!                                Me%TimeSerie(iTimeSerie)%NextOutPut + Me%TimeSerie(iTimeSerie)%DT                        
-!                    endif
-!
-!                    !Verifies if the buffer is full
-!                    if ((Me%TimeSerie(iTimeSerie)%BufferCount  ==                   &
-!                         Me%TimeSerie(iTimeSerie)%BufferSize)  .and.                &
-!                        (IPC == Me%NumberOfProperties))        then
-!                        call WriteBufferToFile(Me%TimeSerie(iTimeSerie), Me%NumberOfProperties)
-!                        Me%TimeSerie(iTimeSerie)%BufferCount = 0
-!                    endif
-!
-!                enddo
-!
-!                STAT_ = SUCCESS_
-!            else
-!                STAT_ = UNKNOWN_
-!            end if cd2
-!        else               
-!
-!            STAT_ = ready_
-!
-!        end if cd1
-!
-!
-!        Me%InternalPropertyCount = IPC
-!
-!        if (present(STAT))                                                          &
-!            STAT = STAT_
-!
-!        !----------------------------------------------------------------------
-!
-!    end subroutine WriteTimeSerieR4                                            
+    subroutine WriteTimeSerie1_R4(TimeSerieID, Data2D_4, STAT)
+
+        !Arguments-------------------------------------------------------------
+        integer                                           :: TimeSerieID
+        real(4), dimension(:, :), pointer, intent(IN)     :: Data2D_4
+        integer, optional, intent(OUT)                    :: STAT
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: ready_ , STAT_        
+        type (T_Time)                               :: CurrentTime
+        integer                                     :: IPC, IBC, iTimeSerie
+        integer                                     :: i, j, k
+        real                                        :: DT_Residual, DataValue, DTaux, factor_
+
+        !----------------------------------------------------------------------
+
+        STAT_ = UNKNOWN_
+
+        call Ready(TimeSerieID, ready_)    
+
+        !Shorten variavel name
+        IPC = Me%InternalPropertyCount
+
+cd1 :   if (ready_ .EQ. IDLE_ERR_) then
+cd2 :       if (Me%Points) then
+
+                !Actualize the Property Count
+                IPC = IPC + 1
+                if (IPC > Me%NumberOfProperties) IPC = 1
+            
+                !Stores the actual compute time
+                call GetComputeCurrentTime(Me%ObjTime, CurrentTime, STAT)
+
+                factor_ = 1.
+
+                !Calculates the residual values
+                do iTimeSerie = 1, Me%NumberOfTimeSeries
+                
+                    if (Me%TimeSerie(iTimeSerie)%IgnoreON) cycle
+
+                    i = Me%TimeSerie(iTimeSerie)%LocalizationI
+                    j = Me%TimeSerie(iTimeSerie)%LocalizationJ
+                    k = Me%TimeSerie(iTimeSerie)%LocalizationK
+                    
+                    if (Me%TimeSerie(iTimeSerie)%IgnoreON) then
+                        DataValue = FillValueReal
+                    
+                    else
+
+                         DataValue = Data2D_4   (i, j)
+
+                         DataValue = DataValue * factor_
+
+
+                        if(Me%ComputeResidual)then
+
+                            DT_Residual = CurrentTime - Me%TimeSerie(iTimeSerie)%LastResidual
+                            DTaux       = Me%TimeSerie(iTimeSerie)%ResidualTime + DT_Residual
+
+                            if (DTaux > 0) then
+
+                                !Updates the Residual Values
+                                Me%TimeSerie(iTimeSerie)%ResidualValues(IPC) =              &
+                                    (Me%TimeSerie(iTimeSerie)%ResidualValues(IPC)           &
+                                   * Me%TimeSerie(iTimeSerie)%ResidualTime                  &
+                                   + DataValue * DT_Residual)/ DTaux
+                        
+                                !Updates the times
+                                if (IPC == Me%NumberOfProperties) then
+                                    Me%TimeSerie(iTimeSerie)%ResidualTime = DTaux
+                                    Me%TimeSerie(iTimeSerie)%LastResidual = CurrentTime
+                                endif
+
+                            end if
+
+                        end if
+                    
+                    endif
+
+                    !Stores the data in the buffer
+                    if (CurrentTime .ge. Me%TimeSerie(iTimeSerie)%NextOutPut) then
+                    
+                        !Increments the internal buffer count
+                        if (IPC == 1) then
+                            Me%TimeSerie(iTimeSerie)%BufferCount =                  &
+                                Me%TimeSerie(iTimeSerie)%BufferCount + 1 
+                        endif
+
+                        !Shorten Variable
+                        IBC = Me%TimeSerie(iTimeSerie)%BufferCount
+
+                        !Stores the current time
+                        if (IPC == 1)                                         &
+                            Me%TimeSerie(iTimeSerie)%TimeBuffer(IBC) = CurrentTime
+
+                        Me%TimeSerie(iTimeSerie)%TimeSerieData(IPC, IBC) = DataValue
+
+                        !Sets next output time
+                        if (IPC == Me%NumberOfProperties)                           &
+                            !Me%TimeSerie(iTimeSerie)%NextOutPut =                   &
+                            !    CurrentTime + Me%TimeSerie(iTimeSerie)%DT
+                            Me%TimeSerie(iTimeSerie)%NextOutPut =                   &
+                                Me%TimeSerie(iTimeSerie)%NextOutPut + Me%TimeSerie(iTimeSerie)%DT                        
+                    endif
+
+                    !Verifies if the buffer is full
+                    if ((Me%TimeSerie(iTimeSerie)%BufferCount  ==                   &
+                         Me%TimeSerie(iTimeSerie)%BufferSize)  .and.                &
+                        (IPC == Me%NumberOfProperties))        then
+                        call WriteBufferToFile(Me%TimeSerie(iTimeSerie), Me%NumberOfProperties)
+                        Me%TimeSerie(iTimeSerie)%BufferCount = 0
+                    endif
+
+                enddo
+
+                STAT_ = SUCCESS_
+            else
+                STAT_ = UNKNOWN_
+            end if cd2
+        else               
+
+            STAT_ = ready_
+
+        end if cd1
+
+
+        Me%InternalPropertyCount = IPC
+
+        if (present(STAT))                                                          &
+            STAT = STAT_
+
+        !----------------------------------------------------------------------
+
+    end subroutine WriteTimeSerie1_R4                                     
     !--------------------------------------------------------------------------
 
     subroutine WriteTimeSerieLine(TimeSerieID, DataLine, ExternalCurrentTime, LineStored, CheckTime, NextDT, STAT)

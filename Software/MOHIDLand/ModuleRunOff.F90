@@ -706,7 +706,9 @@ Module ModuleRunOff
         type (T_Time)                               :: BeginTime
         type (T_Time)                               :: EndTime
         real(8), dimension(:,:), pointer            :: myWaterLevel             => null()
+        real(4), dimension(:,:), pointer            :: myWaterLevel_R4          => null()
         real(8), dimension(:,:), pointer            :: myWaterColumn            => null()
+        real(4), dimension(:,:), pointer            :: myWaterColumn_R4         => null()
         real,    dimension(:,:), pointer            :: InitialWaterColumn       => null()
         real,    dimension(:,:), pointer            :: InitialWaterLevel        => null()
         logical                                     :: PresentInitialWaterColumn = .false.
@@ -716,6 +718,7 @@ Module ModuleRunOff
         real(8), dimension(:,:), pointer            :: myWaterColumnAfterTransport => null() !for property transport
         real(8), dimension(:,:), pointer            :: myWaterVolumePred        => null() !to avoid negative collumns
         real(8), dimension(:,:), pointer            :: myWaterVolumeOld         => null()
+        real(4), dimension(:,:), pointer            :: myWaterVolume_R4         => null()
         real,    dimension(:,:), pointer            :: lFlowToChannels          => null() !Instantaneous Flow To Channels
         real,    dimension(:,:), pointer            :: iFlowToChannels          => null() !Integrated    Flow
         real,    dimension(:,:), pointer            :: iFlowRouteDFour          => null() !Integrated Route D4 flux
@@ -744,11 +747,17 @@ Module ModuleRunOff
         real,    dimension(:,:), pointer            :: OverLandCoefficientY     => null() !Manning or Chezy
         real,    dimension(:,:), pointer            :: MassError                => null() !Contains mass error
         real,    dimension(:,:), pointer            :: CenterFlowX              => null()
+        real(4),    dimension(:,:), pointer         :: CenterFlowX_R4           => null()
         real,    dimension(:,:), pointer            :: CenterFlowY              => null()
+        real(4),    dimension(:,:), pointer         :: CenterFlowY_R4           => null()
         real,    dimension(:,:), pointer            :: CenterVelocityX          => null()
         real,    dimension(:,:), pointer            :: CenterVelocityY          => null()
+        real(4),    dimension(:,:), pointer         :: CenterVelocityX_R4       => null()
+        real(4),    dimension(:,:), pointer         :: CenterVelocityY_R4       => null()
         real,    dimension(:,:), pointer            :: FlowModulus              => null()
+        real(4),    dimension(:,:), pointer         :: FlowModulus_R4           => null()
         real,    dimension(:,:), pointer            :: VelocityModulus          => null()
+        real(4),    dimension(:,:), pointer         :: VelocityModulus_R4       => null()
         integer, dimension(:,:), pointer            :: LowestNeighborI          => null() !Lowest Neighbor in the surroundings
         integer, dimension(:,:), pointer            :: LowestNeighborJ          => null() !Lowest Neighbor in the surroundings       
         integer, dimension(:,:), pointer            :: DFourSinkPoint           => null() !Point which can't drain with in X/Y only
@@ -4941,7 +4950,9 @@ do2:        do
         Me%BoundaryCells = 0
         
         allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         
         
         allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -4953,14 +4964,17 @@ do2:        do
         allocate(Me%myWaterColumnOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%Teste_real4            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        
+        allocate(Me%myWaterVolume_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%myWaterLevel            = null_real
+        Me%myWaterLevel_R4         = null_real
         Me%myWaterColumn           = null_real
+        Me%myWaterColumn_R4        = null_real
         !Me%InitialWaterColumn      = null_real Sobrinho
         !Me%InitialWaterLevel       = null_real Sobrinho
         Me%myWaterVolume           = 0.0        !For OpenMI
+        Me%myWaterVolume_R4        = 0.0
         Me%myWaterColumnOld        = null_real
-        Me%Teste_real4       = null_real
         Me%myWaterVolumeOld        = null_real
         Me%MassError               = 0
         Me%myWaterColumnAfterTransport = null_real
@@ -5019,11 +5033,17 @@ do2:        do
 
        
         allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%CenterFlowY    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%FlowModulus    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        allocate (Me%FlowModulus_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        allocate (Me%CenterVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        allocate (Me%CenterVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+        allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
 
         allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
@@ -7669,17 +7689,29 @@ doIter:         do while (iter <= Niter)
             endif
 
             !Calculates center flow and velocities (for output and next DT)
-            call ComputeCenterValues
-
+            if (Me%HasRunoffProperties) then
+                call ComputeCenterValues
+            else
+                call ComputeCenterValues_R4
+            endif
+            
             call ComputeNextDT (Niter)                                    
             
             !Output Results
-            if (Me%OutPut%Yes) then                   
-                call RunOffOutput
+            if (Me%OutPut%Yes) then
+                if (Me%HasRunoffProperties) then
+                    call RunOffOutput
+                else
+                    call RunOffOutput_R4
+                endif
             endif
             
             if(Me%OutPut%TimeSeries) then
-                call OutputTimeSeries
+                if (Me%HasRunoffProperties) then
+                    call OutputTimeSeries
+                else
+                    call OutputTimeSeries_R4
+                endif
             endif
             
             if (Me%Output%BoxFluxes) then
@@ -14764,6 +14796,193 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues")
         
     end subroutine ComputeCenterValues
+    
+    !--------------------------------------------------------------------------
+    subroutine ComputeCenterValues_R4 
+
+        !Arguments-------------------------------------------------------------
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: ILB, IUB, JLB, JUB
+        integer                                     :: CHUNK
+        real                                        :: FlowX, FlowY
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues_R4")
+            
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+       
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+            
+        if(.not. Me%ExtVar%Distortion) then
+
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
+
+            if (Me%GridIsRotated) then
+                !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                
+                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
+                            FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                    
+                            Me%CenterFlowX_R4(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
+                            Me%CenterFlowY_R4(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
+                            
+                            Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
+                            Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                        else
+                            Me%CenterFlowX_R4(i,j)     = 0.0
+                            Me%CenterFlowY_R4(i,j)     = 0.0
+                            Me%CenterVelocityX_R4(i,j) = 0.0
+                            Me%CenterVelocityY_R4(i,j) = 0.0
+                        end if
+                    else
+                        Me%CenterFlowX_R4(i,j)     = 0.0
+                        Me%CenterFlowY_R4(i,j)     = 0.0
+                        Me%CenterVelocityX_R4(i,j) = 0.0
+                        Me%CenterVelocityY_R4(i,j) = 0.0
+                    endif
+
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            Me%CenterFlowX_R4(i, j) = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
+                            Me%CenterFlowY_R4(i, j) = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                            Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
+                            Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                        else
+                            Me%CenterFlowX_R4(i,j)     = 0.0
+                            Me%CenterFlowY_R4(i,j)     = 0.0
+                            Me%CenterVelocityX_R4(i,j) = 0.0
+                            Me%CenterVelocityY_R4(i,j) = 0.0
+                        end if
+                    else
+                        Me%CenterFlowX_R4(i,j)     = 0.0
+                        Me%CenterFlowY_R4(i,j)     = 0.0
+                        Me%CenterVelocityX_R4(i,j) = 0.0
+                        Me%CenterVelocityY_R4(i,j) = 0.0
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            endif
+            
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
+
+        else
+            !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    
+                    FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
+                    FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                    
+                    Me%CenterFlowX_R4(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
+                    Me%CenterFlowY_R4(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
+                
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
+                        Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
+                    else
+                        Me%CenterVelocityX_R4(i,j) = 0.0
+                        Me%CenterVelocityY_R4(i,j) = 0.0
+                    end if
+
+                else
+
+                    Me%CenterFlowX_R4(i,j)     = 0.0
+                    Me%CenterFlowY_R4(i,j)     = 0.0
+                    Me%CenterVelocityX_R4(i,j) = 0.0
+                    Me%CenterVelocityY_R4(i,j) = 0.0
+
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        endif
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")
+
+        if(Me%Output%WriteMaxFlowModulus) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
+                        Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                        if (Me%FlowModulus_R4(i, j) > Me%Output%MaxFlowModulus(i, j)) then
+                            Me%Output%MaxFlowModulus(i, j) = real(Me%FlowModulus_R4(i, j), kind = 8)
+                        end if
+                    else
+                        Me%FlowModulus_R4(i,j)     = 0.0
+                        Me%VelocityModulus_R4(i,j) = 0.0
+                    end if
+                else
+                    Me%FlowModulus_R4(i,j)     = 0.0
+                    Me%VelocityModulus_R4(i,j) = 0.0
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
+                        Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                    else
+                        Me%FlowModulus_R4(i,j)     = 0.0
+                        Me%VelocityModulus_R4(i,j) = 0.0
+                    end if
+                else
+                    Me%FlowModulus_R4(i,j)     = 0.0
+                    Me%VelocityModulus_R4(i,j) = 0.0
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        endif
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")
+
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues_R4")
+        
+    end subroutine ComputeCenterValues_R4
 
     !--------------------------------------------------------------------------
     !subroutine ComputeCenterValues 
@@ -15096,91 +15315,78 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             !Writes Flow values
             !Writes the Water Column - should be on runoff
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%MyWaterColumn)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water column",          &
                                   "water column", "m",                          &
-                                  Array2D      = Me%Teste_real4,              &
+                                  Array2D      = Me%MyWaterColumn,              &
                                   OutputNumber = Me%OutPut%NextOutPut,          &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR040'
             
-            
-            
-
-       
             !Writes the Water Level
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%MyWaterLevel)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water level",           &
                                   "water level", "m",                           &
-                                  Array2D      = Me%Teste_real4,               &
+                                  Array2D      = Me%MyWaterLevel,               &
                                   OutputNumber = Me%OutPut%NextOutPut,          &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR050'
             
-
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterFlowX)
             !Writes Flow X
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow X",                                &
                                   "flow X",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%Teste_real4,                    &
+                                  Array2D      = Me%CenterFlowX,                    &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR60'
 
             
             !Writes Flow Y
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterFlowY)
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow Y",                                &
                                   "flow Y",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%Teste_real4,                    &
+                                  Array2D      = Me%CenterFlowY,                    &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR70'
 
              !Writes Flow Modulus
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%FlowModulus)
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/"//trim(GetPropertyName (FlowModulus_)),&
                                   trim(GetPropertyName (FlowModulus_)),             &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%Teste_real4,                    &
+                                  Array2D      = Me%FlowModulus,                    &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR80'
 
              !Writes Velocity X
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterVelocityX)
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityU_)),     &
                                   trim(GetPropertyName (VelocityU_)),                  &
                                   "m/s",                                               &
-                                  Array2D      = Me%Teste_real4,                   &
+                                  Array2D      = Me%CenterVelocityX,                   &
                                   OutputNumber = Me%OutPut%NextOutPut,                 &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR90'
 
              !Writes Velocity Y
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterVelocityY)
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityV_)),     &
                                   trim(GetPropertyName (VelocityV_)),                  &
                                   "m/s",                                               &
-                                  Array2D      = Me%Teste_real4,                   &
+                                  Array2D      = Me%CenterVelocityY,                   &
                                   OutputNumber = Me%OutPut%NextOutPut,                 &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR100'
 
             !Writes Velocity Modulus
-            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%VelocityModulus)
             call HDF5WriteData   (Me%ObjHDF5,                                                &
                                   "/Results/"//trim(GetPropertyName (VelocityModulus_)),     &
                                   trim(GetPropertyName (VelocityModulus_)),                  &
                                   "m/s",                                                     &
-                                  Array2D      = Me%Teste_real4,                         &
+                                  Array2D      = Me%VelocityModulus,                         &
                                   OutputNumber = Me%OutPut%NextOutPut,                       &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR110'
@@ -15260,6 +15466,218 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
          if (MonitorPerformance) call StopWatch ("ModuleRunOff", "RunOffOutput")
         
     end subroutine RunOffOutput
+    
+    
+    subroutine RunOffOutput_R4
+
+        !Arguments-------------------------------------------------------------
+
+        !Local-----------------------------------------------------------------
+        real,  dimension(:), pointer                :: AuxFlow
+        integer                                     :: STAT_CALL
+        integer                                     :: ILB, IUB, JLB, JUB
+        real, dimension(6)  , target                :: AuxTime
+        real, dimension(:)  , pointer               :: TimePointer
+        integer                                     :: dis
+        logical                                     :: dbg = .false.
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "RunOffOutput")
+
+        !Bounds
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+
+
+        if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+
+            !Writes current time
+            call ExtractDate   (Me%ExtVar%Now , AuxTime(1), AuxTime(2),         &
+                                                AuxTime(3), AuxTime(4),         &
+                                                AuxTime(5), AuxTime(6))
+            TimePointer => AuxTime
+
+            call HDF5SetLimits  (Me%ObjHDF5, 1, 6, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR10'
+
+            call HDF5WriteData  (Me%ObjHDF5, "/Time", "Time",                   &
+                                 "YYYY/MM/DD HH:MM:SS",                         &
+                                 Array1D      = TimePointer,                    &
+                                 OutputNumber = Me%OutPut%NextOutPut,           &
+                                 STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR20'
+
+            !Sets limits for next write operations
+            call HDF5SetLimits   (Me%ObjHDF5, ILB, IUB, JLB, JUB, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR30'
+            
+            
+                        
+            !Writes mask with grid cells above minimum water column height
+            call HDF5WriteData   (Me%ObjHDF5, "/Grid/OpenPoints",              &
+                                  "OpenPoints", "-",                            &
+                                  Array2D      = Me%OpenPoints,                 &
+                                  OutputNumber = Me%OutPut%NextOutPut,          &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR031'
+            
+            !Writes Flow values
+            !Writes the Water Column - should be on runoff
+            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn)
+            call HDF5WriteData   (Me%ObjHDF5, "/Results/water column",          &
+                                  "water column", "m",                          &
+                                  Array2D      = Me%MyWaterColumn_R4,           &
+                                  OutputNumber = Me%OutPut%NextOutPut,          &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR040'
+            
+            !Writes the Water Level
+            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel)
+            call HDF5WriteData   (Me%ObjHDF5, "/Results/water level",           &
+                                  "water level", "m",                           &
+                                  Array2D      = Me%MyWaterLevel_R4,            &
+                                  OutputNumber = Me%OutPut%NextOutPut,          &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR050'
+            
+            !Writes Flow X
+            call HDF5WriteData   (Me%ObjHDF5,                                       &
+                                  "/Results/flow X",                                &
+                                  "flow X",                                         &   
+                                  "m3/s",                                           &
+                                  Array2D      = Me%CenterFlowX_R4,                 &
+                                  OutputNumber = Me%OutPut%NextOutPut,              &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR60'
+
+            
+            !Writes Flow Y
+            call HDF5WriteData   (Me%ObjHDF5,                                       &
+                                  "/Results/flow Y",                                &
+                                  "flow Y",                                         &   
+                                  "m3/s",                                           &
+                                  Array2D      = Me%CenterFlowY_R4,                 &
+                                  OutputNumber = Me%OutPut%NextOutPut,              &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR70'
+
+             !Writes Flow Modulus
+            call HDF5WriteData   (Me%ObjHDF5,                                       &
+                                  "/Results/"//trim(GetPropertyName (FlowModulus_)),&
+                                  trim(GetPropertyName (FlowModulus_)),             &   
+                                  "m3/s",                                           &
+                                  Array2D      = Me%FlowModulus_R4,                 &
+                                  OutputNumber = Me%OutPut%NextOutPut,              &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR80'
+
+             !Writes Velocity X
+            call HDF5WriteData   (Me%ObjHDF5,                                          &
+                                  "/Results/"//trim(GetPropertyName (VelocityU_)),     &
+                                  trim(GetPropertyName (VelocityU_)),                  &
+                                  "m/s",                                               &
+                                  Array2D      = Me%CenterVelocityX_R4,                &
+                                  OutputNumber = Me%OutPut%NextOutPut,                 &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR90'
+
+             !Writes Velocity Y
+            call HDF5WriteData   (Me%ObjHDF5,                                          &
+                                  "/Results/"//trim(GetPropertyName (VelocityV_)),     &
+                                  trim(GetPropertyName (VelocityV_)),                  &
+                                  "m/s",                                               &
+                                  Array2D      = Me%CenterVelocityY_R4,                &
+                                  OutputNumber = Me%OutPut%NextOutPut,                 &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR100'
+
+            !Writes Velocity Modulus
+            call HDF5WriteData   (Me%ObjHDF5,                                                &
+                                  "/Results/"//trim(GetPropertyName (VelocityModulus_)),     &
+                                  trim(GetPropertyName (VelocityModulus_)),                  &
+                                  "m/s",                                                     &
+                                  Array2D      = Me%VelocityModulus_R4,                      &
+                                  OutputNumber = Me%OutPut%NextOutPut,                       &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR110'
+
+            
+            if (Me%Use1D2DInteractionMapping) then
+                
+                if (dbg) then
+                    
+                !River level from 1D model in river nodes
+                call HDF5WriteData   (Me%ObjHDF5, "//Results/node river level", &
+                                        "node river level", "m",                  &
+                                        Array2D      = Me%NodeRiverLevel,         &
+                                        OutputNumber = Me%OutPut%NextOutPut,      &
+                                        STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR191'   
+                    
+                !River level from 1D model interpolated in margin 2D cells
+                call HDF5WriteData   (Me%ObjHDF5, "//Results/margin river level", &
+                                        "margin river level", "m",                  &
+                                        Array2D      = Me%MarginRiverlevel,         &
+                                        OutputNumber = Me%OutPut%NextOutPut,        &
+                                        STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR192'      
+                    
+                !Flow to river in margin 2D cells
+                call HDF5WriteData   (Me%ObjHDF5, "//Results/margin flow to river", &
+                                        "margin flow to river", "m3/s",               &
+                                        Array2D      = Me%MarginFlowToChannels,       &
+                                        OutputNumber = Me%OutPut%NextOutPut,          &
+                                        STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR193'        
+                    
+                !Flow to river integrated in river cells
+                call HDF5WriteData   (Me%ObjHDF5, "//Results/node flow to river", &
+                                        "node flow to river", "m3/s",               &
+                                        Array2D      = Me%iFlowToChannels,          &
+                                        OutputNumber = Me%OutPut%NextOutPut,        &
+                                        STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR194'
+                
+                end if
+                    
+            endif
+           
+            !Writes everything to disk
+            call HDF5FlushMemory (Me%ObjHDF5, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR200'
+
+            Me%OutPut%NextOutPut = Me%OutPut%NextOutPut + 1
+
+        endif
+        
+
+        if (Me%OutPut%TimeSerieDischON) then
+        
+            if (Me%ExtVar%Now >=  Me%OutPut%NextOutPutDisch) then
+            
+                do dis = 1, Me%OutPut%DischargesNumber
+       
+                    allocate(AuxFlow(Me%OutPut%TS_Numb_DischProp))
+                    
+                    AuxFlow(1:Me%OutPut%TS_Numb_DischProp) = Me%OutPut%TimeSerieDischProp(dis,1:Me%OutPut%TS_Numb_DischProp)
+                    
+                    call WriteTimeSerieLine(Me%OutPut%TimeSerieDischID(dis), AuxFlow, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR210'
+                    
+                    deallocate(AuxFlow)
+                    
+                enddo    
+
+                Me%OutPut%NextOutPutDisch = Me%OutPut%NextOutPutDisch + Me%Output%OutPutDischDT
+                
+            endif                
+        endif              
+
+         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "RunOffOutput")
+        
+    end subroutine RunOffOutput_R4
 
     !--------------------------------------------------------------------------
     
@@ -15337,6 +15755,80 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
    
     end subroutine OutputTimeSeries
     
+    !--------------------------------------------------------------------------
+    subroutine OutputTimeSeries_R4
+
+        !Local-----------------------------------------------------------------
+        integer                                 :: STAT_CALL
+        
+        !----------------------------------------------------------------------
+       
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D = Me%MyWaterLevel,                                   &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR01'
+        
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D = Me%MyWaterColumn,                                  &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
+        
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D_4 = Me%CenterFlowX_R4,                                 &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
+
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D_4 = Me%CenterFlowY_R4,                                 &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
+
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D_4 = Me%FlowModulus_R4,                                 &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
+        
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D_4 = Me%CenterVelocityX_R4,                             &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
+
+        
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D_4 = Me%CenterVelocityY_R4,                             &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
+
+        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                            Data2D_4 = Me%VelocityModulus_R4,                             &
+                            STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
+     
+        if (Me%Use1D2DInteractionMapping) then
+            
+            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                Data2D = Me%NodeRiverLevel,                             &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR20'
+            
+            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                Data2D = Me%MarginRiverlevel,                           &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR30'
+            
+            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                Data2D = Me%MarginFlowToChannels,                       &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR40'
+            
+            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                Data2D = Me%iFlowToChannels,                            &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR50'            
+            
+        endif
+   
+    end subroutine OutputTimeSeries_R4
     !--------------------------------------------------------------------------
 
     subroutine ComputeBoxesWaterFluxes
