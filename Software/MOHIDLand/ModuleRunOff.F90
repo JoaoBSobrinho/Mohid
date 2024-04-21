@@ -14606,17 +14606,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 do i = ILB, IUB
 
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    
-                        FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                        FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
-                    
-                        Me%CenterFlowX(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
-                        Me%CenterFlowY(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
                 
                         if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
+                            FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                    
+                            Me%CenterFlowX(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
+                            Me%CenterFlowY(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
+                            
                             Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
                             Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
                         else
+                            Me%CenterFlowX(i,j)     = 0.0
+                            Me%CenterFlowY(i,j)     = 0.0
                             Me%CenterVelocityX(i,j) = 0.0
                             Me%CenterVelocityY(i,j) = 0.0
                         end if
@@ -14735,12 +14737,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
 
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    
-                    Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
                 
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
                         Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
                     else
+                        Me%FlowModulus(i,j)     = 0.0
                         Me%VelocityModulus(i,j) = 0.0
                     end if
                 else
