@@ -14631,7 +14631,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
 
             else
-            
+                if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = JLB, JUB
@@ -14666,7 +14666,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO NOWAIT 
                 !$OMP END PARALLEL
-            
+                if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
             endif
 
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
@@ -14724,9 +14724,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END DO NOWAIT 
                 !$OMP END PARALLEL
             endif
-        
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
         endif
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
+
 
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues")
         
