@@ -791,6 +791,7 @@ Module ModuleRunOff
         integer, dimension(:,:), pointer            :: RiverNodeMap             => null() !i,j indexes of grid cell of river points where interaction occurs (for external model)
         real, dimension(:,:), pointer               :: MarginRiverLevel         => null() !river level at margin points
         real, dimension(:,:), pointer               :: MarginFlowToChannels     => null() !flow to channels at margin points
+        real(4), dimension(:,:), pointer            :: Teste_real4     => null()
         
         real                                        :: MinSlope                 = null_real
         logical                                     :: AdjustSlope              = .false.
@@ -4952,12 +4953,14 @@ do2:        do
         allocate(Me%myWaterColumnOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%Teste_real4            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%myWaterLevel            = null_real
         Me%myWaterColumn           = null_real
         !Me%InitialWaterColumn      = null_real Sobrinho
         !Me%InitialWaterLevel       = null_real Sobrinho
         Me%myWaterVolume           = 0.0        !For OpenMI
         Me%myWaterColumnOld        = null_real
+        Me%Teste_real4       = null_real
         Me%myWaterVolumeOld        = null_real
         Me%MassError               = 0
         Me%myWaterColumnAfterTransport = null_real
@@ -15093,9 +15096,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             !Writes Flow values
             !Writes the Water Column - should be on runoff
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%MyWaterColumn)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water column",          &
                                   "water column", "m",                          &
-                                  Array2D      = Me%MyWaterColumn,              &
+                                  Array2D      = Me%Teste_real4,              &
                                   OutputNumber = Me%OutPut%NextOutPut,          &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR040'
@@ -15105,72 +15109,78 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
        
             !Writes the Water Level
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%MyWaterLevel)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water level",           &
                                   "water level", "m",                           &
-                                  Array2D      = Me%MyWaterLevel,               &
+                                  Array2D      = Me%Teste_real4,               &
                                   OutputNumber = Me%OutPut%NextOutPut,          &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR050'
             
 
-
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterFlowX)
             !Writes Flow X
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow X",                                &
                                   "flow X",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%CenterFlowX,                    &
+                                  Array2D      = Me%Teste_real4,                    &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR60'
 
             
             !Writes Flow Y
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterFlowY)
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow Y",                                &
                                   "flow Y",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%CenterFlowY,                    &
+                                  Array2D      = Me%Teste_real4,                    &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR70'
 
              !Writes Flow Modulus
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%FlowModulus)
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/"//trim(GetPropertyName (FlowModulus_)),&
                                   trim(GetPropertyName (FlowModulus_)),             &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%FlowModulus,                    &
+                                  Array2D      = Me%Teste_real4,                    &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR80'
 
-             !Writes Velocity X 
+             !Writes Velocity X
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterVelocityX)
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityU_)),     &
                                   trim(GetPropertyName (VelocityU_)),                  &
                                   "m/s",                                               &
-                                  Array2D      = Me%CenterVelocityX,                   &
+                                  Array2D      = Me%Teste_real4,                   &
                                   OutputNumber = Me%OutPut%NextOutPut,                 &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR90'
 
-             !Writes Velocity Y 
+             !Writes Velocity Y
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%CenterVelocityY)
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityV_)),     &
                                   trim(GetPropertyName (VelocityV_)),                  &
                                   "m/s",                                               &
-                                  Array2D      = Me%CenterVelocityY,                   &
+                                  Array2D      = Me%Teste_real4,                   &
                                   OutputNumber = Me%OutPut%NextOutPut,                 &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR100'
 
             !Writes Velocity Modulus
+            call SetMatrixValue(Me%Teste_real4, Me%Size, Me%VelocityModulus)
             call HDF5WriteData   (Me%ObjHDF5,                                                &
                                   "/Results/"//trim(GetPropertyName (VelocityModulus_)),     &
                                   trim(GetPropertyName (VelocityModulus_)),                  &
                                   "m/s",                                                     &
-                                  Array2D      = Me%VelocityModulus,                         &
+                                  Array2D      = Me%Teste_real4,                         &
                                   OutputNumber = Me%OutPut%NextOutPut,                       &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR110'
