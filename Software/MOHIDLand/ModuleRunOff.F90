@@ -7500,7 +7500,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 endif
                 
                 call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0)
-                call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
+                if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
                 if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)
                 
 doIter:         do while (iter <= Niter)
@@ -14582,123 +14582,127 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: FlowX, FlowY
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues")
-
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-       
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
-            
-        if(.not. Me%ExtVar%Distortion) then
-
-            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
-
-            !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
-
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    
-                    FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                    FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
-                    
-                    Me%CenterFlowX(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
-                    Me%CenterFlowY(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
-                
-                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                        Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
-                        Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
-                    else
-                        Me%CenterVelocityX(i,j) = 0.0
-                        Me%CenterVelocityY(i,j) = 0.0
-                    end if
-                else
-                    Me%CenterFlowX(i,j)     = 0.0
-                    Me%CenterFlowY(i,j)     = 0.0
-                    Me%CenterVelocityX(i,j) = 0.0
-                    Me%CenterVelocityY(i,j) = 0.0
-                endif
-
-            enddo
-            enddo
-            !$OMP END DO NOWAIT 
-            !$OMP END PARALLEL
-
-            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
-
-        else
-            
-            !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
-
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    
-                    FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                    FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
-                    
-                    Me%CenterFlowX(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
-                    Me%CenterFlowY(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
-                
-                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                        Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
-                        Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
-                    else
-                        Me%CenterVelocityX(i,j) = 0.0
-                        Me%CenterVelocityY(i,j) = 0.0
-                    end if
-
-                else
-
-                    Me%CenterFlowX(i,j)     = 0.0
-                    Me%CenterFlowY(i,j)     = 0.0
-                    Me%CenterVelocityX(i,j) = 0.0
-                    Me%CenterVelocityY(i,j) = 0.0
-
-                endif
-
-            enddo
-            enddo
-            !$OMP END DO NOWAIT 
-            !$OMP END PARALLEL
-            
-        endif
-
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
-
         
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = JLB, JUB
-        do i = ILB, IUB
+        if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+            
+            CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+       
+            ILB = Me%WorkSize%ILB
+            IUB = Me%WorkSize%IUB
+            JLB = Me%WorkSize%JLB
+            JUB = Me%WorkSize%JUB
+            
+            if(.not. Me%ExtVar%Distortion) then
 
-            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
+
+                !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     
-                Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
+                        FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                    
+                        Me%CenterFlowX(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
+                        Me%CenterFlowY(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
                 
-                if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                    Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
-                else
-                    Me%VelocityModulus(i,j) = 0.0
-                end if
+                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
+                            Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                        else
+                            Me%CenterVelocityX(i,j) = 0.0
+                            Me%CenterVelocityY(i,j) = 0.0
+                        end if
+                    else
+                        Me%CenterFlowX(i,j)     = 0.0
+                        Me%CenterFlowY(i,j)     = 0.0
+                        Me%CenterVelocityX(i,j) = 0.0
+                        Me%CenterVelocityY(i,j) = 0.0
+                    endif
 
-                if(Me%Output%WriteMaxFlowModulus) then
-                    if (Me%FlowModulus(i, j) > Me%Output%MaxFlowModulus(i, j)) then
-                        Me%Output%MaxFlowModulus(i, j) = Me%FlowModulus(i, j)
-                    end if
-                end if
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+
+                if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
+
             else
-                Me%FlowModulus(i,j)     = 0.0
-                Me%VelocityModulus(i,j) = 0.0
+            
+                !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    
+                        FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
+                        FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                    
+                        Me%CenterFlowX(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
+                        Me%CenterFlowY(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
+                
+                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
+                            Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
+                        else
+                            Me%CenterVelocityX(i,j) = 0.0
+                            Me%CenterVelocityY(i,j) = 0.0
+                        end if
+
+                    else
+
+                        Me%CenterFlowX(i,j)     = 0.0
+                        Me%CenterFlowY(i,j)     = 0.0
+                        Me%CenterVelocityX(i,j) = 0.0
+                        Me%CenterVelocityY(i,j) = 0.0
+
+                    endif
+
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            
             endif
 
-        enddo
-        enddo
-        !$OMP END DO NOWAIT 
-        !$OMP END PARALLEL
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
+
+        
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    
+                    Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                    else
+                        Me%VelocityModulus(i,j) = 0.0
+                    end if
+
+                    if(Me%Output%WriteMaxFlowModulus) then
+                        if (Me%FlowModulus(i, j) > Me%Output%MaxFlowModulus(i, j)) then
+                            Me%Output%MaxFlowModulus(i, j) = Me%FlowModulus(i, j)
+                        end if
+                    end if
+                else
+                    Me%FlowModulus(i,j)     = 0.0
+                    Me%VelocityModulus(i,j) = 0.0
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        
+        endif
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
 
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues")
