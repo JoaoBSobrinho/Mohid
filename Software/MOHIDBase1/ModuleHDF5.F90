@@ -2371,7 +2371,7 @@ Module ModuleHDF5
             stop 'PrepareWrite - ModuleHDF5 - ERR03'
         endif
         !Sets the compression
-        call h5pset_deflate_f(prp_id, 3, STAT_CALL) 
+        call h5pset_deflate_f(prp_id, 2, STAT_CALL) 
         if (STAT_CALL /= SUCCESS_) stop 'PrepareWrite - ModuleHDF5 - ERR04'
 
         !Verifies if group exists, if not create it
