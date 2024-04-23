@@ -14449,7 +14449,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !real                                        :: AreaZX, AreaZY !, Width
         real                                        :: WaveHeight, Celerity, MaxFlow
         real                                        :: InflowVolume, OutflowVolume
-
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue")
         !Routes water outside the watershed if water is higher then a given treshold values
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
@@ -14546,7 +14547,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
 
         Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + Me%BoundaryFlowVolume
-
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ImposeBoundaryValue")
     end subroutine ImposeBoundaryValue
     
     !--------------------------------------------------------------------------
