@@ -1084,15 +1084,26 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
             !Output Results
             if (Me%OutPut%Yes .or. Me%OutPut%TimeSeries) then
-                call ComputeCenterValues      
+                if (Me%HasRunoffProperties) then
+                    call ComputeCenterValues
+                else
+                    call ComputeCenterValues_R4
+                endif
+                
             endif
             
-            if(Me%OutPut%Yes)then
+            if (Me%HasRunoffProperties) then
                 call RunOffOutput
+            else
+                call RunOffOutput_R4
             endif
             
             if(Me%OutPut%TimeSeries) then
-                call OutputTimeSeries
+                if (Me%HasRunoffProperties) then
+                    call OutputTimeSeries
+                else
+                    call OutputTimeSeries_R4
+                endif
             endif
 
             if (Me%Output%WriteMaxWaterColumn .or. Me%Output%WriteMaxFloodRisk) then
