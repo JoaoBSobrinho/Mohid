@@ -15879,7 +15879,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: CHUNK
 
         !Begin-----------------------------------------------------------------        
-
+        if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFlooding")
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
         JLB = Me%WorkSize%JLB
@@ -15970,7 +15970,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
         endif
 
-
+        if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFlooding")
     end subroutine OutputFlooding
 
     !---------------------------------------------------------------------------
