@@ -15875,7 +15875,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
-        real                                    :: SumArea, WeightedVelocity
+        real                                    :: SumArea, WeightedVelocity, FloodRisk
         integer                                 :: CHUNK
 
         !Begin-----------------------------------------------------------------        
@@ -15890,7 +15890,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
    
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
-        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = JLB, JUB
         do i = ILB, IUB
@@ -15907,12 +15907,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%Output%TimeOfMaxWaterColumn(i,j) = Me%ExtVar%Now - Me%BeginTime
                    
                 endif
-                if ((Me%myWaterColumn(i, j) * (Me%VelocityModulus (i, j) + Me%Output%FloodRiskVelCoef))        &
-                     > Me%Output%MaxFloodRisk(i,j)) then
-                    Me%Output%MaxFloodRisk(i,j) = Me%myWaterColumn(i, j)                                       &
-                                                  * (Me%VelocityModulus (i, j) + Me%Output%FloodRiskVelCoef)
+                
+                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                    
+                    FloodRisk = Me%myWaterColumn(i, j) * (Me%VelocityModulus (i, j) + Me%Output%FloodRiskVelCoef)
+                    
+                    if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
+                        Me%Output%MaxFloodRisk(i,j) = FloodRisk
+                    endif
                 endif
-
             endif
 
         enddo
