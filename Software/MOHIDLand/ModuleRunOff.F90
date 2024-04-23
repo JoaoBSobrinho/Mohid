@@ -995,7 +995,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call AllocateInstance
             
             Me%ModelName = ModelName
-            
+            Me%HasRunoffProperties = HasRunoffProperties
             !Associates External Instances
             Me%ObjTime            = AssociateInstance (mTIME_           , ComputeTimeID     )
             Me%ObjHorizontalGrid  = AssociateInstance (mHORIZONTALGRID_ , HorizontalGridID  )
