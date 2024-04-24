@@ -1056,11 +1056,19 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             !Constructs Boundary Cells
             if (Me%ImposeBoundaryValue) then
-
-                call ConstructWaterLevelBoundaryConditions
-
+                if (Me%HasRunoffProperties) then
+                    call ConstructWaterLevelBoundaryConditions
+                else
+                    
+                    call ConstructWaterLevelBoundaryConditions_2
+                endif
+                
                 if (Me%BoundaryImposedLevelInTime)then
-                    call ModifyBoundaryLevel
+                    if (Me%HasRunoffProperties) then
+                        call ModifyBoundaryLevel
+                    else
+                        call ModifyBoundaryLevel_2
+                    endif
                 endif
                 
             endif
@@ -4037,6 +4045,189 @@ do4:            do di = -1, 1
         
     end subroutine ConstructWaterLevelBoundaryConditions
     
+    
+    !--------------------------------------------------------------------------
+    
+    subroutine ConstructWaterLevelBoundaryConditions_2 ()
+        
+        !Arguments-------------------------------------------------------------
+        !Local-----------------------------------------------------------------
+        integer                                      :: CHUNK, i, j, di, dj, k
+        real                                         :: Sum
+        integer                                      :: STAT_CALL, n, line, NumberOfBoundaryCells
+        integer, dimension(:),   pointer             :: VectorI, VectorJ, VectorK
+        !Begin-----------------------------------------------------------------
+
+   
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        ! Determine number of boundary cells
+        call NumberOfBoundaryCellsToAllocate(NumberOfBoundaryCells)
+        
+        allocate(Me%WaterLevelBoundaryValue_1D(NumberOfBoundaryCells))
+        WaterLevelBoundaryValue_1D(:) = Me%BoundaryValue
+        
+        allocate(Me%BoundaryCells_1D(NumberOfBoundaryCells)
+        allocate(Me%BoundaryCells_I(NumberOfBoundaryCells)
+        allocate(Me%BoundaryCells_J(NumberOfBoundaryCells)
+        
+        Me%BoundaryCells_1D = 0.0
+        !Start filling BoundaryCells
+        n = 1
+        !Best not paralelize
+do1:    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+do2:    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
+
+                !Check if near a boundary point (no diagonal)
+do3:            do dj = -1, 1
+do4:            do di = -1, 1
+                    Sum = dj + di
+                    if ((Me%ExtVar%BasinPoints(i+di, j+dj) == 0) .and. (Sum .eq. -1 .or. Sum .eq. 1)) then
+                        if(Me%ExtVar%Topography (i, j)  < Me%MaxDtmForBoundary)then
+                            Me%BoundaryCells(n) = 1
+                            Me%BoundaryCells_I(n) = i
+                            Me%BoundaryCells_J(n) = j
+                            n = n+1
+                            exit do3 
+                        endif
+                    endif
+                enddo do4
+                enddo do3
+                
+            endif
+        enddo do2
+        enddo do1
+
+        if (Me%StormWaterModel) then
+            !set every basin point in contact with the 1D cells as non boundary cell
+            do n = 1, Me%NumberOfOpenChannelLinks
+                i = Me%OpenChannelLinks(n)%I
+                j = Me%OpenChannelLinks(n)%J
+                do k = 1, NumberOfBoundaryCells
+                    if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
+                        Me%BoundaryCells(n) = 0
+                        exit
+                    endif
+                enddo
+            enddo
+        endif
+        
+        if(Me%HasBoundaryLines)then
+
+            do line = 1, Me%NumberOfBoundaryLines
+
+                Me%BoundaryLines(line)%nCells = 0
+        
+                call GetCellZInterceptByLine(Me%ObjHorizontalGrid, Me%BoundaryLines(line)%Line, &
+                                             Me%ExtVar%BasinPoints, VectorI, VectorJ, VectorK,  &
+                                             Me%BoundaryLines(line)%nCells, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'ConstructWaterLevelBoundaryConditions - ModuleRunOff - ERR01'
+        
+                do n = 1, Me%BoundaryLines(line)%nCells
+                    
+                    i = VectorI(n)
+                    j = VectorJ(n)
+                    
+                    do k = 1, NumberOfBoundaryCells
+                        if (VectorI(n) == Me%BoundaryCells_I(k) .and. VectorJ(n) == Me%BoundaryCells_J(k)) then
+                            Me%BoundaryCells(n) = 1
+                            exit
+                        endif
+                    enddo
+
+                    !if boundary line has fixed water level set it here and don't change it again
+                    if(.not. Me%BoundaryLines(line)%Variable)then
+                        do k = 1, NumberOfBoundaryCells
+                            if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
+                                 Me%WaterLevelBoundaryValue_1D(k) = Me%BoundaryLines(line)%WaterLevelValue
+                                exit
+                            endif
+                        enddo
+                       
+                    endif
+                enddo
+            enddo
+        end if
+        
+        
+    end subroutine ConstructWaterLevelBoundaryConditions_2
+    
+    !-------------------------------------------------------------------------- 
+    subroutine NumberOfBoundaryCellsToAllocate(NumberOfBoundaryCells)
+        !Arguments-------------------------------------------------------------
+        !Local-----------------------------------------------------------------
+        integer                                      :: CHUNK, i, j, di, dj
+        real                                         :: Sum
+        integer, intent(INOUT)                       :: NumberOfBoundaryCells
+        integer                                      :: STAT_CALL, n, line
+        integer, dimension(:),   pointer             :: VectorI, VectorJ, VectorK
+        !Begin-----------------------------------------------------------------
+
+   
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        NumberOfBoundaryCells = 0
+        !$OMP PARALLEL PRIVATE(I,J,di,dj,Sum)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:NumberOfBoundaryCells)
+do1:    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+do2:    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
+
+                !Check if near a boundary point (no diagonal)
+do3:            do dj = -1, 1
+do4:            do di = -1, 1
+                    Sum = dj + di
+                    if ((Me%ExtVar%BasinPoints(i+di, j+dj) == 0) .and. (Sum .eq. -1 .or. Sum .eq. 1)) then
+                        if(Me%ExtVar%Topography (i, j)  < Me%MaxDtmForBoundary)then
+                            NumberOfBoundaryCells = NumberOfBoundaryCells + 1
+                            exit do3 
+                        endif
+                    endif
+                enddo do4
+                enddo do3
+                
+            endif
+        enddo do2
+        enddo do1
+        !$OMP END DO NOWAIT
+        !$OMP END PARALLEL
+        
+        if(Me%HasBoundaryLines)then
+
+            do line = 1, Me%NumberOfBoundaryLines
+
+                Me%BoundaryLines(line)%nCells = 0
+        
+                call GetCellZInterceptByLine(Me%ObjHorizontalGrid, Me%BoundaryLines(line)%Line, &
+                                             Me%ExtVar%BasinPoints, VectorI, VectorJ, VectorK,  &
+                                             Me%BoundaryLines(line)%nCells, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'NumberOfBoundaryCellsToAllocate - ModuleRunOff - ERR01' 
+        
+                if (Me%BoundaryLines(line)%nCells < 1) then
+                    write(*,*) 'Boundary line does not intercept any cells'       
+                    stop 'ConstructWaterLevelBoundaryConditions - ModuleRunOff - ERR02' 
+                endif
+                
+                allocate(Me%BoundaryLines(line)%I(1:Me%BoundaryLines(line)%nCells))
+                allocate(Me%BoundaryLines(line)%J(1:Me%BoundaryLines(line)%nCells))
+                
+                do n = 1, Me%BoundaryLines(line)%nCells
+
+                    Me%BoundaryLines(line)%I(n) = VectorI(n)
+                    Me%BoundaryLines(line)%J(n) = VectorJ(n)
+
+                    if(Me%ExtVar%BasinPoints(VectorI(n),VectorJ(n)) == 0)then
+                        stop 'NumberOfBoundaryCellsToAllocate - ModuleRunOff - ERR03' 
+                    endif
+                enddo
+                
+                NumberOfBoundaryCells = NumberOfBoundaryCells + Me%BoundaryLines(line)%nCells
+
+            enddo
+        end if 
+        
+    end subroutine NumberOfBoundaryCellsToAllocate
     !--------------------------------------------------------------------------   
 
     subroutine ReadBoundaryConditions
@@ -4350,6 +4541,46 @@ do2:        do
         endif
 
     end subroutine ModifyBoundaryLevel
+    
+    !--------------------------------------------------------------------------
+    
+    subroutine ModifyBoundaryLevel_2 ()
+
+        !Local-----------------------------------------------------------------
+        real                                    :: WaterLevelValue
+        integer                                 :: nLine, n
+        !Begin-----------------------------------------------------------------
+
+        if(Me%HasBoundaryLines)then
+
+            do nLine = 1, Me%NumberOfBoundaryLines
+                if(Me%BoundaryLines(nLine)%Variable)then
+
+                    call UpDateLevelValue(Me%BoundaryLines(nLine)%TimeSerie, WaterLevelValue, Me%ExtVar%Now)
+
+                    do n = 1, Me%BoundaryLines(nLine)%nCells
+                        i = Me%BoundaryLines(nLine)%I(n)
+                        j = Me%BoundaryLines(nLine)%J(n)
+                        do k = 1, size(Me%WaterLevelBoundaryValue_1D)
+                            if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
+                                Me%WaterLevelBoundaryValue_1D(k) = WaterLevelValue
+                                exit
+                            endif
+                        enddo
+                    enddo
+
+                endif
+            enddo
+        else
+            
+            !boundary values are given by the timeserie value in all boundary grid cells
+            call UpDateLevelValue(Me%ImposedLevelTS%TimeSerie, Me%BoundaryValue, Me%ExtVar%Now)
+
+            Me%WaterLevelBoundaryValue_1D(:) = WaterLevelValue
+
+        endif
+
+    end subroutine ModifyBoundaryLevel_2
 
     !--------------------------------------------------------------------------
 
@@ -4957,9 +5188,12 @@ do2:        do
             Me%iFlowRouteDFour       = 0.0   !Sets values initially to zero, so  
         endif
         
-        allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%BoundaryCells = 0
+        if (Me%HasRunoffProperties) then
+            allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%BoundaryCells = 0
+        endif
         
+    
         allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -7696,7 +7930,11 @@ doIter:         do while (iter <= Niter)
             if (Me%ImposeBoundaryValue) then
 
                 if (Me%BoundaryImposedLevelInTime)then
-                    call ModifyBoundaryLevel
+                    if (Me%HasRunoffProperties) then
+                        call ModifyBoundaryLevel
+                    else
+                        call ModifyBoundaryLevel_2
+                    endif
                 endif
                 
                 if (Me%BoundaryMethod == ComputeFlow_) then
@@ -14553,6 +14791,120 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
     
+    subroutine ImposeBoundaryValue_1D ()
+    
+        !Arguments-------------------------------------------------------------
+        !real                                        :: LocalDT
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, di, dj
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: dh, dVOl
+        !logical                                     :: NearBoundary
+        !real                                        :: AreaZX, AreaZY !, Width
+        real                                        :: WaveHeight, Celerity, MaxFlow
+        real                                        :: InflowVolume, OutflowVolume, WaterLevelBoundaryValue
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
+        !Routes water outside the watershed if water is higher then a given treshold values
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        
+        !Default is zero
+        call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
+
+        Me%BoundaryFlowVolume = 0.0
+        InflowVolume          = 0.0 
+        OutflowVolume         = 0.0
+
+        
+        !Sets Boundary values
+        !go through all the boundary cells instead of the entire matrix
+        do n = 1, size(Me%Me%WaterLevelBoundaryValue_1D)
+            
+            i = Me%BoundaryCells_I(n)
+            j = Me%BoundaryCells_J(n)
+            WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
+            if (Me%BoundaryCells_1D(n)  == BasinPoint) then
+                if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
+                    if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
+                        
+                        dh = Me%myWaterLevel (i, j) - WaterLevelBoundaryValue
+                    
+                        if (abs(dh) > Me%MinimumWaterColumn) then
+                    
+                            !celerity is limited by water column on the flow direction (higher level)
+                            WaveHeight = max(Me%myWaterLevel(i, j), WaterLevelBoundaryValue) - Me%ExtVar%Topography (i, j)
+                    
+                            ![m/s] = [m/s2 * m]^1/2 = [m/s]
+                            Celerity = sqrt(Gravity * WaveHeight)
+
+                            !U direction - use middle area because in closed faces does not exist AreaU
+                            !if dh negative, minimum is dh, if positive minimum is dh until boundary
+                            !level is lower than terrain and wave height is used (water column)
+                            !dh negative flow positive (entering runoff)
+                            do dj = 0, 1
+                                if ((Me%ComputeFaceU(i,j+dj) == 0)) then
+                                    ![m3/s] = [m3/s] - [m] * [m] * [m/s]
+                                    Me%iFlowBoundary(i, j) = Me%iFlowBoundary(i, j) - Me%ExtVar%DVY(i,j) *      &
+                                                             min(dh, WaveHeight) * Celerity
+                                endif
+                            enddo
+
+                            !V direction - use middle area because in closed faces does not exist AreaV
+                            do di = 0, 1
+                                if ((Me%ComputeFaceV(i+di,j) == 0)) then
+                                    ![m3/s] = [m3/s] - [m] * [m] * [m/s]
+                                    Me%iFlowBoundary(i, j) = Me%iFlowBoundary(i, j) - Me%ExtVar%DUX(i,j) *      &
+                                                             min(dh, WaveHeight) * Celerity
+                                endif
+                            enddo
+                    
+                            !cant remove more than up to boundary or water column if boundary lower than topography 
+                            !or add more up to boundary level if boundary level higher
+                            !m3/s = m * m2 / s
+                            MaxFlow = - min(dh, WaveHeight) *  Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
+                    
+                            !Me%iFlowBoundary(i, j)  = max (Me%iFlowBoundary(i, j), MaxFlow)
+                            if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
+                                Me%iFlowBoundary(i, j) = MaxFlow
+                            endif                    
+                    
+                            !dVol
+                            dVol = Me%iFlowBoundary(i, j) * Me%ExtVar%DT
+                        
+                            !Updates Water Volume
+                            Me%myWaterVolume (i, j)   = Me%myWaterVolume (i, j)   + dVol 
+
+                            Me%BoundaryFlowVolume     = Me%BoundaryFlowVolume + dVol
+
+                            if(dVol > 0.0)then
+                                Me%TotalBoundaryInflowVolume    = Me%TotalBoundaryInflowVolume + dVol
+                            else
+                                Me%TotalBoundaryOutflowVolume   = Me%TotalBoundaryOutflowVolume + dVol
+                            endif
+                        
+                            !Updates Water Column
+                            Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / Me%ExtVar%GridCellArea(i, j)
+
+                            !Updates Water Level
+                            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Me%ExtVar%Topography(i, j)
+                        endif
+                    endif
+                endif
+            endif
+        enddo
+
+        Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + Me%BoundaryFlowVolume
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
+        
+    end subroutine ImposeBoundaryValue_1D
+    
+    !--------------------------------------------------------------------------
+    
     !old formulation with instantaneous going to boundary level
     subroutine ImposeBoundaryValue_v2
     
@@ -14580,18 +14932,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Me%ExtVar%Topography (i, j)  < Me%MaxDtmForBoundary .and. &   !Low land point where to imposes BC
                 (Me%AllowBoundaryInflow                          .or.     &
                  Me%myWaterLevel      (i, j)  > Me%WaterLevelBoundaryValue(i,j))) then        !Level higher then imposed level
-
-!                !Check if near a boundary point
-!                NearBoundary = .false.
-!                do dj = -1, 1
-!                do di = -1, 1
-!                    if (Me%ExtVar%BasinPoints(i+di, j+dj) == 0) then
-!                        NearBoundary = .true.
-!                    endif
-!                enddo
-!                enddo
-!
-!                if (NearBoundary) then
 
                     !Necessary Variation in height
                     Me%myWaterLevel (i, j) = max(Me%WaterLevelBoundaryValue(i,j), Me%ExtVar%Topography (i, j))
@@ -16833,7 +17173,11 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
 
                 if (Me%ImposeBoundaryValue) then
 
-                    deallocate(Me%WaterLevelBoundaryValue)
+                    if (Me%HasRunoffProperties) then
+                        deallocate(Me%WaterLevelBoundaryValue)
+                    else
+                        deallocate(Me%WaterLevelBoundaryValue_1D)
+                    endif
 
                     if(Me%BoundaryImposedLevelInTime)then
 
@@ -16908,7 +17252,10 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 deallocate (Me%iFlowBoundary)
                 if (Me%RouteDFourPoints) deallocate (Me%iFlowRouteDFour)
 
-                deallocate (Me%BoundaryCells)
+                if (Me%HasRunOffProperties) then
+                    deallocate (Me%BoundaryCells)
+                    nullify (Me%BoundaryCells)
+                endif
 
                 nullify    (Me%iFlowX)
                 nullify    (Me%iFlowY)
