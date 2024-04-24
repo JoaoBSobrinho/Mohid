@@ -847,9 +847,13 @@ Module ModuleRunOff
         integer                                     :: BoundaryMethod           = null_int
         logical                                     :: HasBoundaryLines         = .false.
         integer, dimension(:,:), pointer            :: BoundaryCells            => null()
+        integer, dimension(:), pointer              :: BoundaryCells_1D         => null()
+        integer, dimension(:), pointer              :: BoundaryCells_I          => null()
+        integer, dimension(:), pointer              :: BoundaryCells_J          => null()
         integer                                     :: NumberOfBoundaryLines    = null_int
         type(T_BoundaryLine), dimension(:), allocatable :: BoundaryLines
         real, dimension(:,:), allocatable           :: WaterLevelBoundaryValue
+        real, dimension(:), allocatable             :: WaterLevelBoundaryValue_1D
 
 !        integer                                     :: MaxIterations        = 5
         logical                                     :: SimpleChannelInteraction = .false.
@@ -4065,11 +4069,11 @@ do4:            do di = -1, 1
         call NumberOfBoundaryCellsToAllocate(NumberOfBoundaryCells)
         
         allocate(Me%WaterLevelBoundaryValue_1D(NumberOfBoundaryCells))
-        WaterLevelBoundaryValue_1D(:) = Me%BoundaryValue
+        Me%WaterLevelBoundaryValue_1D(:) = Me%BoundaryValue
         
-        allocate(Me%BoundaryCells_1D(NumberOfBoundaryCells)
-        allocate(Me%BoundaryCells_I(NumberOfBoundaryCells)
-        allocate(Me%BoundaryCells_J(NumberOfBoundaryCells)
+        allocate(Me%BoundaryCells_1D(NumberOfBoundaryCells))
+        allocate(Me%BoundaryCells_I(NumberOfBoundaryCells))
+        allocate(Me%BoundaryCells_J(NumberOfBoundaryCells))
         
         Me%BoundaryCells_1D = 0.0
         !Start filling BoundaryCells
@@ -4085,7 +4089,7 @@ do4:            do di = -1, 1
                     Sum = dj + di
                     if ((Me%ExtVar%BasinPoints(i+di, j+dj) == 0) .and. (Sum .eq. -1 .or. Sum .eq. 1)) then
                         if(Me%ExtVar%Topography (i, j)  < Me%MaxDtmForBoundary)then
-                            Me%BoundaryCells(n) = 1
+                            Me%BoundaryCells_1D(n) = 1
                             Me%BoundaryCells_I(n) = i
                             Me%BoundaryCells_J(n) = j
                             n = n+1
@@ -4106,7 +4110,7 @@ do4:            do di = -1, 1
                 j = Me%OpenChannelLinks(n)%J
                 do k = 1, NumberOfBoundaryCells
                     if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
-                        Me%BoundaryCells(n) = 0
+                        Me%BoundaryCells_1D(n) = 0
                         exit
                     endif
                 enddo
@@ -4131,7 +4135,7 @@ do4:            do di = -1, 1
                     
                     do k = 1, NumberOfBoundaryCells
                         if (VectorI(n) == Me%BoundaryCells_I(k) .and. VectorJ(n) == Me%BoundaryCells_J(k)) then
-                            Me%BoundaryCells(n) = 1
+                            Me%BoundaryCells_1D(n) = 1
                             exit
                         endif
                     enddo
@@ -4548,7 +4552,7 @@ do2:        do
 
         !Local-----------------------------------------------------------------
         real                                    :: WaterLevelValue
-        integer                                 :: nLine, n
+        integer                                 :: nLine, n, k, i, j
         !Begin-----------------------------------------------------------------
 
         if(Me%HasBoundaryLines)then
@@ -4568,7 +4572,6 @@ do2:        do
                             endif
                         enddo
                     enddo
-
                 endif
             enddo
         else
@@ -14794,35 +14797,26 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine ImposeBoundaryValue_1D ()
     
         !Arguments-------------------------------------------------------------
-        !real                                        :: LocalDT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, di, dj
+        integer                                     :: di, dj, i, j, n
         integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: dh, dVOl
-        !logical                                     :: NearBoundary
-        !real                                        :: AreaZX, AreaZY !, Width
         real                                        :: WaveHeight, Celerity, MaxFlow
-        real                                        :: InflowVolume, OutflowVolume, WaterLevelBoundaryValue
+        real                                        :: WaterLevelBoundaryValue
+        !Begin------------------------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
         !Routes water outside the watershed if water is higher then a given treshold values
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
         
         !Default is zero
         call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
 
         Me%BoundaryFlowVolume = 0.0
-        InflowVolume          = 0.0 
-        OutflowVolume         = 0.0
-
         
         !Sets Boundary values
         !go through all the boundary cells instead of the entire matrix
-        do n = 1, size(Me%Me%WaterLevelBoundaryValue_1D)
+        do n = 1, size(Me%WaterLevelBoundaryValue_1D)
             
             i = Me%BoundaryCells_I(n)
             j = Me%BoundaryCells_J(n)
