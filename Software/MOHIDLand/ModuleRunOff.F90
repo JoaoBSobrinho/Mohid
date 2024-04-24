@@ -8569,6 +8569,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         call ModifyGeometryAndMapping_Y
         
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        
         !$OMP PARALLEL PRIVATE(I,J)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = JLB, JUB
