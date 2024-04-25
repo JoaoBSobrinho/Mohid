@@ -605,6 +605,7 @@ Module ModuleBasin
         real, dimension(:), pointer                 :: TimeSeriesBuffer3 => null() !Properties Error
         real, dimension(:), pointer                 :: BWBBuffer         => null() !buffer to be used for Basin Water Balance
         logical                                     :: ConstantCurveNumber = .false.
+        integer, dimension(:,:), allocatable        :: CellHasRain
         
         !Basin Water Balance
         type (T_BasinWaterBalance)                  :: BWB
@@ -3007,6 +3008,7 @@ i1:         if (CoordON) then
         allocate(Me%FlowProduction          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%InfiltrationRate        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%PrecipRate              (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%CellHasRain             (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ThroughRate             (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%EVTPRate                (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))        
         allocate(Me%AccInfiltration         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -3096,6 +3098,7 @@ i1:         if (CoordON) then
         Me%CanopyDrainage           = 0.0
         Me%InfiltrationRate         = FillValueReal
         Me%PrecipRate               = FillValueReal
+        Me%CellHasRain              = 0
         Me%ThroughRate              = FillValueReal
         Me%EVTPRate                 = FillValueReal
         !Me%EVTPRate2                = FillValueReal
@@ -4953,29 +4956,32 @@ cd0:    if (Exist) then
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
 
-                CurrentFlux = PrecipitationFlux(i, j)                     
-                
-                !Gross Rain 
-                !m                 = m3/s                    * s            /  m2
-                GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                CurrentFlux = PrecipitationFlux(i, j)
+                Me%CellHasRain(i,j) = 0
+                if (CurrentFlux > 0.0) then
                             
-                !Precipitation Rate for (output only)
-                !mm/ hour            m3/s                    / m2                 * 1000 mm/m * 3600 s/h
-                Me%PrecipRate  (i,j) = CurrentFlux / Me%ExtVar%GridCellArea(i, j) * 3600000.0
+                    !Precipitation Rate for (output only)
+                    !mm/ hour            m3/s                    / m2                 * 1000 mm/m * 3600 s/h
+                    Me%PrecipRate  (i,j) = CurrentFlux / Me%ExtVar%GridCellArea(i, j) * 3600000.0
 
-                !Accumulated rainfall
-                !m
-                Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
-
-                ! For now uncovered rain is total. it will be changed ir there are leafs
-                Me%ThroughFall(i, j)    = GrossPrecipitation
+                    !Gross Rain 
+                    !m                 = m3/s                    * s            /  m2
+                    GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                    !Accumulated rainfall
+                    !m
+                    Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
                 
-                !Put rain on water column - it will facilitate the structure of the property mixture
-                Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
+                    !Put rain on water column - it will facilitate the structure of the property mixture
+                    Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + GrossPrecipitation
                     
-                !mm/ hour                   m                       s         1000mm/m   *  3600s/h
-                Me%ThroughRate(i, j) = Me%ThroughFall(i, j) / Me%CurrentDT * 3600000.0            
+                    !mm/ hour                   m                       s         1000mm/m   *  3600s/h
+                    Me%ThroughRate(i, j) = GrossPrecipitation / Me%CurrentDT * 3600000.0
                     
+                    ! For now uncovered rain is total. it will be changed ir there are leafs
+                    Me%ThroughFall(i, j)    = GrossPrecipitation
+                    
+                    Me%CellHasRain(i,j) = 1
+                endif
             endif
         enddo
         enddo
@@ -6227,14 +6233,14 @@ cd0:    if (Exist) then
         integer                                     :: Chunk
         
         real                                        :: previousInDayRain, rain, qNew, rain_m
-        real                                        :: qInTimeStep, FractionOfSimTime
+        real                                        :: qInTimeStep, FractionOfSimTime, Infiltration
         
         integer                                     :: STAT_CALL
         
         !Begin-----------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
-        
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel_1")
         CHUNK = ChunkJ
         
         Me%ConstantCurveNumber = .True.
@@ -6291,77 +6297,70 @@ cd0:    if (Exist) then
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL            
         endif
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel_1")
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel_2")
         
         FractionOfSimTime = Me%CurrentDT / Me%SimulationTime
         
-        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep)
+        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep, Infiltration)
         !$OMP DO SCHEDULE(DYNAMIC)
         do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do I = Me%WorkSize%ILB, Me%WorkSize%IUB
-    
-            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                            
-                if (Me%ThroughFall (i, j) > 0.0) then
-                    !       mm        =                mm
-                    previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
+        do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
+            if (Me%CellHasRain(i,j)) then
+                !       mm        =                mm
+                previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
                     
-                    rain_m = Me%ThroughFall (i, j)
+                rain_m = Me%ThroughFall (i, j)
                     
-                    !mm  =              m                  * mm/m
-                    rain = rain_m * 1000.0
-                    !               mm                 =                 mm                 +  mm
-                    Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+                !mm  =              m                  * mm/m
+                rain = rain_m * 1000.0
+                !               mm                 =                 mm                 +  mm
+                Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
         
-                    !mm  =        mm         +                     mm
-                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
-                                                     + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                !mm  =        mm         +                     mm
+                Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
+                                                    + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                             
-                    Me%SCSCNRunOffModel%S (i, j) = 25400.0 / Me%SCSCNRunOffModel%CurveNumber%Field (i, j) - 254.0
+                Me%SCSCNRunOffModel%S (i, j) = 25400.0 / Me%SCSCNRunOffModel%CurveNumber%Field (i, j) - 254.0
                     
                     
-                    if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
+                if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
                         
-                        !mm         = (mm - mm)**2 / (mm + mm)
-                        qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
-                                      (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
+                    !mm         = (mm - mm)**2 / (mm + mm)
+                    qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
+                                    (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
                         
-                        qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
+                    qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
                         
-                        Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
-                        !m/s = mm * 1E-3 m/mm / s
-                        Me%SCSCNRunOffModel%InfRate%Field(i,j) = ((rain - qInTimeStep) * 1E-3) / Me%CurrentDT
+                    Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
+                    !m/s = mm * 1E-3 m/mm / s
+                    !InfiltrationField = ((rain - qInTimeStep) * 1E-3) / Me%CurrentDT
+                    !Output mm/h = mm * 1E-3 m/mm / s * 3600 s/hour
+                    Me%InfiltrationRate (i, j) = (((rain - qInTimeStep) * 1E-3) / Me%CurrentDT) * 3600000.0
                         
-                    else
-                        !m/s
-                        Me%SCSCNRunOffModel%InfRate%Field(i,j) = rain_m / Me%CurrentDT
-                    endif
-                    
-                    
                 else
                     !m/s
-                    Me%SCSCNRunOffModel%InfRate%Field(i,j) = 0.0
-                    
+                    Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
                 endif
                 
-                
-                !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
-                Me%InfiltrationRate (i, j)    =  Me%SCSCNRunOffModel%InfRate%Field(i,j) * 3600000.0
-                
-                !m - Accumulated Infiltration of the entite area
-                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%InfiltrationRate(i, j) *     &
+                Infiltration = Me%InfiltrationRate(i, j) *     &
                                                 (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * Me%CurrentDT / 3600000.0
+                !m - Accumulated Infiltration of the entite area
+                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
                 
                 !m                            = m - mm/hour * s / s/hour / mm/m
-                Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Me%InfiltrationRate(i, j) * &
-                                                (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * Me%CurrentDT / 3600000.0
-                
+                Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
+                  
+            else
+                !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
+                Me%InfiltrationRate (i, j)    =  0.0
             endif
             
         enddo
         enddo
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
-    
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel_2")
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
     end subroutine SCSCNRunOffModel
