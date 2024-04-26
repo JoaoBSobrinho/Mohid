@@ -9883,7 +9883,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+                MaxBottom = Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 if (level_left > level_right) then
@@ -10091,7 +10091,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+                MaxBottom = Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 !bottom Difference to adjacent cells (to check existence of “margins” on the side)
@@ -10846,7 +10846,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+                MaxBottom = Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 !bottom Difference to adjacent cells (to check existence of “margins” on the side)
@@ -11056,7 +11056,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+                MaxBottom = Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 !bottom Difference to adjacent cells (to check existence of “margins” on the side)
