@@ -14616,7 +14616,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real(8)                                     :: sumDischarge
         
         !----------------------------------------------------------------------
-
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "IntegrateFlow")
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
         sumDischarge = Me%TotalDischargeFlowVolume
@@ -14629,6 +14629,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / &
                               (SumDT + LocalDT)
+            
         enddo
         enddo
         !$OMP END DO NOWAIT
@@ -14654,20 +14655,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO NOWAIT
         endif
-        
-        !Integrates Flow At boundary 
-        !if (Me%ImposeBoundaryValue) then
-        !   !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumBoundary)
-        !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-        !        Me%iFlowBoundary(i, j) = (Me%iFlowBoundary(i, j) * SumDT + Me%lFlowBoundary(i, j) * LocalDT) / &
-        !                                 (SumDT + LocalDT)
-        !
-        !        sumBoundary = sumBoundary + (Me%iFlowBoundary(i, j) * LocalDT)
-        !    enddo
-        !    enddo
-        !    !$OMP END DO NOWAIT
-        !endif
 
         !Integrates Flow Discharges
         if (Me%Discharges) then
@@ -14685,6 +14672,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END PARALLEL        
 
         Me%TotalDischargeFlowVolume = sumDischarge
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "IntegrateFlow")
 
     end subroutine IntegrateFlow
 
