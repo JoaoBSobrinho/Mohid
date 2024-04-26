@@ -5155,9 +5155,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         !Begin-----------------------------------------------------------------       
 
         allocate(Me%iFlowToChannels  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%lFlowToChannels  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%iFlowToChannels      = 0.0   !Sets values initially to zero, so 
-        Me%lFlowToChannels      = 0.0   !model can run without DNet
+
+        
+        if (Me%ObjDrainageNetwork /= 0) then
+            allocate(Me%lFlowToChannels  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%lFlowToChannels      = 0.0   !model can run without DNet
+        endif
+        
         
         allocate(Me%iFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         Me%iFlowBoundary        = 0.0   !model can run without BC
@@ -5174,41 +5179,67 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             Me%iFlowRouteDFour       = 0.0   !Sets values initially to zero, so  
         endif
         
+        
         if (Me%HasRunoffProperties) then
             allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             Me%BoundaryCells = 0
+            
+            allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
+            allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
+            allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            
+            allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterFlowY    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FlowModulus    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            
+        else
+            allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
+            allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
+            allocate(Me%myWaterVolume_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        
+            Me%myWaterVolume_R4        = 0.0        
+            Me%myWaterColumn_R4        = null_real        
+            Me%myWaterLevel_R4         = null_real
+            Me%myWaterColumnAfterTransport = null_real
+            
+            allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FlowModulus_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            
+            Me%CenterFlowX_R4 = 0.0
+            Me%CenterFlowY_R4 = 0.0
+            Me%CenterVelocityX_R4 = 0.0
+            Me%CenterVelocityY_R4 = 0.0
+            Me%FlowModulus_R4 = 0.0
+            Me%VelocityModulus_R4 = 0.0
         endif
         
-    
-        allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        if (.not. Me%LimitToCriticalFlow) then
+            allocate(Me%myWaterVolumePred   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%myWaterVolumePred = null_real
+        endif
         
-        
-        allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%myWaterVolumePred   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%myWaterVolumePred = null_real
         !allocate(Me%InitialWaterColumn   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
         !allocate(Me%InitialWaterLevel    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
         allocate(Me%myWaterVolume        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterColumnOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        
-        allocate(Me%myWaterVolume_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+
         Me%myWaterLevel            = null_real
-        Me%myWaterLevel_R4         = null_real
         Me%myWaterColumn           = null_real
-        Me%myWaterColumn_R4        = null_real
         !Me%InitialWaterColumn      = null_real Sobrinho
         !Me%InitialWaterLevel       = null_real Sobrinho
         Me%myWaterVolume           = 0.0        !For OpenMI
-        Me%myWaterVolume_R4        = 0.0
         Me%myWaterColumnOld        = null_real
         Me%myWaterVolumeOld        = null_real
         Me%MassError               = 0
-        Me%myWaterColumnAfterTransport = null_real
 
         allocate(Me%iFlowX               (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%iFlowY               (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5230,8 +5261,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_Y          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-
-
 
         Me%iFlowX               = 0.0
         Me%iFlowY               = 0.0
@@ -5256,41 +5285,11 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         Me%VelModFaceU          = 0.0
         Me%VelModFaceV          = 0.0
 
-        !allocate(Me%OverLandCoefficient  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
-        !allocate(Me%OverLandCoefficientDelta (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !allocate(Me%OverLandCoefficientX (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !allocate(Me%OverLandCoefficientY (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !Me%OverLandCoefficient       = null_real
-        !Me%OverLandCoefficientDelta  = null_real
-        !Me%OverLandCoefficientX      = null_real
-        !Me%OverLandCoefficientY      = null_real
-
-
-       
-        allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterFlowY    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%FlowModulus    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%FlowModulus_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%CenterVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-
         allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
         allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         
         Me%Output%MaxFlowModulus = 0.0
-        Me%CenterFlowX_R4 = 0.0
-        Me%CenterFlowY_R4 = 0.0
-        Me%CenterVelocityX_R4 = 0.0
-        Me%CenterVelocityY_R4 = 0.0
-        Me%FlowModulus_R4 = 0.0
-        Me%VelocityModulus_R4 = 0.0
         
         Me%Output%MaxWaterColumn = Me%MinimumWaterColumn
         Me%Output%TimeOfMaxWaterColumn = -99.0
@@ -5301,11 +5300,15 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         Me%Output%MaxFloodRisk = null_real
       
-        allocate (Me%Output%FloodPeriod (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        Me%Output%FloodPeriod = 0.
-
-        allocate (Me%Output%FloodArrivalTime (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        Me%Output%FloodArrivalTime = -99.0
+        if (Me%Output%WriteFloodPeriod) then
+            allocate (Me%Output%FloodPeriod (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            Me%Output%FloodPeriod = 0.
+        endif
+        
+        if (Me%Output%WriteFloodArrivalTime) then
+            allocate (Me%Output%FloodArrivalTime (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            Me%Output%FloodArrivalTime = -99.0
+        endif
 
         if (Me%RouteDFourPoints) then !Sobrinho
             allocate (Me%LowestNeighborI (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5389,11 +5392,12 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------   
-        integer                                             :: i, j
+        integer                                             :: i, j, CHUNK
+        CHUNK = ChunkJ
         !X
         !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         if (Me%FaceWaterColumn == WCMaxBottom_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
@@ -5403,8 +5407,9 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                 endif
             enddo
             enddo
-            
+            !$OMP END DO NOWAIT
         else
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
@@ -5414,13 +5419,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                 endif
             enddo
             enddo
+            !$OMP END DO NOWAIT
         endif
-        !$OMP END DO NOWAIT
         !$OMP END PARALLEL
+        
         !Y
         !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         if (Me%FaceWaterColumn == WCMaxBottom_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB 
                 if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
@@ -5430,8 +5436,9 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                 endif
             enddo
             enddo
-            
+            !$OMP END DO NOWAIT
         else
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB 
                 if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
@@ -5441,8 +5448,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                 endif
             enddo
             enddo
+            !$OMP END DO NOWAIT
         endif
-        !$OMP END DO NOWAIT
         !$OMP END PARALLEL
     end subroutine ComputeWCA_And_Bottom
     
@@ -8662,7 +8669,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%ExtVar%BasinPoints(i, j-1) + Me%ExtVar%BasinPoints(i, j) > 1) then
                 
                     !Maximum Bottom Level
-                    Bottom = Bottom_X(i,j)
+                    Bottom = Me%Bottom_X(i,j)
                     
                     !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
                     if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
@@ -8692,7 +8699,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     !Maximum Bottom Level
-                    Bottom = Bottom_X(i,j)
+                    Bottom = Me%Bottom_X(i,j)
 
                     if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j) ) then
                         !Water Column Left (above MaxBottom)
@@ -8721,12 +8728,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     !Average Bottom Level
-                    Bottom = Bottom_X(i,j)      
+                    Bottom = Me%Bottom_X(i,j)      
                     
                     !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
                     if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
                         !Water Column Left (above MaxBottom)
-                        WCA = = max(Me%myWaterLevel(i, j-1) - Bottom, AlmostZero_Double)
+                        WCA = max(Me%myWaterLevel(i, j-1) - Bottom, AlmostZero_Double)
                     else
                         !Water Column Right (above MaxBottom)
                         WCA = max(Me%myWaterLevel(i, j  ) - Bottom, AlmostZero_Double)
@@ -8751,12 +8758,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     !Average Bottom Level
-                    Bottom = Bottom_X(i,j)
+                    Bottom = Me%Bottom_X(i,j)
                     
                     !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
                     if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j)) then
                         !Water Column Left (above MaxBottom)
-                        WCA = = max(Me%myWaterLevel(i, j-1) - Bottom, AlmostZero_Double)
+                        WCA = max(Me%myWaterLevel(i, j-1) - Bottom, AlmostZero_Double)
                     else
                         !Water Column Right (above MaxBottom)
                         WCA = max(Me%myWaterLevel(i, j  ) - Bottom, AlmostZero_Double)
@@ -8811,7 +8818,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) > 1) then
                 
                     !Maximum Bottom Level
-                    Bottom = Bottom_Y(i,j)
+                    Bottom = Me%Bottom_Y(i,j)
                     
                     !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
                     if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
@@ -8841,7 +8848,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     !Maximum Bottom Level
-                    Bottom = Bottom_Y(i,j)
+                    Bottom = Me%Bottom_Y(i,j)
                     
                     if (Me%myWaterLevel(i-1, j) > Me%myWaterLevel(i, j) ) then
                         !Water Column Left (above MaxBottom)
@@ -8870,7 +8877,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     !Average Bottom Level
-                    Bottom = Bottom_Y(i,j)        
+                    Bottom = Me%Bottom_Y(i,j)        
                     
                     !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
                     if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
@@ -8899,7 +8906,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     !Average Bottom Level
-                    Bottom = Bottom_Y(i,j)
+                    Bottom = Me%Bottom_Y(i,j)
                     
                     !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
                     if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j)) then
@@ -9883,7 +9890,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = Bottom_X(i,j)
+                MaxBottom = Me%Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 if (level_left > level_right) then
@@ -10091,7 +10098,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = Bottom_X(i,j)
+                MaxBottom = Me%Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 !bottom Difference to adjacent cells (to check existence of “margins” on the side)
@@ -10846,7 +10853,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = Bottom_X(i,j)
+                MaxBottom = Me%Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 !bottom Difference to adjacent cells (to check existence of “margins” on the side)
@@ -11056,7 +11063,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Then, is checked if "margins" occur on the cell of the highest water level
                 !water depth consistent with AreaU computed (only water above max bottom)
                 WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                MaxBottom = Bottom_X(i,j)
+                MaxBottom = Me%Bottom_X(i,j)
                     
                 !to check which cell to use since areaU depends on higher water level
                 !bottom Difference to adjacent cells (to check existence of “margins” on the side)
@@ -15786,14 +15793,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         real,  dimension(:), pointer                :: AuxFlow
         integer                                     :: STAT_CALL
-        integer                                     :: ILB, IUB, JLB, JUB
+        integer                                     :: ILB, IUB, JLB, JUB, i, j, CHUNK
         real, dimension(6)  , target                :: AuxTime
         real, dimension(:)  , pointer               :: TimePointer
         integer                                     :: dis
         logical                                     :: dbg = .false.
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "RunOffOutput")
-
+        CHUNK = ChunkJ
         !Bounds
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
