@@ -9356,11 +9356,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
 
         
-        !$OMP PARALLEL PRIVATE(I,J, U, Vaverage)
+        !$OMP PARALLEL PRIVATE(I,J, U, Vaverage, V, Uaverage)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
         do i = ILB, IUB
-
             if (Me%ComputeFaceU(i, j) == Compute) then
                 
                 Vaverage = (Me%FlowYOld(i,  j  )/Me%AreaV(i,  j  ) + &
@@ -9372,15 +9371,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 !Me%VelModFaceU(i, j) = sqrt(U**2.0 + Vaverage**2.0)
                 Me%VelModFaceU(i, j) = abs(cmplx(U, Vaverage))
-                
             endif
 
         enddo
         enddo
         !$OMP END DO NOWAIT
-        !$OMP END PARALLEL
         
-        !$OMP PARALLEL PRIVATE(I,J, V, Uaverage)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB 
         do i = ILB, IUB
