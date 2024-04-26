@@ -14861,6 +14861,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             
                             Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
                             Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                        else
+                            Me%CenterFlowX_R4(i, j) = 0.0
+                            Me%CenterFlowY_R4(i, j) = 0.0
+                            Me%CenterVelocityX_R4(i, j) = 0.0
+                            Me%CenterVelocityY_R4(i, j) = 0.0
                         end if
                     endif
 
@@ -14879,6 +14884,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Me%CenterFlowY_R4(i, j) = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
                             Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
                             Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                        else
+                            Me%CenterFlowX_R4(i, j) = 0.0
+                            Me%CenterFlowY_R4(i, j) = 0.0
+                            Me%CenterVelocityX_R4(i, j) = 0.0
+                            Me%CenterVelocityY_R4(i, j) = 0.0
                         end if
                     endif
                 enddo
@@ -14906,6 +14916,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         
                         Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
                         Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
+                    else
+                        Me%CenterFlowX_R4(i, j) = 0.0
+                        Me%CenterFlowY_R4(i, j) = 0.0
+                        Me%CenterVelocityX_R4(i, j) = 0.0
+                        Me%CenterVelocityY_R4(i, j) = 0.0
                     end if
                 endif
 
@@ -14931,6 +14946,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         if (Me%FlowModulus_R4(i, j) > Me%Output%MaxFlowModulus(i, j)) then
                             Me%Output%MaxFlowModulus(i, j) = real(Me%FlowModulus_R4(i, j), kind = 8)
                         end if
+                    else
+                        Me%FlowModulus_R4(i, j) = 0.0
+                        Me%VelocityModulus_R4(i, j) = 0.0
                     end if
                 endif
 
@@ -14949,6 +14967,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
                         Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                    else
+                        Me%FlowModulus_R4(i, j) = 0.0
+                        Me%VelocityModulus_R4(i, j) = 0.0
                     end if
                 endif
 
