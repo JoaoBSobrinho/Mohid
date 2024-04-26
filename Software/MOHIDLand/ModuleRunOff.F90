@@ -14614,36 +14614,41 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: i, j
         integer                                     :: CHUNK
         real(8)                                     :: sumDischarge
+        real                                        :: DischargeVolume, SumDTs
         
         !----------------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "IntegrateFlow")
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
         sumDischarge = Me%TotalDischargeFlowVolume
-
+        SumDTs = SumDT + LocalDT
         !$OMP PARALLEL PRIVATE(I,J) 
-
-        !Integrates along X Directions
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / &
-                              (SumDT + LocalDT)
-            
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-
-        !Integrates along Y Directions
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / &
-                              (SumDT + LocalDT)
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-
+        if (Me%Discharges) then
+            !Integrates along X and Y Directions
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+                
+                DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
+                Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / SumDTs
+                sumDischarge = sumDischarge + DischargeVolume
+            enddo
+            enddo
+            !$OMP END DO NOWAIT
+        else
+            !Integrates along X Directions
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+            enddo
+            enddo
+            !$OMP END DO NOWAIT
+        endif
+        
         !Integrates Flow to Channels
         if (Me%ObjDrainageNetwork /= 0) then
            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
@@ -14651,19 +14656,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 Me%iFlowToChannels(i, j) = (Me%iFlowToChannels(i, j) * SumDT + Me%lFlowToChannels(i, j) * LocalDT) / &
                                            (SumDT + LocalDT)
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
-        endif
-
-        !Integrates Flow Discharges
-        if (Me%Discharges) then
-           !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB                
-                Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + Me%lFlowDischarge(i, j) * LocalDT) / &
-                                          (SumDT + LocalDT)
-                sumDischarge = sumDischarge + (Me%lFlowDischarge(i, j) * LocalDT)
             enddo
             enddo
             !$OMP END DO NOWAIT
