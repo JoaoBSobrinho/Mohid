@@ -137,6 +137,7 @@ Module ModuleGlobalData
     real,    parameter  :: AllmostZero          = 1.e-15
     real,    parameter  :: AllmostZeroNegative  = -1.e-15
     real,    parameter  :: AlmostZero           = 1.e-15
+    real,    parameter  :: AlmostZero_Double    = dble(AlmostZero)
     
     integer, parameter :: dp15 = selected_real_kind(15, 307)    
 
