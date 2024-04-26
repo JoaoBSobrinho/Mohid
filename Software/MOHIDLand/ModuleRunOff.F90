@@ -8574,24 +8574,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         call ModifyGeometryAndMapping_Y
         
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
-        
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = JLB, JUB
-        do i = ILB, IUB
-            if (Me%myWaterColumn(i, j) .gt. Me%MinimumWaterColumn) then
-                Me%OpenPoints(i,j) = 1
-            else
-                Me%OpenPoints(i,j) = 0
-            endif
-        enddo
-        enddo    
-        !$OMP END DO
-        !$OMP END PARALLEL
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
         
     end subroutine ModifyGeometryAndMapping
@@ -15789,7 +15771,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
 
         if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
-
+        
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%myWaterColumn(i, j) .gt. Me%MinimumWaterColumn) then
+                    Me%OpenPoints(i,j) = 1
+                else
+                    Me%OpenPoints(i,j) = 0
+                endif
+            enddo
+            enddo    
+            !$OMP END DO
+            !$OMP END PARALLEL
             !Writes current time
             call ExtractDate   (Me%ExtVar%Now , AuxTime(1), AuxTime(2),         &
                                                 AuxTime(3), AuxTime(4),         &
