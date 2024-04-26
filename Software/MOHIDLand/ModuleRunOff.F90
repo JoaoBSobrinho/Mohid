@@ -12171,24 +12171,34 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP PARALLEL PRIVATE(I,J,dVol)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
         do i = ILB, IUB
-        do j = JLB, JUB
-            if (Me%ComputeFaceU(i, j) == BasinPoint) then
-                
+        do j = JLB-1, JUB
+            if (Me%ComputeFaceU(i, j) .and. Me%ComputeFaceU(i, j+1)) then    
+                !dVol
+                dVol                       = (Me%lFlowX(i, j) - Me%lFlowX(i, j+1)) * LocalDT
+                !Updates Water Volume
+                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j) + dVol
+                !Updates Water Column
+                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+                !Updates Water Level
+                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+            elseif (Me%ComputeFaceU(i, j)) then
                 !dVol
                 dVol                       = Me%lFlowX(i, j) * LocalDT
-                
                 !Updates Water Volume
-                Me%myWaterVolume (i, j-1)  = Me%myWaterVolume (i, j-1) - dVol 
-                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j)   + dVol 
-
+                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j) + dVol
                 !Updates Water Column
-                Me%myWaterColumn  (i, j-1) = Me%myWaterVolume (i, j-1) / Me%ExtVar%GridCellArea(i, j-1)
                 Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-
                 !Updates Water Level
-                Me%myWaterLevel (i, j-1)   = Me%myWaterColumn (i, j-1) + Me%ExtVar%Topography(i, j-1)
                 Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-
+            elseif (Me%ComputeFaceU(i, j+1)) then
+                !dVol
+                dVol                       = Me%lFlowX(i, j+1) * LocalDT
+                !Updates Water Volume
+                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j) - dVol
+                !Updates Water Column
+                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+                !Updates Water Level
+                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
             endif
         enddo
         enddo
@@ -12199,24 +12209,34 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP PARALLEL PRIVATE(I,J,dVol)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
-        do i = ILB, IUB
-            if (Me%ComputeFaceV(i, j) == BasinPoint) then
-                
+        do i = ILB-1, IUB
+            if (Me%ComputeFaceV(i, j) .and. Me%ComputeFaceV(i+1, j)) then    
                 !dVol
-                dVol                      = Me%lFlowY(i, j) * LocalDT
-                
+                dVol                       = (Me%lFlowY(i, j) - Me%lFlowY(i+1, j)) * LocalDT
                 !Updates Water Volume
-                Me%myWaterVolume (i-1, j) = Me%myWaterVolume (i-1, j) - dVol 
-                Me%myWaterVolume (i, j)   = Me%myWaterVolume (i, j)   + dVol 
-
+                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j) + dVol
                 !Updates Water Column
-                Me%myWaterColumn (i-1, j) = Me%myWaterVolume (i-1, j) / Me%ExtVar%GridCellArea(i-1, j)
-                Me%myWaterColumn (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-
+                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                 !Updates Water Level
-                Me%myWaterLevel (i-1, j)  = Me%myWaterColumn (i-1, j) + Me%ExtVar%Topography(i-1, j)
-                Me%myWaterLevel (i, j)    = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-
+                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+            elseif (Me%ComputeFaceV(i, j)) then
+                !dVol
+                dVol                       = Me%lFlowY(i, j) * LocalDT
+                !Updates Water Volume
+                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j) + dVol
+                !Updates Water Column
+                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+                !Updates Water Level
+                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+            elseif (Me%ComputeFaceV(i+1, j)) then
+                !dVol
+                dVol                       = Me%lFlowY(i+1, j) * LocalDT
+                !Updates Water Volume
+                Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j) - dVol
+                !Updates Water Column
+                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+                !Updates Water Level
+                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
             endif
         enddo
         enddo
@@ -12226,6 +12246,86 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
 
     end subroutine UpdateWaterLevels 
+
+    !--------------------------------------------------------------------------
+    
+    !subroutine UpdateWaterLevels(LocalDT)
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    real                                        :: LocalDT
+    !    
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j
+    !    integer                                     :: ILB, IUB, JLB, JUB
+    !    real                                        :: dVol
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterLevels")
+    !
+    !    ILB = Me%WorkSize%ILB
+    !    IUB = Me%WorkSize%IUB
+    !    JLB = Me%WorkSize%JLB
+    !    JUB = Me%WorkSize%JUB
+    !
+    !
+    !    !X
+    !    !$OMP PARALLEL PRIVATE(I,J,dVol)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
+    !    do i = ILB, IUB
+    !    do j = JLB, JUB
+    !        if (Me%ComputeFaceU(i, j) == BasinPoint) then
+    !            
+    !            !dVol
+    !            dVol                       = Me%lFlowX(i, j) * LocalDT
+    !            
+    !            !Updates Water Volume
+    !            Me%myWaterVolume (i, j-1)  = Me%myWaterVolume (i, j-1) - dVol 
+    !            Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j)   + dVol 
+    !
+    !            !Updates Water Column
+    !            Me%myWaterColumn  (i, j-1) = Me%myWaterVolume (i, j-1) / Me%ExtVar%GridCellArea(i, j-1)
+    !            Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+    !
+    !            !Updates Water Level
+    !            Me%myWaterLevel (i, j-1)   = Me%myWaterColumn (i, j-1) + Me%ExtVar%Topography(i, j-1)
+    !            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+    !
+    !        endif
+    !    enddo
+    !    enddo
+    !    !$OMP END DO NOWAIT
+    !    !$OMP END PARALLEL        
+    !
+    !    !Y
+    !    !$OMP PARALLEL PRIVATE(I,J,dVol)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+    !    do j = JLB, JUB
+    !    do i = ILB, IUB
+    !        if (Me%ComputeFaceV(i, j) == BasinPoint) then
+    !            
+    !            !dVol
+    !            dVol                      = Me%lFlowY(i, j) * LocalDT
+    !            
+    !            !Updates Water Volume
+    !            Me%myWaterVolume (i-1, j) = Me%myWaterVolume (i-1, j) - dVol 
+    !            Me%myWaterVolume (i, j)   = Me%myWaterVolume (i, j)   + dVol 
+    !
+    !            !Updates Water Column
+    !            Me%myWaterColumn (i-1, j) = Me%myWaterVolume (i-1, j) / Me%ExtVar%GridCellArea(i-1, j)
+    !            Me%myWaterColumn (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+    !
+    !            !Updates Water Level
+    !            Me%myWaterLevel (i-1, j)  = Me%myWaterColumn (i-1, j) + Me%ExtVar%Topography(i-1, j)
+    !            Me%myWaterLevel (i, j)    = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+    !
+    !        endif
+    !    enddo
+    !    enddo
+    !    !$OMP END DO NOWAIT
+    !    !$OMP END PARALLEL
+    !    
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
+    !
+    !end subroutine UpdateWaterLevels 
 
     !--------------------------------------------------------------------------
     
