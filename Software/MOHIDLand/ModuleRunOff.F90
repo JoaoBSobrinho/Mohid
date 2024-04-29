@@ -718,7 +718,6 @@ Module ModuleRunOff
         real(8), dimension(:,:), pointer            :: myWaterColumnAfterTransport => null() !for property transport
         real(8), dimension(:,:), pointer            :: myWaterVolumePred        => null() !to avoid negative collumns
         real(8), dimension(:,:), pointer            :: myWaterVolumeOld         => null()
-        real(4), dimension(:,:), pointer            :: myWaterVolume_R4         => null()
         real,    dimension(:,:), pointer            :: lFlowToChannels          => null() !Instantaneous Flow To Channels
         real,    dimension(:,:), pointer            :: iFlowToChannels          => null() !Integrated    Flow
         real,    dimension(:,:), pointer            :: iFlowRouteDFour          => null() !Integrated Route D4 flux
@@ -5179,13 +5178,10 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             Me%iFlowRouteDFour       = 0.0   !Sets values initially to zero, so  
         endif
         
-        
         if (Me%HasRunoffProperties) then
             allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             Me%BoundaryCells = 0
-            
-            allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
-            allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
+                       
             allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             
             allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5194,16 +5190,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            Me%myWaterColumnAfterTransport = null_real
             
         else
             allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
-            allocate(Me%myWaterVolume_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        
-            Me%myWaterVolume_R4        = 0.0        
+               
             Me%myWaterColumn_R4        = null_real        
             Me%myWaterLevel_R4         = null_real
-            Me%myWaterColumnAfterTransport = null_real
             
             allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5225,12 +5219,15 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             Me%myWaterVolumePred = null_real
         endif
         
+        allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
+        allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         !allocate(Me%InitialWaterColumn   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
         !allocate(Me%InitialWaterLevel    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
         allocate(Me%myWaterVolume        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterColumnOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+
 
         Me%myWaterLevel            = null_real
         Me%myWaterColumn           = null_real
@@ -8045,7 +8042,12 @@ doIter:         do while (iter <= Niter)
             endif
 
             if (Me%Output%WriteMaxWaterColumn .or. Me%Output%WriteMaxFloodRisk) then
-                call OutputFlooding
+                if (Me%HasRunoffProperties) then
+                    call OutputFlooding
+                else
+                    call OutputFlooding_R4
+                endif
+                
             endif
             
             if (Me%Output%WriteFloodPeriod) then            
@@ -16518,6 +16520,116 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFlooding")
     end subroutine OutputFlooding
+    
+    !--------------------------------------------------------------------------
+
+    subroutine OutputFlooding_R4
+
+        !Locals----------------------------------------------------------------
+        integer                                 :: ILB,IUB, JLB, JUB, i, j
+        integer                                 :: STAT_CALL
+        real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
+        real, dimension(:,:), pointer           :: ChannelsTopArea
+        real                                    :: SumArea, WeightedVelocity, FloodRisk
+        integer                                 :: CHUNK
+
+        !Begin-----------------------------------------------------------------        
+        if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFlooding_R4")
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+
+        !Begin-----------------------------------------------------------------
+
+   
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+        do j = JLB, JUB
+        do i = ILB, IUB
+   
+            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                
+                !Water Column of overland flow
+                if (Me%myWaterColumn(i, j) > Me%Output%MaxWaterColumn(i, j)) then
+                    Me%Output%MaxWaterColumn(i, j) = Me%myWaterColumn(i, j)
+                    
+                    !Velocity at MaxWater column
+                    Me%Output%VelocityAtMaxWaterColumn(i,j) =  Me%VelocityModulus_R4 (i, j)
+
+                    Me%Output%TimeOfMaxWaterColumn(i,j) = Me%ExtVar%Now - Me%BeginTime
+                   
+                endif
+                
+                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                    
+                    FloodRisk = Me%myWaterColumn(i, j) * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
+                    
+                    if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
+                        Me%Output%MaxFloodRisk(i,j) = FloodRisk
+                    endif
+                endif
+            endif
+
+        enddo
+        enddo
+        !$OMP END DO NOWAIT
+        !$OMP END PARALLEL
+
+        if (Me%ObjDrainageNetwork /= 0) then
+
+            call GetChannelsWaterLevel  (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR01' 
+            
+            call GetChannelsTopArea  (Me%ObjDrainageNetwork, ChannelsTopArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR02'              
+
+            call GetChannelsVelocity  (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR03'             
+            
+            do j = JLB, JUB
+            do i = ILB, IUB
+       
+                !Water Column of River Network
+                if (Me%ExtVar%RiverPoints(i, j) == BasinPoint) then
+                    if (ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j) > Me%Output%MaxWaterColumn(i, j)) then
+                        Me%Output%MaxWaterColumn(i, j) = ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
+                        
+                        SumArea = Me%ExtVar%GridCellArea(i,j) + ChannelsTopArea(i,j)
+                        
+                        WeightedVelocity = (Me%VelocityModulus_R4 (i, j) * Me%ExtVar%GridCellArea(i,j) +   &
+                                            ChannelsVelocity(i,j) * ChannelsTopArea(i,j) ) / SumArea
+                        
+                        !weighted velocity with river
+                        Me%Output%VelocityAtMaxWaterColumn(i,j) = WeightedVelocity
+                        
+                        if ((Me%Output%MaxWaterColumn(i, j) *  (WeightedVelocity + Me%Output%FloodRiskVelCoef))     &
+                              > Me%Output%MaxFloodRisk(i,j)) then
+                            Me%Output%MaxFloodRisk(i,j) = Me%Output%MaxWaterColumn(i, j)                            &
+                                                          * (WeightedVelocity + Me%Output%FloodRiskVelCoef)
+                        endif
+                    endif                                        
+                    
+                endif
+
+            enddo
+            enddo
+
+            call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR04'
+
+            call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR05'
+
+            call UnGetDrainageNetwork  (Me%ObjDrainageNetwork, ChannelsTopArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR06'                
+            
+        endif
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFlooding_R4")
+    end subroutine OutputFlooding_R4
 
     !---------------------------------------------------------------------------
     
@@ -17448,8 +17560,8 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 deallocate (Me%lFlowX)
                 deallocate (Me%lFlowY)
                 deallocate (Me%iFlowToChannels)
-                deallocate (Me%lFlowToChannels)
-                !deallocate (Me%lFlowBoundary)
+                if (Me%ObjDrainageNetwork /= 0) deallocate (Me%lFlowToChannels)
+                
                 deallocate (Me%iFlowBoundary)
                 if (Me%RouteDFourPoints) deallocate (Me%iFlowRouteDFour)
 

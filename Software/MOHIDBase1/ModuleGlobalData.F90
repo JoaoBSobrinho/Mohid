@@ -2066,6 +2066,7 @@ Module ModuleGlobalData
         logical                 :: IsParticulate     = OFF
         logical                 :: IsVectorial       = OFF
         logical                 :: IsDynamic         = OFF
+        logical                 :: SolutionFromTimeSerie = .false.
     end type T_PropertyID
 
     type T_Instance

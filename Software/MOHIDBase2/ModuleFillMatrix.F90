@@ -137,6 +137,7 @@ Module ModuleFillMatrix
     public  :: GetAnalyticCelerityON
     public  :: GetAnalyticCelerity
     public  :: GetFilenameHDF
+    public  :: GetFoundNegativeValueInTimeSerie
 
 
     !Modifier
@@ -591,6 +592,7 @@ Module ModuleFillMatrix
         logical                                     :: NewDomain = .true.
 
         logical                                     :: CheckHDF5_File   = .false.
+        logical                                     :: FoundNegativeValueOnTimeSerie = .false.
 
         !Initialization Methods
         type (T_Layers   )                          :: Layers
@@ -791,17 +793,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 Me%OverrideValueKeywordON = .false.
             end if
 
-            !if (present(ClientID)) then
-            !    call ReadOptions (ExtractType,                          &
-            !                      PointsToFill2D = PointsToFill2D,      &
-            !                      PredictDTMethod = PredictDTMethod_,   &
-            !                      ClientID = ClientID)
-            !else
-            !    call ReadOptions (ExtractType,                          &
-            !                      PointsToFill2D = PointsToFill2D,      &
-            !                      PredictDTMethod = PredictDTMethod_)
-            !endif
-
             call Read_Fill_Options (ExtractType, PredictDTMethod = PredictDTMethod_)
 
             call FillWithDefault (PointsToFill2D = PointsToFill2D)
@@ -849,6 +840,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             PropertyID%SolutionFromFile  = .true.
             if(Me%TimeEvolution == None) PropertyID%SolutionFromFile  = .false.
+            
+            if (Me%TimeEvolution == ReadTimeSerie) PropertyID%SolutionFromTimeSerie = .true.
                 
             !Returns ID
             ObjFillMatrix_ = Me%InstanceID
@@ -10233,6 +10226,39 @@ F2D3D:      if (CurrentHDF%From2Dto3D) then
     end subroutine GetFilenameHDF
 
     !--------------------------------------------------------------------------
+    
+    !Get flag for negative value in timeseries
+    subroutine GetFoundNegativeValueInTimeSerie (FillMatrixID, Flag, STAT)
+
+        !Arguments-------------------------------------------------------------
+        integer                                         :: FillMatrixID
+        logical, intent(OUT)                            :: Flag
+        integer, intent(OUT), optional                  :: STAT
+
+        !Local-----------------------------------------------------------------
+        integer                                         :: STAT_, ready_
+        !----------------------------------------------------------------------
+
+        STAT_ = UNKNOWN_
+
+        call Ready(FillMatrixID, ready_)
+
+        if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                            &
+            (ready_ .EQ. READ_LOCK_ERR_ )) then
+
+            Flag = Me%FoundNegativeValueOnTimeSerie
+
+            STAT_ = SUCCESS_
+
+        else
+            STAT_ = ready_
+        end if
+
+        if (present(STAT)) STAT = STAT_
+
+    end subroutine GetFoundNegativeValueInTimeSerie
+
+    !--------------------------------------------------------------------------
 
 
     subroutine UngetFillMatrix2D(FillMatrixID, Array, STAT)
@@ -13018,7 +13044,12 @@ doM:        do j = Me%WorkSize2D%JLB, Me%WorkSize2D%JUB
 
         endif
 
-
+        if (NewValue < 0.0) then
+            Me%FoundNegativeValueOnTimeSerie = .true. ! SOBRINHO
+        else
+            Me%FoundNegativeValueOnTimeSerie = .false. ! SOBRINHO
+        endif
+        
         if (Me%Dim == Dim2D) then
             call SetMatrixValue(Me%Matrix2D, Me%WorkSize2D, NewValue, PointsToFill2D)
         else
