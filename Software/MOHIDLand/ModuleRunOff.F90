@@ -759,6 +759,7 @@ Module ModuleRunOff
         real(4),    dimension(:,:), pointer         :: FlowModulus_R4           => null()
         real,    dimension(:,:), pointer            :: VelocityModulus          => null()
         real(4),    dimension(:,:), pointer         :: VelocityModulus_R4       => null()
+        real(4),    dimension(:,:), pointer         :: MaxVelocityModulus_R4    => null()
         integer, dimension(:,:), pointer            :: LowestNeighborI          => null() !Lowest Neighbor in the surroundings
         integer, dimension(:,:), pointer            :: LowestNeighborJ          => null() !Lowest Neighbor in the surroundings       
         integer, dimension(:,:), pointer            :: DFourSinkPoint           => null() !Point which can't drain with in X/Y only
@@ -5205,6 +5206,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%CenterVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%MaxVelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             
             Me%CenterFlowX_R4 = 0.0
             Me%CenterFlowY_R4 = 0.0
@@ -5212,6 +5214,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             Me%CenterVelocityY_R4 = 0.0
             Me%FlowModulus_R4 = 0.0
             Me%VelocityModulus_R4 = 0.0
+            Me%MaxVelocityModulus_R4 = 0.0
         endif
         
         if (.not. Me%LimitToCriticalFlow) then
@@ -14924,7 +14927,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
         !Routes water outside the watershed if water is higher then a given treshold values
         !Default is zero
-        call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
+        !call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
 
         BoundaryFlowVolume = 0.0
         TotalBoundaryInflowVolume = 0.0
@@ -14940,9 +14943,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             i = Me%BoundaryCells_I(n)
             j = Me%BoundaryCells_J(n)
-            WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
                 if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
+                    WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
                     if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
                         
                         dh = Me%myWaterLevel (i, j) - WaterLevelBoundaryValue
@@ -14998,7 +15001,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             !Updates Water Level
                             Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Me%ExtVar%Topography(i, j)
                         endif
+                    else
+                        Me%iFlowBoundary (i, j) = 0.0
                     endif
+                    
                 endif
             endif
         enddo
@@ -15477,6 +15483,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
                         Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                        
+                        !Update Maximum velocity to use in output flooding
+                        if (Me%VelocityModulus_R4 (i, j) > Me%MaxVelocityModulus_R4 (i, j)) then
+                            Me%MaxVelocityModulus_R4 (i, j) = Me%VelocityModulus_R4 (i, j)
+                        endif
+                        
                     else
                         Me%FlowModulus_R4(i, j) = 0.0
                         Me%VelocityModulus_R4(i, j) = 0.0
@@ -16555,7 +16567,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         do i = ILB, IUB
    
             if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
                 !Water Column of overland flow
                 if (Me%myWaterColumn(i, j) > Me%Output%MaxWaterColumn(i, j)) then
                     Me%Output%MaxWaterColumn(i, j) = Me%myWaterColumn(i, j)
@@ -16566,17 +16577,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%Output%TimeOfMaxWaterColumn(i,j) = Me%ExtVar%Now - Me%BeginTime
                    
                 endif
-                
                 if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                    if (Me%VelocityModulus_R4 (i, j) > Me%MaxVelocityModulus_R4 (i, j)) then
+                        FloodRisk = Me%myWaterColumn(i, j) * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
                     
-                    FloodRisk = Me%myWaterColumn(i, j) * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
-                    
-                    if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
-                        Me%Output%MaxFloodRisk(i,j) = FloodRisk
+                        if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
+                            Me%Output%MaxFloodRisk(i,j) = FloodRisk
+                        endif
                     endif
                 endif
             endif
-
         enddo
         enddo
         !$OMP END DO NOWAIT
