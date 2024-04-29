@@ -51,7 +51,7 @@ Module ModuleRunOff
                                         GetGridAngle, GetCheckDistortion,                & 
                                         GetCellIDfromIJ, GetCellIJfromID, GetCellZ_XY
     use ModuleHorizontalMap     ,only : GetBoundaries, UngetHorizontalMap
-    use ModuleGridData          ,only : GetGridData, UngetGridData, WriteGridData
+    use ModuleGridData          ,only : GetGridData, UngetGridData, WriteGridData, WriteGridData_v1_R4
     use ModuleBasinGeometry     ,only : GetBasinPoints, GetRiverPoints, GetCellSlope,    &
                                         GetDrainageDirection, TargetPoint,               &
                                         UnGetBasin
@@ -556,21 +556,25 @@ Module ModuleRunOff
         logical                                     :: WriteMaxFlowModulus  = .false.
         character(Pathlength)                       :: MaxFlowModulusFile   = null_str
         real, dimension(:,:), pointer               :: MaxFlowModulus       => null()
+        real(4), dimension(:,:), pointer            :: MaxFlowModulus_R4    => null()
 
         logical                                     :: WriteMaxWaterColumn  = .false.        
         character(Pathlength)                       :: MaxWaterColumnFile   = null_str
         character(Pathlength)                       :: MaxWaterLevelFile    = null_str
         character(Pathlength)                       :: TimeOfMaxWaterColumnFile = null_str
         real, dimension(:,:), pointer               :: MaxWaterColumn       => null()
+        real(4), dimension(:,:), pointer            :: MaxWaterColumn_R4       => null()
         real, dimension(:,:), pointer               :: TimeOfMaxWaterColumn => null()        
 
         logical                                     :: WriteVelocityAtMaxWaterColumn  = .false.        
         character(Pathlength)                       :: VelocityAtMaxWaterColumnFile   = null_str
-        real, dimension(:,:), pointer               :: VelocityAtMaxWaterColumn       => null()        
+        real, dimension(:,:), pointer               :: VelocityAtMaxWaterColumn       => null()       
+        real(4), dimension(:,:), pointer            :: VelocityAtMaxWaterColumn_R4       => null()       
 
         logical                                     :: WriteMaxFloodRisk              = .false.        
         character(Pathlength)                       :: MaxFloodRiskFile               = null_str
-        real, dimension(:,:), pointer               :: MaxFloodRisk                   => null()            
+        real, dimension(:,:), pointer               :: MaxFloodRisk                   => null()         
+        real(4), dimension(:,:), pointer            :: MaxFloodRisk_R4                => null()         
         
         logical                                     :: WriteFloodPeriod               = .false.        
         character(Pathlength)                       :: FloodPeriodFile                = null_str
@@ -1106,7 +1110,12 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             endif
 
             if (Me%Output%WriteMaxWaterColumn .or. Me%Output%WriteMaxFloodRisk) then
-                call OutputFlooding
+                if (Me%HasRunoffProperties) then
+                    call OutputFlooding
+                else
+                    call OutputFlooding_R4
+                endif
+                
             endif
 
             if (Me%Output%WriteFloodArrivalTime) then            
@@ -5285,21 +5294,36 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         Me%VelModFaceU          = 0.0
         Me%VelModFaceV          = 0.0
 
-        allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-        allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+        if (Me%HasRunoffProperties) then
+            allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         
-        Me%Output%MaxFlowModulus = 0.0
+            Me%Output%MaxFlowModulus = 0.0
         
-        Me%Output%MaxWaterColumn = Me%MinimumWaterColumn
-        Me%Output%TimeOfMaxWaterColumn = -99.0
+            Me%Output%MaxWaterColumn = Me%MinimumWaterColumn
  
-        allocate (Me%Output%VelocityAtMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        Me%Output%VelocityAtMaxWaterColumn = null_real
+            allocate (Me%Output%VelocityAtMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            Me%Output%VelocityAtMaxWaterColumn = null_real
 
-        allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        Me%Output%MaxFloodRisk = null_real
-      
+            allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            Me%Output%MaxFloodRisk = null_real
+        else
+            allocate (Me%Output%MaxFlowModulus_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%Output%MaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+        
+            Me%Output%MaxFlowModulus_R4 = 0.0
+            Me%Output%MaxWaterColumn_R4 = Me%MinimumWaterColumn
+ 
+            allocate (Me%Output%VelocityAtMaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            Me%Output%VelocityAtMaxWaterColumn_R4 = null_real
+
+            allocate (Me%Output%MaxFloodRisk_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            Me%Output%MaxFloodRisk_R4 = null_real
+        endif
+        
+        allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+        Me%Output%TimeOfMaxWaterColumn = -99.0
+        
         if (Me%Output%WriteFloodPeriod) then
             allocate (Me%Output%FloodPeriod (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
             Me%Output%FloodPeriod = 0.
@@ -15459,8 +15483,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
                         Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
-                        if (Me%FlowModulus_R4(i, j) > Me%Output%MaxFlowModulus(i, j)) then
-                            Me%Output%MaxFlowModulus(i, j) = real(Me%FlowModulus_R4(i, j), kind = 8)
+                        if (Me%FlowModulus_R4(i, j) > Me%Output%MaxFlowModulus_R4(i, j)) then
+                            Me%Output%MaxFlowModulus_R4(i, j) = Me%FlowModulus_R4(i, j)
                         end if
                     else
                         Me%FlowModulus_R4(i, j) = 0.0
@@ -16541,7 +16565,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
-        real                                    :: SumArea, WeightedVelocity, FloodRisk, WaterColumn
+        real                                    :: SumArea, WeightedVelocity
+        real(4)                                 :: FloodRisk, WaterColumn
         integer                                 :: CHUNK
 
         !Begin-----------------------------------------------------------------        
@@ -16565,11 +16590,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                     WaterColumn = Me%myWaterColumn(i, j)
                     !Water Column of overland flow
-                    if (WaterColumn > Me%Output%MaxWaterColumn(i, j)) then
-                        Me%Output%MaxWaterColumn(i, j) = WaterColumn
+                    if (WaterColumn > Me%Output%MaxWaterColumn_R4(i, j)) then
+                        Me%Output%MaxWaterColumn_R4(i, j) = WaterColumn
                     
                         !Velocity at MaxWater column
-                        Me%Output%VelocityAtMaxWaterColumn(i,j) =  Me%VelocityModulus_R4 (i, j)
+                        Me%Output%VelocityAtMaxWaterColumn_R4(i,j) =  Me%VelocityModulus_R4 (i, j)
 
                         Me%Output%TimeOfMaxWaterColumn(i,j) = Me%ExtVar%Now - Me%BeginTime
                    
@@ -16578,8 +16603,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%MaxVelocityModulus_R4 (i, j) = Me%VelocityModulus_R4 (i, j)
                         FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
                     
-                        if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
-                            Me%Output%MaxFloodRisk(i,j) = FloodRisk
+                        if (FloodRisk > Me%Output%MaxFloodRisk_R4(i,j)) then
+                            Me%Output%MaxFloodRisk_R4(i,j) = FloodRisk
                         endif
                     endif
                 endif
@@ -16605,8 +16630,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
        
                 !Water Column of River Network
                 if (Me%ExtVar%RiverPoints(i, j) == BasinPoint) then
-                    if (ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j) > Me%Output%MaxWaterColumn(i, j)) then
-                        Me%Output%MaxWaterColumn(i, j) = ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
+                    if (ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j) > Me%Output%MaxWaterColumn_R4(i, j)) then
+                        Me%Output%MaxWaterColumn_R4(i, j) = ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
                         
                         SumArea = Me%ExtVar%GridCellArea(i,j) + ChannelsTopArea(i,j)
                         
@@ -16614,11 +16639,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                             ChannelsVelocity(i,j) * ChannelsTopArea(i,j) ) / SumArea
                         
                         !weighted velocity with river
-                        Me%Output%VelocityAtMaxWaterColumn(i,j) = WeightedVelocity
+                        Me%Output%VelocityAtMaxWaterColumn_R4(i,j) = WeightedVelocity
                         
-                        if ((Me%Output%MaxWaterColumn(i, j) *  (WeightedVelocity + Me%Output%FloodRiskVelCoef))     &
-                              > Me%Output%MaxFloodRisk(i,j)) then
-                            Me%Output%MaxFloodRisk(i,j) = Me%Output%MaxWaterColumn(i, j)                            &
+                        if ((Me%Output%MaxWaterColumn_R4(i, j) *  (WeightedVelocity + Me%Output%FloodRiskVelCoef))     &
+                              > Me%Output%MaxFloodRisk_R4(i,j)) then
+                            Me%Output%MaxFloodRisk_R4(i,j) = Me%Output%MaxWaterColumn_R4(i, j)                            &
                                                           * (WeightedVelocity + Me%Output%FloodRiskVelCoef)
                         endif
                     endif                                        
@@ -17191,140 +17216,274 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
 
                 deallocate(Me%MassError)
 
-        
-                if(Me%Output%WriteMaxFlowModulus) then
-                    call WriteGridData  (Me%Output%MaxFlowModulusFile,         &
-                         COMENT1          = "MaxFlowModulusFile",              &
-                         COMENT2          = "MaxFlowModulusFile",              &
-                         HorizontalGridID = Me%ObjHorizontalGrid,              &
-                         FillValue        = -99.0,                             &
-                         OverWrite        = .true.,                            &
-                         GridData2D_Real  = Me%Output%MaxFlowModulus,          &
-                         STAT             = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR030'
+                if (Me%HasRunoffProperties) then
+                    if(Me%Output%WriteMaxFlowModulus) then
+                        call WriteGridData  (Me%Output%MaxFlowModulusFile,         &
+                             COMENT1          = "MaxFlowModulusFile",              &
+                             COMENT2          = "MaxFlowModulusFile",              &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxFlowModulus,          &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR030'
 
-                    deallocate(Me%Output%MaxFlowModulus)
+                        deallocate(Me%Output%MaxFlowModulus)
 
+                    endif
+                else
+                    if(Me%Output%WriteMaxFlowModulus) then
+                        call WriteGridData_v1_R4  (Me%Output%MaxFlowModulusFile,   &
+                             COMENT1          = "MaxFlowModulusFile",              &
+                             COMENT2          = "MaxFlowModulusFile",              &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxFlowModulus_R4,       &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR030'
+
+                        deallocate(Me%Output%MaxFlowModulus_R4)
+
+                    endif                    
                 endif
                 
                 if (Me%Output%WriteMaxWaterColumn) then
                     
-                    call WriteGridData  (Me%Output%MaxWaterColumnFile,         &
-                         COMENT1          = "MaxWaterColumnFile",              &
-                         COMENT2          = "MaxWaterColumnFile",              &
-                         HorizontalGridID = Me%ObjHorizontalGrid,              &
-                         FillValue        = -99.0,                             &
-                         OverWrite        = .true.,                            &
-                         GridData2D_Real  = Me%Output%MaxWaterColumn,          &
-                         STAT             = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR040'
-
-                    if(Me%Output%OutputFloodRisk)then
-                        write(RunOffLogFileID, *)"MAX_WATER_COLUMN_IN_METERS     : ", maxval(Me%Output%MaxWaterColumn)
-
-                        MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
-
-                        call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR049'
-
-                        write(RunOffLogFileID, *)"MAX_WATER_COLUMN_I             : ", MaxWC_IJ(1)-1
-                        write(RunOffLogFileID, *)"MAX_WATER_COLUMN_J             : ", MaxWC_IJ(2)-1
-                        write(RunOffLogFileID, *)"MAX_WATER_COLUMN_X_IN_METERS   : ", X
-                        write(RunOffLogFileID, *)"MAX_WATER_COLUMN_Y_IN_METERS   : ", Y
-
-                    endif
-
-                    call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR041'
-                    
-                    !Temporarilu use the max water column array to compute max water level
-                    Me%Output%MaxWaterColumn = Me%Output%MaxWaterColumn + Me%ExtVar%Topography
-                    
-                    !Gets a pointer to Topography
-                    call UnGetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR042'
-
-                    call WriteGridData  (Me%Output%MaxWaterLevelFile,          &
-                         COMENT1          = "MaxWaterLevelFile",               &
-                         COMENT2          = "MaxWaterLevelFile",               &
-                         HorizontalGridID = Me%ObjHorizontalGrid,              &
-                         FillValue        = -99.0,                             &
-                         OverWrite        = .true.,                            &
-                         GridData2D_Real  = Me%Output%MaxWaterColumn,          &
-                         STAT             = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043'
-
-                    if(Me%Output%OutputFloodRisk)then
-                        write(RunOffLogFileID, *)"MAX_WATER_LEVEL_IN_METERS      : ", maxval(Me%Output%MaxWaterColumn)
-
-                        MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
-
-                        call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043a'
-
-                        write(RunOffLogFileID, *)"MAX_WATER_LEVEL_I              : ", MaxWC_IJ(1)-1
-                        write(RunOffLogFileID, *)"MAX_WATER_LEVEL_J              : ", MaxWC_IJ(2)-1
-                        write(RunOffLogFileID, *)"MAX_WATER_LEVEL_X_IN_METERS    : ", X
-                        write(RunOffLogFileID, *)"MAX_WATER_LEVEL_Y_IN_METERS    : ", Y
-
-                    endif
-
-                    deallocate(Me%Output%MaxWaterColumn)
-
-                    call WriteGridData  (Me%Output%TimeOfMaxWaterColumnFile,   &
-                         COMENT1          = "TimeOfMaxWaterColumnFile",        &
-                         COMENT2          = "TimeOfMaxWaterColumnFile",        &
-                         HorizontalGridID = Me%ObjHorizontalGrid,              &
-                         FillValue        = -99.0,                             &
-                         OverWrite        = .true.,                            &
-                         GridData2D_Real  = Me%Output%TimeOfMaxWaterColumn,    &
-                         STAT             = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR044'
-
-                    if(Me%Output%OutputFloodRisk)then
-                        write(RunOffLogFileID, *)"TIME_OF_MAX_WATER_COLUMN       : ", maxval(Me%Output%TimeOfMaxWaterColumn)
-                    endif
-
-
-                    deallocate(Me%Output%TimeOfMaxWaterColumn)
-
-                    
-                    if (Me%Output%WriteVelocityAtMaxWaterColumn) then
-                        call WriteGridData  (Me%Output%VelocityAtMaxWaterColumnFile,&
-                             COMENT1          = "VelocityAtMaxWaterColumnFile",     &
-                             COMENT2          = "VelocityAtMaxWaterColumnFile",     &
-                             HorizontalGridID = Me%ObjHorizontalGrid,               &
-                             FillValue        = -99.0,                              &
-                             OverWrite        = .true.,                             &
-                             GridData2D_Real  = Me%Output%VelocityAtMaxWaterColumn, &
+                    if (Me%HasRunoffProperties) then
+                        
+                        call WriteGridData  (Me%Output%MaxWaterColumnFile,         &
+                             COMENT1          = "MaxWaterColumnFile",              &
+                             COMENT2          = "MaxWaterColumnFile",              &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxWaterColumn,          &
                              STAT             = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR050'    
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR040'
 
                         if(Me%Output%OutputFloodRisk)then
-                            write(RunOffLogFileID, *)"VEL_AT_MAX_WATER_COLUMN        : ", maxval(Me%Output%VelocityAtMaxWaterColumn)
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_IN_METERS     : ", maxval(Me%Output%MaxWaterColumn)
+
+                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
+
+                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR049'
+
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_I             : ", MaxWC_IJ(1)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_J             : ", MaxWC_IJ(2)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_X_IN_METERS   : ", X
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_Y_IN_METERS   : ", Y
+
                         endif
 
-                        deallocate(Me%Output%VelocityAtMaxWaterColumn)
+                        call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR041'
+                    
+                        !Temporarilu use the max water column array to compute max water level
+                        Me%Output%MaxWaterColumn = Me%Output%MaxWaterColumn + Me%ExtVar%Topography
+                    
+                        !Gets a pointer to Topography
+                        call UnGetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR042'
+
+                        call WriteGridData  (Me%Output%MaxWaterLevelFile,          &
+                             COMENT1          = "MaxWaterLevelFile",               &
+                             COMENT2          = "MaxWaterLevelFile",               &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxWaterColumn,          &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_IN_METERS      : ", maxval(Me%Output%MaxWaterColumn)
+
+                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
+
+                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043a'
+
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_I              : ", MaxWC_IJ(1)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_J              : ", MaxWC_IJ(2)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_X_IN_METERS    : ", X
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_Y_IN_METERS    : ", Y
+
+                        endif
+
+                        deallocate(Me%Output%MaxWaterColumn)
+
+                        call WriteGridData  (Me%Output%TimeOfMaxWaterColumnFile,   &
+                             COMENT1          = "TimeOfMaxWaterColumnFile",        &
+                             COMENT2          = "TimeOfMaxWaterColumnFile",        &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%TimeOfMaxWaterColumn,    &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR044'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"TIME_OF_MAX_WATER_COLUMN       : ", maxval(Me%Output%TimeOfMaxWaterColumn)
+                        endif
+
+
+                        deallocate(Me%Output%TimeOfMaxWaterColumn)
+
+                    
+                        if (Me%Output%WriteVelocityAtMaxWaterColumn) then
+                            call WriteGridData  (Me%Output%VelocityAtMaxWaterColumnFile,&
+                                 COMENT1          = "VelocityAtMaxWaterColumnFile",     &
+                                 COMENT2          = "VelocityAtMaxWaterColumnFile",     &
+                                 HorizontalGridID = Me%ObjHorizontalGrid,               &
+                                 FillValue        = -99.0,                              &
+                                 OverWrite        = .true.,                             &
+                                 GridData2D_Real  = Me%Output%VelocityAtMaxWaterColumn, &
+                                 STAT             = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR050'    
+
+                            if(Me%Output%OutputFloodRisk)then
+                                write(RunOffLogFileID, *)"VEL_AT_MAX_WATER_COLUMN        : ", maxval(Me%Output%VelocityAtMaxWaterColumn)
+                            endif
+
+                            deallocate(Me%Output%VelocityAtMaxWaterColumn)
+                        endif
+                          
+                    else
+                        
+                    
+                    !Real 4 outputs--------------------------------------------------
+                        call WriteGridData_v1_R4  (Me%Output%MaxWaterColumnFile,         &
+                             COMENT1          = "MaxWaterColumnFile",              &
+                             COMENT2          = "MaxWaterColumnFile",              &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxWaterColumn_R4,          &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR040'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_IN_METERS     : ", maxval(Me%Output%MaxWaterColumn_R4)
+
+                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn_R4)
+
+                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR049'
+
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_I             : ", MaxWC_IJ(1)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_J             : ", MaxWC_IJ(2)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_X_IN_METERS   : ", X
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_Y_IN_METERS   : ", Y
+
+                        endif
+
+                        call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR041'
+                    
+                        !Temporarilu use the max water column array to compute max water level
+                        Me%Output%MaxWaterColumn_R4 = Me%Output%MaxWaterColumn_R4 + Me%ExtVar%Topography
+                    
+                        !Gets a pointer to Topography
+                        call UnGetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR042'
+
+                        call WriteGridData_v1_R4  (Me%Output%MaxWaterLevelFile,          &
+                             COMENT1          = "MaxWaterLevelFile",               &
+                             COMENT2          = "MaxWaterLevelFile",               &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxWaterColumn_R4,          &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_IN_METERS      : ", maxval(Me%Output%MaxWaterColumn_R4)
+
+                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn_R4)
+
+                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043a'
+
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_I              : ", MaxWC_IJ(1)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_J              : ", MaxWC_IJ(2)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_X_IN_METERS    : ", X
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_Y_IN_METERS    : ", Y
+
+                        endif
+
+                        deallocate(Me%Output%MaxWaterColumn_R4)
+
+                        call WriteGridData  (Me%Output%TimeOfMaxWaterColumnFile,   &
+                             COMENT1          = "TimeOfMaxWaterColumnFile",        &
+                             COMENT2          = "TimeOfMaxWaterColumnFile",        &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%TimeOfMaxWaterColumn,    &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR044'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"TIME_OF_MAX_WATER_COLUMN       : ", maxval(Me%Output%TimeOfMaxWaterColumn)
+                        endif
+
+
+                        deallocate(Me%Output%TimeOfMaxWaterColumn)
+
+                    
+                        if (Me%Output%WriteVelocityAtMaxWaterColumn) then
+                            call WriteGridData_v1_R4  (Me%Output%VelocityAtMaxWaterColumnFile,&
+                                 COMENT1          = "VelocityAtMaxWaterColumnFile",     &
+                                 COMENT2          = "VelocityAtMaxWaterColumnFile",     &
+                                 HorizontalGridID = Me%ObjHorizontalGrid,               &
+                                 FillValue        = -99.0,                              &
+                                 OverWrite        = .true.,                             &
+                                 GridData2D_Real  = Me%Output%VelocityAtMaxWaterColumn_R4, &
+                                 STAT             = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR050'    
+
+                            if(Me%Output%OutputFloodRisk)then
+                                write(RunOffLogFileID, *)"VEL_AT_MAX_WATER_COLUMN        : ", maxval(Me%Output%VelocityAtMaxWaterColumn_R4)
+                            endif
+
+                            deallocate(Me%Output%VelocityAtMaxWaterColumn_R4)
+                        endif
                     endif
-
-                endif
-
-                if (Me%Output%WriteMaxFloodRisk) then
-                    call WriteGridData  (Me%Output%MaxFloodRiskFile,           &
-                         COMENT1          = "MaxFloodRisk",                    &
-                         COMENT2          = "MaxFloodRisk",                    &
-                         HorizontalGridID = Me%ObjHorizontalGrid,              &
-                         FillValue        = -99.0,                             &
-                         OverWrite        = .true.,                            &
-                         GridData2D_Real  = Me%Output%MaxFloodRisk,            &
-                         STAT             = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR060'
-
-                    deallocate(Me%Output%MaxFloodRisk)
-
                 endif
                 
+                if (Me%Output%WriteMaxFloodRisk) then
+                    
+                    if (Me%HasRunoffProperties) then
+                        call WriteGridData  (Me%Output%MaxFloodRiskFile,           &
+                                COMENT1          = "MaxFloodRisk",                    &
+                                COMENT2          = "MaxFloodRisk",                    &
+                                HorizontalGridID = Me%ObjHorizontalGrid,              &
+                                FillValue        = -99.0,                             &
+                                OverWrite        = .true.,                            &
+                                GridData2D_Real  = Me%Output%MaxFloodRisk,            &
+                                STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR060'
 
+                        deallocate(Me%Output%MaxFloodRisk)
+                    else
+                        call WriteGridData_v1_R4  (Me%Output%MaxFloodRiskFile,           &
+                                COMENT1          = "MaxFloodRisk",                    &
+                                COMENT2          = "MaxFloodRisk",                    &
+                                HorizontalGridID = Me%ObjHorizontalGrid,              &
+                                FillValue        = -99.0,                             &
+                                OverWrite        = .true.,                            &
+                                GridData2D_Real  = Me%Output%MaxFloodRisk_R4,         &
+                                STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR060'
+
+                        deallocate(Me%Output%MaxFloodRisk_R4)
+                    endif
+                    
+                endif
+                
                 if (Me%Output%WriteFloodPeriod) then
 
                     if(Me%Output%nFloodPeriodLimits > 0)then

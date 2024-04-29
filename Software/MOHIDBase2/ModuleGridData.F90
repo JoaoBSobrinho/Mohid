@@ -93,6 +93,7 @@ Module ModuleGridData
 
     !Modifier
     public  :: WriteGridData
+    public  :: WriteGridData_v1_R4
     public  :: ModifyGridData
 
     !Destructor
@@ -2568,6 +2569,438 @@ if31:   if (MasterOrSlave) then
         !------------------------------------------------------------------------
 
     end subroutine WriteGridData_v1
+    
+    !------------------------------------------------------------------------
+    subroutine WriteGridData_v1_R4 (FileName,                                          &
+                                 COMENT1, COMENT2,                                  &
+                                 HorizontalGridID,                                  &
+                                 FillValue, Overwrite,                              &
+                                 GridData2D_Real, GridData2D_Int,                   &
+                                 GridData3D_Real, GridData3D_Int,                   &
+                                 KLB, KUB,                                          &
+                                 STAT)                                                                           
+        
+        !Arguments---------------------------------------------------------------
+        character(LEN = *), intent(IN)              :: FileName
+        character(LEN = *), intent(IN)              :: COMENT1          
+        character(LEN = *), intent(IN)              :: COMENT2   
+        integer                                     :: HorizontalGridID       
+        real                                        :: FillValue
+        logical, intent(IN)                         :: Overwrite
+        real(4),    pointer, optional, dimension(:,:)  :: GridData2D_Real
+        integer, pointer, optional, dimension(:,:)  :: GridData2D_Int
+        real(4),    pointer, optional, dimension(:,:,:):: GridData3D_Real
+        integer, pointer, optional, dimension(:,:,:):: GridData3D_Int
+        integer, optional, intent(IN)               :: KLB, KUB
+        integer, optional, intent(OUT)              :: STAT
+
+        !Local-------------------------------------------------------------------
+        real(4),    pointer,           dimension(:,:)  :: GridData2D_Real_Out
+        integer, pointer,           dimension(:,:)  :: GridData2D_Int_Out
+        real(4),    pointer,           dimension(:,:,:):: GridData3D_Real_Out
+        integer, pointer,           dimension(:,:,:):: GridData3D_Int_Out
+        real(4),    pointer,           dimension(:,:)  :: Me_GridData2D_Out
+
+        real                                        :: Xorig      
+        real                                        :: Yorig       
+        real                                        :: GRID_ANGLE  
+        integer                                     :: Zone        
+        real                                        :: Longitude
+        real                                        :: Latitude    
+        integer                                     :: CoordType  
+        
+        real, pointer,           dimension(:  )     :: XX, YY
+        real, pointer,           dimension(:,:)     :: XX_IE, YY_IE
+        real, pointer,           dimension(:,:)     :: LatConn, LongConn
+                
+        real, pointer,           dimension(:  )     :: XX_Out, YY_Out
+        real, pointer,           dimension(:,:)     :: XX_IE_Out, YY_IE_Out
+        real, pointer,           dimension(:,:)     :: LatConn_Out, LongConn_Out
+        
+        type (T_Size2D)                             :: WorkSize, Global
+
+        integer                                     :: Unit
+        integer                                     :: STAT_CALL
+        integer                                     :: UTM_, MIL_PORT_
+        integer                                     :: PORTUGUESE_UTM_ZONE_, SIMPLE_GEOG_
+        logical                                     :: exist, DistortionYes
+        integer                                     :: i, j, k
+
+        logical                                     :: ON, Master, MasterOrSlave
+
+        !------------------------------------------------------------------------
+
+        if ((present(GridData3D_Real) .or. present(GridData3D_Int)) .and.               &
+            (.not. present(KLB) .or. .not. present(KUB))) then
+            if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR10'
+        endif
+        
+        !Gets Origin
+        call GetGridOrigin(HorizontalGridID, Xorig, Yorig, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR20'
+        
+        !Gets GridAngle
+        call GetGridAngle(HorizontalGridID, GRID_ANGLE, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR30'
+
+        !Gets GridZone
+        call GetGridZone (HorizontalGridID, Zone, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR40'
+
+        !Gets Lat/lon
+        call GetLatitudeLongitude (HorizontalGridID, Latitude, Longitude, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR50'
+        
+        !Gets Lat/lon
+        call GetGridCoordType (HorizontalGridID, CoordType, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR60'
+        
+        !Gets XX/ YY and XX_IE, YY_IE
+        call GetHorizontalGrid(HorizontalGridID, XX = XX, YY = YY, XX_IE = XX_IE, YY_IE = YY_IE, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR70'
+
+        call GetGridLatitudeLongitude(HorizontalGridID,                     &
+                                      GridLatitudeConn  = LatConn,          &
+                                      GridLongitudeConn = LongConn,         &
+                                      STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR80'
+
+        call GetCheckDistortion(HorizontalGridID, DistortionYes, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR90'
+
+        !Gets WorkSize
+        call GetHorizontalGridSize(HorizontalGridID, WorkSize = WorkSize, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR100'
+
+        call GetDDecompParameters                                                   &
+                             (HorizontalGridID = HorizontalGridID,                  &
+                              ON               = ON,                     &
+                              Master           = Master,                 &
+                              MasterOrSlave    = MasterOrSlave,          &
+                              Global           = Global,                 &  
+                              STAT             = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR110'
+        
+        
+
+if3:    if (.not. MasterOrSlave .or. Master) then
+
+            call UnitsManager(Unit, OPEN_FILE, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR120'
+            
+            if(.not. Overwrite)then
+                !Verifies if file exists
+                inquire (file = FileName, exist = exist)
+                if (exist) then
+                    write(*,* )'Cannot write Grid Data. File Exists already!'
+                    write(*, *)trim(adjustl(FileName))
+                    stop 'WriteGridData_v1 - ModuleGridData - ERR130' 
+                endif
+
+                !Opens file
+                open (Unit, file = FileName, status = 'new', IOSTAT = STAT_CALL) 
+                if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR140'
+            else
+                !Opens file
+                open (Unit, file = FileName, status = 'replace', IOSTAT = STAT_CALL) 
+                if (STAT_CALL /= SUCCESS_) then 
+                    write(*,*) 'Was not possible to write to file ', FileName
+                    write(*,*) 'OPEN returned IOSTAT = ', STAT_CALL
+                    stop 'WriteGridData_v1 - ModuleGridData - ERR150'
+                endif
+            end if
+        
+        endif if3        
+
+        
+if1:    if (MasterOrSlave) then
+
+            WorkSize = Global
+            
+#ifdef _USE_MPI                        
+            
+            if (present(GridData2D_Real)) then
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In2D             = GridData2D_Real,                   &
+                                  Out2D            = GridData2D_Real_Out,               & 
+                                  STAT             = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR160'
+            endif
+            if (present(GridData2D_Int)) then
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In2D             = GridData2D_Int,                    &
+                                  Out2D            = GridData2D_Int_Out,                & 
+                                  STAT             = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR170'
+            endif
+            if (present(GridData3D_Real)) then
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In3D             = GridData3D_Real,                   &
+                                  Out3D            = GridData3D_Real_Out,               &
+                                  KLB              = KLB,                               &
+                                  KUB              = KUB,                               & 
+                                  STAT             = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR180'                                  
+            endif            
+            if (present(GridData3D_Int)) then
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In3D             = GridData3D_Int,                    &
+                                  Out3D            = GridData3D_Int_Out,                &
+                                  KLB              = KLB,                               &
+                                  KUB              = KUB,                               & 
+                                  STAT             = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR190' 
+            endif           
+            
+            if (.not.present(GridData2D_Real).and..not.present(GridData2D_Int).and.     &
+                .not.present(GridData3D_Real).and..not.present(GridData3D_Int)) then
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In2D             = Me%GridData2D,                     &
+                                  Out2D            = Me_GridData2D_Out,                 &
+                                  STAT             = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR200'
+            endif                
+                        
+            if (DistortionYes) then
+                if (CoordType .EQ. SIMPLE_GEOG_) then
+                    call JoinGridData(HorizontalGridID = HorizontalGridID,              &
+                                      In2D             = LongConn,                      &
+                                      Out2D            = LongConn_Out,                  &
+                                      dj               = 1,                             &
+                                      di               = 1,                             &
+                                      STAT             = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR210'
+                    call JoinGridData(HorizontalGridID = HorizontalGridID,              &
+                                      In2D             = LatConn,                       &
+                                      Out2D            = LatConn_Out,                   &
+                                      dj               = 1,                             &
+                                      di               = 1,                             &
+                                      STAT             = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR220'
+                else
+                    call JoinGridData(HorizontalGridID = HorizontalGridID,              &
+                                      In2D             = XX_IE,                         &
+                                      Out2D            = XX_IE_Out,                     &
+                                      dj               = 1,                             &
+                                      di               = 1,                             &
+                                      STAT             = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR230'
+                    call JoinGridData(HorizontalGridID = HorizontalGridID,              &
+                                      In2D             = YY_IE,                         &
+                                      Out2D            = YY_IE_Out,                     &
+                                      dj               = 1,                             &
+                                      di               = 1,                             &
+                                      STAT             = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR240'
+                end if
+            else
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In1D             = XX,                                &
+                                  Out1D            = XX_Out,                            &
+                                  Type1DIJ         = Type1DJ,                           &
+                                  dj               = 1,                                 &
+                                  STAT             = STAT_CALL)
+                 if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR250'
+
+                call JoinGridData(HorizontalGridID = HorizontalGridID,                  &
+                                  In1D             = YY,                                &
+                                  Out1D            = YY_Out,                            &
+                                  Type1DIJ         = Type1DI,                           &
+                                  di               = 1,                                 &                                  
+                                  STAT             = STAT_CALL)
+                 if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR260'
+            endif       
+            
+#endif _USE_MPI                             
+           
+        else if1
+            if (present(GridData2D_Real)) then
+                GridData2D_Real_Out => GridData2D_Real
+            elseif(present(GridData2D_Int)) then
+                GridData2D_Int_Out  => GridData2D_Int
+            elseif(present(GridData3D_Int)) then
+                GridData3D_Int_Out  => GridData3D_Int
+            elseif(present(GridData3D_Real)) then
+                GridData3D_Real_Out => GridData3D_Real
+            end if
+            
+            XX_Out              => XX
+            YY_Out              => YY
+            XX_IE_Out           => XX_IE
+            YY_IE_Out           => YY_IE
+            LatConn_Out         => LatConn
+            LongConn_Out        => LongConn
+        
+        endif if1
+        
+if2:    if (.not. MasterOrSlave .or. Master) then
+
+            call WriteDataLine(unit, 'COMENT1', COMENT1)
+            call WriteDataLine(unit, 'COMENT2', COMENT2)
+            write(unit, *)                                                                                                      
+            write(unit, *)                                                                                                      
+                           
+            write(unit, *) 'ILB_IUB    :', WorkSize%ILB, WorkSize%IUB
+            write(unit, *) 'JLB_JUB    :', WorkSize%JLB, WorkSize%JUB
+            
+            write(unit, *) 'COORD_TIP  :', CoordType
+
+            call GetCoordTypeList(UTM = UTM_, MIL_PORT = MIL_PORT_, &
+                                  PORTUGUESE_UTM_ZONE = PORTUGUESE_UTM_ZONE_, &
+                                  SIMPLE_GEOG = SIMPLE_GEOG_)
+            if ((CoordType .EQ. UTM_) .OR. (CoordType .EQ. MIL_PORT_)) then
+                if (CoordType .EQ. MIL_PORT_) then
+                    write(unit, *)  'ZONE       :', PORTUGUESE_UTM_ZONE_
+                else
+                    write(unit, *)  'ZONE       :', Zone
+                endif
+            end if
+
+            write(unit, *) 'ORIGIN     :', Xorig, Yorig
+            write(unit, *) 'GRID_ANGLE :', GRID_ANGLE
+            write(unit, *) 'LATITUDE   :', Latitude           
+            write(unit, *) 'LONGITUDE  :', Longitude             
+            write(unit, *) 'FILL_VALUE :', FillValue
+            write(unit, *) 
+            write(unit, *) 
+
+            if (DistortionYes) then
+
+                write(unit, *) "<CornersXY>"
+
+                if (CoordType .EQ. SIMPLE_GEOG_) then
+                    
+                    do i = WorkSize%ILB, WorkSize%IUB+1
+                    do j = WorkSize%JLB, WorkSize%JUB+1 
+                        write(unit, *) LongConn_Out(i,j), LatConn_Out(i,j)
+                    end do
+                    end do
+
+                else
+
+                    do i = WorkSize%ILB, WorkSize%IUB+1
+                    do j = WorkSize%JLB, WorkSize%JUB+1 
+                        write(unit, *) XX_IE_Out(i,j),YY_IE_Out(i,j)
+                    end do
+                    end do
+
+                end if
+
+                write(unit, *) "<"//backslash//"CornersXY>"             
+    !            write(unit, *) "<\CornersXY>"
+
+
+            else
+
+                write(unit, *) "<BeginXX>"
+                do j = WorkSize%JLB, WorkSize%JUB+1 
+                    write(unit, *) XX_Out(j)                       
+                end do
+                write(unit, *) "<EndXX>"
+
+
+                write(unit, *) "<BeginYY>"
+                do i = WorkSize%ILB, WorkSize%IUB+1
+                    write(unit, *) YY_Out(i)  
+                end do
+                write(unit, *) "<EndYY>"
+
+            endif
+
+            if (present(GridData2D_Real)) then
+                write(unit, *)trim(BeginGridData2D)   
+                do i = WorkSize%ILB, WorkSize%IUB
+                do j = WorkSize%JLB, WorkSize%JUB
+                    write(unit, *) GridData2D_Real_Out(i, j)
+                end do
+                end do
+                write(unit, *)trim(EndGridData2D)
+            elseif(present(GridData2D_Int)) then
+                write(unit, *)trim(BeginGridData2D)   
+                do i = WorkSize%ILB, WorkSize%IUB
+                do j = WorkSize%JLB, WorkSize%JUB
+                    write(unit, *) GridData2D_Int_Out(i, j)
+                end do
+                end do
+                write(unit, *)trim(EndGridData2D)
+            elseif(present(GridData3D_Int)) then
+                write(unit, *)trim(BeginGridData3D)   
+                do i = WorkSize%ILB, WorkSize%IUB
+                do j = WorkSize%JLB, WorkSize%JUB
+                do k = KLB         , KUB   
+                    write(unit, *) GridData3D_Int_Out(i, j, k)
+                enddo
+                end do
+                end do
+                write(unit, *)trim(EndGridData3D)
+            elseif(present(GridData3D_Real)) then
+                write(unit, *)trim(BeginGridData3D)   
+                do i = WorkSize%ILB, WorkSize%IUB
+                do j = WorkSize%JLB, WorkSize%JUB
+                do k = KLB         , KUB   
+                    write(unit, *) GridData3D_Real_Out(i, j, k)
+                enddo
+                end do
+                end do
+                write(unit, *)trim(EndGridData3D)
+            else
+                write(unit, *)trim(BeginGridData2D)   
+                do i = WorkSize%ILB, WorkSize%IUB
+                do j = WorkSize%JLB, WorkSize%JUB
+                    write(unit, *) Me_GridData2D_Out(i, j)
+                end do
+                end do
+                write(unit, *)trim(EndGridData2D)
+            end if
+        
+            !Closes Files             
+            call UnitsManager(Unit, CLOSE_FILE, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR270'
+
+        endif if2
+
+        !Ungets XX, YY
+        call UngetHorizontalGrid (HorizontalGridID, XX, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR280'
+
+        call UngetHorizontalGrid (HorizontalGridID, YY, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR290'
+
+        call UngetHorizontalGrid(HorizontalGridID, XX_IE, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR300'
+
+        call UngetHorizontalGrid(HorizontalGridID, YY_IE, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR310'
+
+        call UngetHorizontalGrid(HorizontalGridID, LatConn, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR320'
+
+        call UngetHorizontalGrid(HorizontalGridID, LongConn, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'WriteGridData_v1 - ModuleGridData - ERR330'
+
+
+if31:   if (MasterOrSlave) then
+
+            if (associated(GridData2D_Real_Out)) deallocate(GridData2D_Real_Out   )
+            if (associated(GridData2D_Int_Out )) deallocate(GridData2D_Int_Out    )
+            if (associated(GridData3D_Real_Out)) deallocate(GridData3D_Real_Out   )
+            if (associated(GridData3D_Int_Out )) deallocate(GridData3D_Int_Out    )
+            if (associated(Me_GridData2D_Out  )) deallocate(Me_GridData2D_Out     )            
+                                               
+            if (associated(XX_Out             )) deallocate(XX_Out                )
+            if (associated(YY_Out             )) deallocate(YY_Out                )
+            if (associated(XX_IE_Out          )) deallocate(XX_IE_Out             )
+            if (associated(YY_IE_Out          )) deallocate(YY_IE_Out             )
+            if (associated(LatConn_Out        )) deallocate(LatConn_Out           )
+            if (associated(LongConn_Out       )) deallocate(LongConn_Out          )    
+        
+        endif if31            
+
+        if (present(STAT)) STAT = SUCCESS_
+
+        !------------------------------------------------------------------------
+
+    end subroutine WriteGridData_v1_R4
 
     !----------------------------------------------------------------------------
     
