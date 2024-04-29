@@ -15484,11 +15484,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
                         Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
                         
-                        !Update Maximum velocity to use in output flooding
-                        if (Me%VelocityModulus_R4 (i, j) > Me%MaxVelocityModulus_R4 (i, j)) then
-                            Me%MaxVelocityModulus_R4 (i, j) = Me%VelocityModulus_R4 (i, j)
-                        endif
-                        
                     else
                         Me%FlowModulus_R4(i, j) = 0.0
                         Me%VelocityModulus_R4(i, j) = 0.0
@@ -16579,6 +16574,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                     if (Me%VelocityModulus_R4 (i, j) > Me%MaxVelocityModulus_R4 (i, j)) then
+                        Me%MaxVelocityModulus_R4 (i, j) = Me%VelocityModulus_R4 (i, j)
                         FloodRisk = Me%myWaterColumn(i, j) * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
                     
                         if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
