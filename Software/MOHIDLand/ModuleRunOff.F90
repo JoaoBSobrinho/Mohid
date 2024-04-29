@@ -7786,13 +7786,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             call GetComputeTimeStep     (Me%ObjTime, Me%ExtVar%DT, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ModifyRunOff - ModuleRunOff - ERR11'
 
-            
+            call ReadLockExternalVar   (StaticOnly = .true.)
             !Stores initial values = from basin
-            if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn)
+            if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
             !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
-            call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX)
-            call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY)            
+            call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
+            call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ExtVar%BasinPoints)            
           
             
             !Set 1D River level in river boundary cells
@@ -7810,12 +7810,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             firstRestart = .True.
             
+            call ReadUnLockExternalVar (StaticOnly = .true.)
+            
             do while (Restart)
             
                 !Calculates local Watercolumn
                 call ReadLockExternalVar   (StaticOnly = .true.)
                 call LocalWaterColumn      (Me%myWaterColumnOld)
-                call ReadUnLockExternalVar (StaticOnly = .true.)
+                !call ReadUnLockExternalVar (StaticOnly = .true.)
 
                 SumDT        = 0.0
                 Restart      = .false.                                 
@@ -7827,19 +7829,21 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
                 endif
                 
-                call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0))
-                call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0))
+                call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
+                call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
                 
                 if (firstRestart) then
                     !using Me%InitialFlowX and Me%InitialFlowY directly
                 else
-                    call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX)
-                    call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY)
+                    call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                    call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                 endif
                 
                 call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0)
-                if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
-                if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)
+                if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                
+                call ReadUnLockExternalVar (StaticOnly = .true.)
                 
 doIter:         do while (iter <= Niter)
 
@@ -7847,15 +7851,15 @@ doIter:         do while (iter <= Niter)
                     call ReadLockExternalVar (StaticOnly = .false.)
 
                     !Stores WaterVolume for convergence test
-                    call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume)
+                    call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                     if (firstRestart) then
-                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX)
-                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY)
+                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                         firstRestart = .false.
                     else
-                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX)
-                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY)
+                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ExtVar%BasinPoints)
+                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ExtVar%BasinPoints)
                     endif
 
                     !Updates Geometry
