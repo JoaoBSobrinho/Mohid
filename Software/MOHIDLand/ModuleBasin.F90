@@ -4962,7 +4962,6 @@ cd0:    if (Exist) then
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")
         
         if (Me%NumberOftimeSeries > 0) then
-            write(*,*) "TENHO MAIS QUE 0 SERIES!! -> ", Me%NumberOftimeSeries
             !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -5022,9 +5021,6 @@ cd0:    if (Exist) then
                 
                         !Put rain on water column - it will facilitate the structure of the property mixture
                         Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + GrossPrecipitation
-                    
-                        !mm/ hour                   m                       s         1000mm/m   *  3600s/h
-                        Me%ThroughRate(i, j) = GrossPrecipitation / Me%CurrentDT * 3600000.0
                     
                         ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
