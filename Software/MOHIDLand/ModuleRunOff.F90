@@ -16541,7 +16541,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
-        real                                    :: SumArea, WeightedVelocity, FloodRisk
+        real                                    :: SumArea, WeightedVelocity, FloodRisk, WaterColumn
         integer                                 :: CHUNK
 
         !Begin-----------------------------------------------------------------        
@@ -16556,26 +16556,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
    
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
-        !$OMP PARALLEL PRIVATE(I,J, FloodRisk)
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = JLB, JUB
         do i = ILB, IUB
    
             if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                !Water Column of overland flow
-                if (Me%myWaterColumn(i, j) > Me%Output%MaxWaterColumn(i, j)) then
-                    Me%Output%MaxWaterColumn(i, j) = Me%myWaterColumn(i, j)
-                    
-                    !Velocity at MaxWater column
-                    Me%Output%VelocityAtMaxWaterColumn(i,j) =  Me%VelocityModulus_R4 (i, j)
-
-                    Me%Output%TimeOfMaxWaterColumn(i,j) = Me%ExtVar%Now - Me%BeginTime
-                   
-                endif
                 if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                    WaterColumn = Me%myWaterColumn(i, j)
+                    !Water Column of overland flow
+                    if (WaterColumn > Me%Output%MaxWaterColumn(i, j)) then
+                        Me%Output%MaxWaterColumn(i, j) = WaterColumn
+                    
+                        !Velocity at MaxWater column
+                        Me%Output%VelocityAtMaxWaterColumn(i,j) =  Me%VelocityModulus_R4 (i, j)
+
+                        Me%Output%TimeOfMaxWaterColumn(i,j) = Me%ExtVar%Now - Me%BeginTime
+                   
+                    endif
                     if (Me%VelocityModulus_R4 (i, j) > Me%MaxVelocityModulus_R4 (i, j)) then
                         Me%MaxVelocityModulus_R4 (i, j) = Me%VelocityModulus_R4 (i, j)
-                        FloodRisk = Me%myWaterColumn(i, j) * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
+                        FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
                     
                         if (FloodRisk > Me%Output%MaxFloodRisk(i,j)) then
                             Me%Output%MaxFloodRisk(i,j) = FloodRisk
