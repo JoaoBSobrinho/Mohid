@@ -4052,10 +4052,11 @@ do4:            do di = -1, 1
         
         !Arguments-------------------------------------------------------------
         !Local-----------------------------------------------------------------
-        integer                                      :: CHUNK, i, j, di, dj, k
+        integer                                      :: CHUNK, i, j, di, dj, k, n1, index
         real                                         :: Sum
         integer                                      :: STAT_CALL, n, line, NumberOfBoundaryCells
         integer, dimension(:),   pointer             :: VectorI, VectorJ, VectorK
+        logical                                      :: FoundCell
         !Begin-----------------------------------------------------------------
 
    
@@ -4070,7 +4071,7 @@ do4:            do di = -1, 1
         allocate(Me%BoundaryCells_J(NumberOfBoundaryCells))
         Me%BoundaryCells_1D(:) = 0.0
         !Start filling BoundaryCells
-        n = 1
+        n1 = 1
         !Best not paralelize
 do1:    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
 do2:    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
@@ -4082,10 +4083,10 @@ do4:            do di = -1, 1
                     Sum = dj + di
                     if ((Me%ExtVar%BasinPoints(i+di, j+dj) == 0) .and. (Sum .eq. -1 .or. Sum .eq. 1)) then
                         if(Me%ExtVar%Topography (i, j)  < Me%MaxDtmForBoundary)then
-                            Me%BoundaryCells_1D(n) = 1
-                            Me%BoundaryCells_I(n) = i
-                            Me%BoundaryCells_J(n) = j
-                            n = n+1
+                            Me%BoundaryCells_1D(n1) = 1
+                            Me%BoundaryCells_I(n1) = i
+                            Me%BoundaryCells_J(n1) = j
+                            n1 = n1+1
                             exit do3 
                         endif
                     endif
@@ -4101,12 +4102,14 @@ do4:            do di = -1, 1
             do n = 1, Me%NumberOfOpenChannelLinks
                 i = Me%OpenChannelLinks(n)%I
                 j = Me%OpenChannelLinks(n)%J
+                
 do5:            do k = 1, NumberOfBoundaryCells
                     if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
                         Me%BoundaryCells_1D(k) = 0
                         exit do5
-                    endif
+                    endif                    
                 enddo do5
+                
             enddo
         endif
         
@@ -4126,12 +4129,25 @@ do5:            do k = 1, NumberOfBoundaryCells
                     i = VectorI(n)
                     j = VectorJ(n)
                     
+                    !add to list
+                    FoundCell = .false.
 do6:                do k = 1, NumberOfBoundaryCells
-                        if (VectorI(n) == Me%BoundaryCells_I(k) .and. VectorJ(n) == Me%BoundaryCells_J(k)) then
-                            Me%BoundaryCells_1D(k) = 1
+                        if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
+                            FoundCell = .true.
+                            index = k
                             exit do6
-                        endif
+                        endif                    
                     enddo do6
+                
+                    if (FoundCell) then
+                        Me%BoundaryCells_1D(index) = 1
+                    else
+                        !Add it to the list. Need to set boundarycell to 1 as the default is 0
+                        Me%BoundaryCells_I(n1) = i
+                        Me%BoundaryCells_J(n1) = j
+                        Me%BoundaryCells_1D(n1) = 1
+                        n1 = n1+1
+                    endif
 
                     !if boundary line has fixed water level set it here and don't change it again
                     if(.not. Me%BoundaryLines(line)%Variable)then
@@ -4145,7 +4161,7 @@ do7:                    do k = 1, NumberOfBoundaryCells
                     endif
                 enddo
             enddo
-        end if
+        end if        
         
     end subroutine ConstructWaterLevelBoundaryConditions_2
     
