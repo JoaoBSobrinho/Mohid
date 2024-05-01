@@ -7882,7 +7882,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                 endif
                 
-                call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0)
+                if (Me%ObjDrainageNetwork /= 0 .or. Me%Use1D2DInteractionMapping) then
+                    call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                endif
+                
                 if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                 if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                 
@@ -14968,7 +14971,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
         !Routes water outside the watershed if water is higher then a given treshold values
         !Default is zero
-        call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
+        !call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
 
         BoundaryFlowVolume = 0.0
         TotalBoundaryInflowVolume = 0.0
@@ -15047,6 +15050,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                             !Updates Water Level
                             Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
+                        else
+                            Me%iFlowBoundary(i, j) = 0.0
                         endif
                     endif
                 endif
