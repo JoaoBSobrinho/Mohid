@@ -14941,17 +14941,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                     :: di, dj, i, j, n
-        integer                                     :: ILB, IUB, JLB, JUB, CHUNK
+        integer                                     :: ILB, IUB, JLB, JUB, CHUNK, NonComputeFaces
         real                                        :: dh, dVol
         real                                        :: WaveHeight, Celerity, MaxFlow, minHeight
         real                                        :: WaterLevelBoundaryValue, BoundaryFlowAux_U, BoundaryFlowAux_V
-        real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume 
+        real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
+        real                                        :: Topography, GridCellArea
         !Begin------------------------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
         !Routes water outside the watershed if water is higher then a given treshold values
         !Default is zero
-        !call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
+        call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)
 
         BoundaryFlowVolume = 0.0
         TotalBoundaryInflowVolume = 0.0
@@ -14961,13 +14962,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !go through all the boundary cells instead of the entire matrix
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
-        !$OMP PARALLEL PRIVATE(i,j,n,WaveHeight,dh,WaterLevelBoundaryValue,Celerity,minHeight,BoundaryFlowAux_U,BoundaryFlowAux_V,MaxFlow,dVol)
+        !$OMP PARALLEL PRIVATE(i,j,n,WaveHeight,dh,WaterLevelBoundaryValue,Celerity,minHeight,BoundaryFlowAux_U,BoundaryFlowAux_V,MaxFlow,dVol, &
+        !$OMP GridCellArea, NonComputeFaces, Topography)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
         do n = 1, size(Me%WaterLevelBoundaryValue_1D)
-            
-            i = Me%BoundaryCells_I(n)
-            j = Me%BoundaryCells_J(n)
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
+                i = Me%BoundaryCells_I(n)
+                j = Me%BoundaryCells_J(n)
                 if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
                     WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
                     if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
@@ -14975,9 +14976,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         dh = Me%myWaterLevel (i, j) - WaterLevelBoundaryValue
                     
                         if (abs(dh) > Me%MinimumWaterColumn) then
-                    
+                            
+                            Topography = Me%ExtVar%Topography (i, j)
                             !celerity is limited by water column on the flow direction (higher level)
-                            WaveHeight = max(Me%myWaterLevel(i, j), WaterLevelBoundaryValue) - Me%ExtVar%Topography (i, j)
+                            WaveHeight = max(Me%myWaterLevel(i, j), WaterLevelBoundaryValue) - Topography
                     
                             ![m/s] = [m/s2 * m]^1/2 = [m/s]
                             Celerity = sqrt(Gravity * WaveHeight)
@@ -14987,19 +14989,24 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             !level is lower than terrain and wave height is used (water column)
                             !dh negative flow positive (entering runoff)
                             minHeight = min(dh, WaveHeight)
-                            ![m3/s]           =      [m]           *   [m]     * [m/s]
-                            BoundaryFlowAux_U = Me%ExtVar%DVY(i,j) * minHeight * Celerity * (Me%ComputeFaceU(i,j) + Me%ComputeFaceU(i,j+1))
                             
+                            NonComputeFaces = 2 - (Me%ComputeFaceU(i,j) + Me%ComputeFaceU(i,j+1))
+                            
+                            ![m3/s]           =      [m]           *   [m]     * [m/s]
+                            BoundaryFlowAux_U = Me%ExtVar%DVY(i,j) * minHeight * Celerity * NonComputeFaces
+                            
+                            NonComputeFaces = 2 - (Me%ComputeFaceV(i,j) + Me%ComputeFaceV(i+1,j))
                             !V direction - use middle area because in closed faces does not exist AreaV
                             ![m3/s]           =      [m]           *         [m]         * [m/s]
-                            BoundaryFlowAux_V = Me%ExtVar%DUX(i,j) * minHeight * Celerity * (Me%ComputeFaceV(i,j) + Me%ComputeFaceV(i+1,j))
+                            BoundaryFlowAux_V = Me%ExtVar%DUX(i,j) * minHeight * Celerity * NonComputeFaces
                             
                             Me%iFlowBoundary(i, j) = - BoundaryFlowAux_U - BoundaryFlowAux_V
                     
                             !cant remove more than up to boundary or water column if boundary lower than topography 
                             !or add more up to boundary level if boundary level higher
+                            GridCellArea = Me%ExtVar%GridCellArea(i, j)
                             !m3/s = m * m2 / s
-                            MaxFlow = - minHeight *  Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
+                            MaxFlow = - minHeight *  GridCellArea / Me%ExtVar%DT
                     
                             if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
                                 Me%iFlowBoundary(i, j) = MaxFlow
@@ -15020,20 +15027,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                         
                             !Updates Water Column
-                            Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / Me%ExtVar%GridCellArea(i, j)
+                            Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / GridCellArea
 
                             !Updates Water Level
-                            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Me%ExtVar%Topography(i, j)
+                            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
                         endif
-                    else
-                        Me%iFlowBoundary (i, j) = 0.0
                     endif
-                    
                 endif
             endif
         enddo
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
+        
         Me%TotalBoundaryInflowVolume = TotalBoundaryInflowVolume
         Me%TotalBoundaryOutflowVolume = TotalBoundaryOutflowVolume
         Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + BoundaryFlowVolume
