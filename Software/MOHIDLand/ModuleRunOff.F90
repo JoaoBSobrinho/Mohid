@@ -12241,7 +12241,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
         do i = ILB, IUB
         do j = JLB-1, JUB
-            if (Me%ComputeFaceU(i, j) .and. Me%ComputeFaceU(i, j+1)) then    
+            if (Me%ComputeFaceU(i, j) + Me%ComputeFaceU(i, j+1) == 2) then    
                 !dVol
                 dVol                       = (Me%lFlowX(i, j) - Me%lFlowX(i, j+1)) * LocalDT
                 !Updates Water Volume
@@ -12250,7 +12250,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                 !Updates Water Level
                 Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-            elseif (Me%ComputeFaceU(i, j)) then
+            elseif (Me%ComputeFaceU(i, j) == 1) then
                 !dVol
                 dVol                       = Me%lFlowX(i, j) * LocalDT
                 !Updates Water Volume
@@ -12259,7 +12259,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                 !Updates Water Level
                 Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-            elseif (Me%ComputeFaceU(i, j+1)) then
+            elseif (Me%ComputeFaceU(i, j+1) == 1) then
                 !dVol
                 dVol                       = Me%lFlowX(i, j+1) * LocalDT
                 !Updates Water Volume
@@ -12279,7 +12279,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
         do i = ILB-1, IUB
-            if (Me%ComputeFaceV(i, j) .and. Me%ComputeFaceV(i+1, j)) then    
+            if (Me%ComputeFaceV(i, j) + Me%ComputeFaceV(i+1, j) == 2) then    
                 !dVol
                 dVol                       = (Me%lFlowY(i, j) - Me%lFlowY(i+1, j)) * LocalDT
                 !Updates Water Volume
@@ -12288,7 +12288,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                 !Updates Water Level
                 Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-            elseif (Me%ComputeFaceV(i, j)) then
+            elseif (Me%ComputeFaceV(i, j) == 1) then
                 !dVol
                 dVol                       = Me%lFlowY(i, j) * LocalDT
                 !Updates Water Volume
@@ -12297,7 +12297,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                 !Updates Water Level
                 Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-            elseif (Me%ComputeFaceV(i+1, j)) then
+            elseif (Me%ComputeFaceV(i+1, j) == 1) then
                 !dVol
                 dVol                       = Me%lFlowY(i+1, j) * LocalDT
                 !Updates Water Volume
