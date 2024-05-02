@@ -721,7 +721,7 @@ Module ModuleBasin
 #endif _ENABLE_CUDA        
         !------------------------------------------------------------------------
 !        integer                                     :: TID, OMP_GET_THREAD_NUM
-
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructBasin")
 
         !!call OMP_SET_DYNAMIC(.false.)
         !!call OMP_SET_NUM_THREADS(2)
@@ -929,7 +929,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         if (present(STAT)) STAT = STAT_
 
         !----------------------------------------------------------------------
-
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructBasin")
     end subroutine ConstructBasin
 
     !--------------------------------------------------------------------------
