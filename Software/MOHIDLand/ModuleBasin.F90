@@ -771,34 +771,44 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             !Simulation time in seconds
             Me%SimulationTime = Me%EndTime - Me%BeginTime
-
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ReadFileNames")
             call ReadFileNames        
-        
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ReadFileNames")
             !Constructs Horizontal Grid
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalGrid")
             call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
                                          STAT = STAT_CALL)           
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR04'
-
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructHorizontalGrid")
             !Constructs GridData
+            
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructGridData")
             call ConstructGridData      (Me%ObjGridData, Me%ObjHorizontalGrid,           &
                                          FileName = Me%Files%TopographicFile,            &
                                          STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR05'
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructGridData")
 
             !Constructs BasinGeometry
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructBasinGeometry")
             call ConstructBasinGeometry (Me%ObjBasinGeometry, Me%ObjGridData,            &
                                          Me%ObjHorizontalGrid, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR06'
 
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructBasinGeometry")
+            
             !Gets BasinPoints
             call GetBasinPoints         (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR07'
 
             !Constructs Mapping
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalMap")
             call ConstructHorizontalMap (Me%ObjHorizontalMap, Me%ObjGridData,            &
                                         Me%ObjHorizontalGrid, Me%CurrentTime,            &
                                         Me%ExtVar%BasinPoints, 2, STAT = STAT_CALL)  
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR08'
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructHorizontalMap")
+            
             
             !Gets the size of the grid
             call GetHorizontalGridSize (Me%ObjHorizontalGrid,                            &
@@ -809,7 +819,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
             call GetGridCellArea(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09b'            
-                                               
+            
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "BWB")
             Me%BWB%BasinArea     = 0.0
             Me%BWB%NumberOfCells = 0
             do j = Me%Size%JLB, Me%Size%JUB
@@ -820,7 +831,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 endif
             enddo
             enddo 
-                       
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "BWB")
+            
             call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09c'
             
@@ -851,7 +863,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call ReadLockExternalVar (LockToWhichModules, OptionsType)
 
             !Reads Data File
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ReadDataFile")
             call ReadDataFile
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ReadDataFile")
             
             !ChunkI and ChunkJ are global variables (defined in ModuleGlobalData)
             !ChunkK is defined only if PorousMedia is ON and is defined in the ModulePorousMedia
@@ -860,7 +874,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             ChunkI = max((Me%Size%IUB - Me%Size%ILB) / ChunkIFactor, 1)            
 
             !Allocates Variables
-            call AllocateVariables ()                        
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "AllocateVariables")
+            call AllocateVariables ()
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "AllocateVariables")
 
             !Verifies User Options
             OptionsType = "GlobalOptions"
@@ -870,7 +886,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 #ifdef _ENABLE_CUDA
             call ConstructCoupledModules(Me%ObjCuda)
 #else
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructCoupledModules")
             call ConstructCoupledModules()
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructCoupledModules")
 #endif _ENABLE_CUDA                        
 
             !Checks property related options
