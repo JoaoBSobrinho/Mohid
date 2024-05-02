@@ -1270,7 +1270,7 @@ Module ModuleFunctions
             !$OMP END PARALLEL
         else
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(STATIC)
+            !$OMP DO SCHEDULE(STATIC, CHUNK)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 Matrix (i, j) = InMatrix(i, j)
