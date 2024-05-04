@@ -2227,7 +2227,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         
         call ExtractBlockFromBuffer(Me%ObjEnterData, ClientNumber,                   &
                                     BlockBegin, BlockEnd, BlockFound,                &
-                                    FirstLine, LastLine, STAT_CALL) 
+                                    FirstLine, LastLine, STAT = STAT_CALL) 
                                     
         if (STAT_CALL /= SUCCESS_) then
             write(*,*)BlockBegin, BlockEnd

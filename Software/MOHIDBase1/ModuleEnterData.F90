@@ -1177,7 +1177,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                  &
     ! the line started by "Keyword". If a line is found "flag is "1".       
     ! Otherwise "flag is "0".                                              
 
-    subroutine LookForLineInBlock(keyword, string, SearchType_, flag, CaseSensitive)
+    subroutine LookForLineInBlock(keyword, string, SearchType_, flag, CaseSensitive, StopAt)
 
         !Parameter-------------------------------------------------------------
 
@@ -1186,6 +1186,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                  &
         integer,            intent(IN ) :: SearchType_
         integer,            intent(OUT) :: flag
         logical, optional,  intent(IN ) :: CaseSensitive           
+        character(LEN = *), optional,  intent(IN ) :: StopAt           
 
         !External--------------------------------------------------------------
 
@@ -1227,40 +1228,77 @@ cd1 :   if      (SearchType_ .EQ. FromBlock_       ) then
             stop       "ModuleEnterData - LookForLineInBlock - ERR01."
         end if cd1
 
+        if (.not. present(StopAt)) then
 
-do1 :   do I = StartSearch, EndSearch
-            read(Me%BufferLines(I)%full_line,"(A)") string%full_line
+    do1 :   do I = StartSearch, EndSearch
+                read(Me%BufferLines(I)%full_line,"(A)") string%full_line
 
-            !locate the symbol delimiting the keyword
-            call ScanLine(string, ValidDelimiter)
+                !locate the symbol delimiting the keyword
+                call ScanLine(string, ValidDelimiter)
 
-            ReadKeyWord = string%full_line(1:string%delimiter_pos-1)
+                ReadKeyWord = string%full_line(1:string%delimiter_pos-1)
 
-            if (present(CaseSensitive)) then
+                if (present(CaseSensitive)) then
 
-                CaseSensitiveAux = CaseSensitive
+                    CaseSensitiveAux = CaseSensitive
 
-            else
-                !By default the enter data module is case sensitive
-                CaseSensitiveAux = .true.
+                else
+                    !By default the enter data module is case sensitive
+                    CaseSensitiveAux = .true.
 
-
-            endif
+                endif
             
 
-            if (KeywordsEqual(trim(ReadKeyWord), trim(keyword), CaseSensitiveAux)) then
-                if(ValidDelimiter)then
-                    flag = 1
-                    exit do1
-                else
-                    write(*,*)'Invalid delimiter between keyword and value.'
-                    write(*,*)'Line         = ', trim(string%full_line)
-                    write(*,*)'Line Number  = ', i
-                    write(*,*)'File         = ', trim(Me%FileName)
-                    stop      'ModuleEnterData - LookForLineInBlock - ERR02.'
+                if (KeywordsEqual(trim(ReadKeyWord), trim(keyword), CaseSensitiveAux)) then
+                    if(ValidDelimiter)then
+                        flag = 1
+                        exit do1
+                    else
+                        write(*,*)'Invalid delimiter between keyword and value.'
+                        write(*,*)'Line         = ', trim(string%full_line)
+                        write(*,*)'Line Number  = ', i
+                        write(*,*)'File         = ', trim(Me%FileName)
+                        stop      'ModuleEnterData - LookForLineInBlock - ERR02.'
+                    end if
                 end if
-            end if 
-        end do do1
+            
+            end do do1
+    
+        else
+    do2 :   do I = StartSearch, EndSearch
+                read(Me%BufferLines(I)%full_line,"(A)") string%full_line
+
+                !locate the symbol delimiting the keyword
+                call ScanLine(string, ValidDelimiter)
+
+                ReadKeyWord = string%full_line(1:string%delimiter_pos-1)
+
+                if (present(CaseSensitive)) then
+                    CaseSensitiveAux = CaseSensitive
+                else
+                    !By default the enter data module is case sensitive
+                    CaseSensitiveAux = .true.
+                endif
+            
+
+                if (KeywordsEqual(trim(ReadKeyWord), trim(keyword), CaseSensitiveAux)) then
+                    if(ValidDelimiter)then
+                        flag = 1
+                        exit do2
+                    else
+                        write(*,*)'Invalid delimiter between keyword and value.'
+                        write(*,*)'Line         = ', trim(string%full_line)
+                        write(*,*)'Line Number  = ', i
+                        write(*,*)'File         = ', trim(Me%FileName)
+                        stop      'ModuleEnterData - LookForLineInBlock - ERR02.'
+                    end if
+                elseif (KeywordsEqual(trim(ReadKeyWord), trim(StopAt), CaseSensitiveAux)) then
+                    exit do2
+                endif
+            
+            end do do2
+        endif
+        
 
         !----------------------------------------------------------------------
 
@@ -1422,6 +1460,7 @@ cd1 :   if       (delimiter_pos .EQ. 0) then
                                Default,                                       &
                                ClientModule,                                  & !Future use for interface
                                CaseSensitive,                                 &
+                               StopAt,                                        &
                                STAT)
       
         !Parameter-------------------------------------------------------------
@@ -1429,6 +1468,7 @@ cd1 :   if       (delimiter_pos .EQ. 0) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
         integer, optional,       intent(IN )        :: Buffer_Line
         integer, optional,       intent(IN )        :: Default
@@ -1484,13 +1524,17 @@ if9 :       if (present(SearchType)) then
             if (present(keyword)) then
 
                 if (present (CaseSensitive)) then
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
                 endif
 
             elseif (present(Buffer_Line)) then
@@ -1581,6 +1625,7 @@ cd4 :               if (present(text)) then
                               Default,                                        &
                               ClientModule,                                   & !Future use for interface
                               CaseSensitive,                                  &
+                              StopAt,                                         &
                               STAT)
       
         !Parameter-------------------------------------------------------------
@@ -1588,6 +1633,7 @@ cd4 :               if (present(text)) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         character(LEN = *), optional, intent(IN )   :: Default
         logical           , optional, intent(IN )   :: CaseSensitive
         integer, optional,       intent(IN )        :: Buffer_Line
@@ -1633,7 +1679,6 @@ if9 :       if (present(SearchType)) then
                 SearchTypeOut = FromFile_
             end if if9
 
-
             if (.not.present(keyword).and..not.present(Buffer_Line))          &
               stop "ModuleEnterData - GetData (ReadString_New) - ERR01."
             
@@ -1643,13 +1688,18 @@ if9 :       if (present(SearchType)) then
             if (present(keyword)) then
 
                 if (present (CaseSensitive)) then
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
 
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
                 endif
 
             elseif (present(Buffer_Line)) then
@@ -1757,6 +1807,7 @@ if8 :               if (present(text)) then
                                   Default,                                    &
                                   ClientModule,                               & !Future use for interface
                                   CaseSensitive,                              &
+                                  StopAt,                                     &
                                   STAT)
       
         !Parameter-------------------------------------------------------------
@@ -1764,6 +1815,7 @@ if8 :               if (present(text)) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
 
         integer, optional,       intent(IN ) :: Buffer_Line
@@ -1829,11 +1881,19 @@ if9 :       if (present(SearchType)) then
 
                 if (present (CaseSensitive)) then
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
 
                 else
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
 
                 endif
 
@@ -1948,6 +2008,7 @@ cd3 :       if (vector_size .NE. n_data) then
                                Default,                                       &
                                ClientModule,                                  & !Future use for interface
                                CaseSensitive,                                 &
+                               StopAt,                                        &
                                STAT)
       
         !Parameter-------------------------------------------------------------
@@ -1955,6 +2016,7 @@ cd3 :       if (vector_size .NE. n_data) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
         integer, optional,       intent(IN )        :: Buffer_Line
         integer,                 intent(OUT)        :: flag 
@@ -1968,7 +2030,7 @@ cd3 :       if (vector_size .NE. n_data) then
         logical                                     :: CaseSensitiveOUT
         integer                                     :: SearchTypeOUT
         integer                                     :: STAT_CALL
-        integer                                     :: ready_          
+        integer                                     :: ready_
 
         !Local-----------------------------------------------------------------
 
@@ -1997,8 +2059,7 @@ if9 :       if (present(SearchType)) then
             else
                 SearchTypeOut = FromFile_
             end if if9
-
-
+            
             if (.not.present(keyword).and..not.present(Buffer_Line))          &
               stop "ModuleEnterData - GetData (ReadLogical_New) - ERR01."
             
@@ -2008,13 +2069,17 @@ if9 :       if (present(SearchType)) then
             if (present(keyword)) then
 
                 if (present (CaseSensitive)) then
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
                 endif
 
             elseif (present(Buffer_Line)) then
@@ -2135,6 +2200,7 @@ cd3 :               if (present(text)) then
                             Default,                                          &
                             ClientModule,                                     & !Future use for interface
                             CaseSensitive,                                    &
+                            StopAt,                                           &
                             STAT)
       
         !Parameter-------------------------------------------------------------
@@ -2142,6 +2208,7 @@ cd3 :               if (present(text)) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
         integer, optional,       intent(IN )        :: Buffer_Line
         integer,                 intent(OUT)        :: flag 
@@ -2156,7 +2223,7 @@ cd3 :               if (present(text)) then
         logical                                     :: CaseSensitiveOUT
         integer                                     :: SearchTypeOUT
         integer                                     :: STAT_CALL
-        integer                                     :: ready_          
+        integer                                     :: ready_
 
         !Local-----------------------------------------------------------------
 
@@ -2191,7 +2258,6 @@ if9 :       if (present(SearchType)) then
                 SearchTypeOut = FromFile_
             end if if9
 
-
             if (.not.present(keyword).and..not.present(Buffer_Line))          &
               stop "ModuleEnterData - GetData (ReadDble_New) - ERR01."
             
@@ -2201,13 +2267,18 @@ if9 :       if (present(SearchType)) then
             if (present(keyword)) then
 
                 if (present (CaseSensitive)) then
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
+                    
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
                 endif
 
             elseif (present(Buffer_Line)) then
@@ -2304,6 +2375,7 @@ cd4 :               if (present(text)) then
                                      Default,                                 &
                                      ClientModule,                            & !Future use for interface
                                      CaseSensitive,                           &
+                                     StopAt,                                  &
                                      STAT)
 
         !Arguments-------------------------------------------------------------
@@ -2316,6 +2388,7 @@ cd4 :               if (present(text)) then
         character(LEN = *), intent(IN ), optional     :: keyword
         integer           , intent(IN ), optional     :: Default        
         character(LEN = *), intent(IN ), optional     :: ClientModule
+        character(LEN = *), optional, intent(IN )     :: StopAt
         logical           , intent(IN ), optional     :: CaseSensitive
         integer           , intent(OUT), optional     :: STAT
         
@@ -2368,11 +2441,18 @@ if9 :       if (present(SearchType)) then
 
                 if (present (CaseSensitive)) then
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
 
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
 
                 endif
 
@@ -2491,6 +2571,7 @@ cd4 :               if (present(text)) then
                                   Default,                                    &
                                   ClientModule,                               & !Future use for interface
                                   CaseSensitive,                              &
+                                  StopAt,                                     &
                                   STAT)
 
         !Parameter-------------------------------------------------------------
@@ -2498,6 +2579,7 @@ cd4 :               if (present(text)) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
 
         integer, optional,       intent(IN )        :: Buffer_Line
@@ -2562,11 +2644,18 @@ if9 :       if (present(SearchType)) then
 
                 if (present (CaseSensitive)) then
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
 
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
 
                 endif
 
@@ -2683,6 +2772,7 @@ cd3 :       if (vector_size .NE. n_data) then
                             Default,                                          &
                             ClientModule,                                     & !Future use for interface
                             CaseSensitive,                                    &
+                            StopAt,                                           &
                             STAT)
       
         !Parameter-------------------------------------------------------------
@@ -2690,6 +2780,7 @@ cd3 :       if (vector_size .NE. n_data) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
         integer, optional,       intent(IN )        :: Buffer_Line
 
@@ -2706,7 +2797,7 @@ cd3 :       if (vector_size .NE. n_data) then
         logical                                     :: CaseSensitiveOUT
         integer                                     :: SearchTypeOUT
         integer                                     :: STAT_CALL
-        integer                                     :: ready_          
+        integer                                     :: ready_
 
         !Local-----------------------------------------------------------------
 
@@ -2753,12 +2844,19 @@ if9 :       if (present(SearchType)) then
             if (present(keyword)) then
 
                 if (present (CaseSensitive)) then
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
+                    
                 else
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
 
                 endif
 
@@ -2857,6 +2955,7 @@ cd4 :               if (present(text)) then
                                   Default,                                    &
                                   ClientModule,                               & !Future use for interface
                                   CaseSensitive,                              &
+                                  StopAt,                                     &
                                   STAT)
       
         !Parameter-------------------------------------------------------------
@@ -2864,6 +2963,7 @@ cd4 :               if (present(text)) then
         character(LEN = *), optional, intent(IN )   :: keyword
         character(LEN = *), optional, intent(IN )   :: text
         character(LEN = *), optional, intent(IN )   :: ClientModule
+        character(LEN = *), optional, intent(IN )   :: StopAt
         logical           , optional, intent(IN )   :: CaseSensitive
 
         integer, optional,       intent(IN ) :: Buffer_Line
@@ -2929,12 +3029,17 @@ if9 :       if (present(SearchType)) then
 
                 if (present (CaseSensitive)) then
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
+                    endif
                 else
-
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
-
+                    if (present(StopAt)) then
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, StopAt = StopAt)
+                    else
+                        call LookForLineInBlock(keyword, string, SearchTypeOUT, flag)
+                    endif
                 endif
 
             elseif (present(Buffer_Line)) then
@@ -3117,7 +3222,7 @@ if9 :       if (present(SearchType)) then
 
                 if (present (CaseSensitive)) then
 
-                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive)
+                    call LookForLineInBlock(keyword, string, SearchTypeOUT, flag, CaseSensitive = CaseSensitive)
 
                 else
 
@@ -3215,7 +3320,8 @@ cd4 :               if (present(text)) then
     subroutine ExtractBlockFromBuffer(EnterDataID, ClientNumber,               &
                                                     block_begin,  block_end,   &
                                                     BlockFound,                &
-                                                    FirstLine, LastLine, STAT) 
+                                                    FirstLine, LastLine,       &
+                                                    StopAt, STAT) 
                                  
         !External--------------------------------------------------------------
         integer                                     :: EnterDataID    
@@ -3226,6 +3332,7 @@ cd4 :               if (present(text)) then
         logical,            intent(OUT  )           :: BlockFound
         character(LEN = *), intent(IN   )           :: block_begin
         character(LEN = *), intent(IN   )           :: block_end
+        character(LEN = *), optional,  intent(IN )  :: StopAt
 
                      
         !Local-----------------------------------------------------------------
@@ -3242,13 +3349,19 @@ cd4 :               if (present(text)) then
         
 cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                  &
             (ready_ .EQ. READ_LOCK_ERR_)) then
+            
 if8 :       if (.NOT. Me%BLOCK_LOCK) then                       !First block
                 call Block_Lock
 
-                call ExtractBlockFromBuffer1(block_begin,  block_end,  &
-                                             BlockFound,               &
-                                             FirstLine1, LastLine1, STAT1)
-
+                if (present(StopAt)) then
+                    call ExtractBlockFromBuffer1(block_begin,  block_end,  &
+                                                 BlockFound,               &
+                                                 FirstLine1, LastLine1, STAT1, StopAt = StopAt)
+                else
+                    call ExtractBlockFromBuffer1(block_begin,  block_end,  &
+                                                 BlockFound,               &
+                                                 FirstLine1, LastLine1, STAT1)
+                endif
                 ClientNumber = Me%BlockClientIDnumber 
 
                 if (present(FirstLine)) FirstLine = FirstLine1
@@ -3257,9 +3370,15 @@ if8 :       if (.NOT. Me%BLOCK_LOCK) then                       !First block
                 STAT_ = STAT1
             else                                                
 if9 :           if (Me%BlockClientIDnumber .EQ. ClientNumber) then     !Second or higher block
-                    call ExtractBlockFromBuffer1(block_begin,  block_end,  &
-                                                 BlockFound,               &
-                                                 FirstLine1, LastLine1, STAT1)
+                    if (present(StopAt)) then
+                        call ExtractBlockFromBuffer1(block_begin,  block_end,  &
+                                                     BlockFound,               &
+                                                     FirstLine1, LastLine1, STAT1, StopAt = StopAt)
+                    else
+                        call ExtractBlockFromBuffer1(block_begin,  block_end,  &
+                                                     BlockFound,               &
+                                                     FirstLine1, LastLine1, STAT1)
+                    endif
 
                     if (present(FirstLine)) FirstLine = FirstLine1
                     if (present(LastLine )) LastLine  = LastLine1
@@ -3288,10 +3407,10 @@ if9 :           if (Me%BlockClientIDnumber .EQ. ClientNumber) then     !Second o
 
     subroutine ExtractBlockFromBuffer1(block_begin,  block_end,  &
                                        BlockFound,               &
-                                       FirstLine1, LastLine1, STAT1) 
+                                       FirstLine1, LastLine1, STAT1, StopAt) 
                                  
         !External--------------------------------------------------------------
-           
+        character(LEN = *), optional, intent(IN )   :: StopAt
         integer, intent(OUT) :: STAT1
         integer, intent(OUT) :: FirstLine1    
         integer, intent(OUT) :: LastLine1    
@@ -3316,27 +3435,47 @@ if9 :           if (Me%BlockClientIDnumber .EQ. ClientNumber) then     !Second o
         !Looks for block_begin 
         FoundBegin = .FALSE.
         FoundEnd   = .FALSE.
-do1 :   do I = start, Me%BufferSize
-            call ScanLineUnsafe(Me%BufferLines(I))
+        
+        if (.not. present(StopAt)) then
+    do1 :   do I = start, Me%BufferSize
+                call ScanLineUnsafe(Me%BufferLines(I))
 
-            ReadKeyWord = Me%BufferLines(I)%full_line(1:Me%BufferLines(I)%delimiter_pos-1)
-            if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) then
-                Me%Block%BeginBlock = I
-                FoundBegin = .TRUE.
-                exit do1
-            end if 
-        end do do1
+                ReadKeyWord = Me%BufferLines(I)%full_line(1:Me%BufferLines(I)%delimiter_pos-1)
+                if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) then
+                    Me%Block%BeginBlock = I
+                    FoundBegin = .TRUE.
+                    exit do1
+                end if
+            end do do1
+        else
+            
+    do2 :   do I = start, Me%BufferSize
+                call ScanLineUnsafe(Me%BufferLines(I))
 
+                ReadKeyWord = Me%BufferLines(I)%full_line(1:Me%BufferLines(I)%delimiter_pos-1)
+                if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) then
+                    Me%Block%BeginBlock = I
+                    FoundBegin = .TRUE.
+                    exit do2
+                end if
+            
+                if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(StopAt))) then
+                    exit do2
+                endif
+            end do do2
+            
+        endif
+        
 
 cd3 :   if (FoundBegin) then
-do2 :       do I = Me%Block%BeginBlock+1, Me%BufferSize
+do3 :       do I = Me%Block%BeginBlock+1, Me%BufferSize
 
                 call ScanLineUnsafe(Me%BufferLines(I))
                 ReadKeyWord = Me%BufferLines(I)%full_line(1:Me%BufferLines(I)%delimiter_pos-1)
 
 if8 :           if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) then
                     FoundEnd = .FALSE.
-                    exit do2
+                    exit do3
                 end if if8
 
 
@@ -3344,10 +3483,10 @@ if8 :           if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) 
 cd2 :           if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_end))) then
                     Me%Block%EndBlock = I
                     FoundEnd = .TRUE.
-                    exit do2
+                    exit do3
                 end if cd2
 
-            end do do2
+            end do do3
         end if cd3
 
 
