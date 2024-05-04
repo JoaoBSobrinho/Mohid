@@ -2770,34 +2770,23 @@ cd0:    if (ready_ .EQ. IDLE_ERR_) then
             call SearchProperty(PropertyX, AtmospDeposReduNH4_, STAT = STAT_CALL)  !LLP
             if (STAT_CALL == SUCCESS_) call ModifyAtmospDeposReduNH4 (PropertyX)
             
-            if (MonitorPerformance) call StartWatch ("ModuleAtmosphere", "ModifyRandom")
-
             call ModifyRandom
-            if (MonitorPerformance) call StopWatch ("ModuleAtmosphere", "ModifyRandom")
             
             if (Me%PropsAddedByIrri) then
-                if (MonitorPerformance) call StartWatch ("ModuleAtmosphere", "ModifyPropByIrri")
                 call ModifyPropByIrri
-                if (MonitorPerformance) call StopWatch ("ModuleAtmosphere", "ModifyPropByIrri")
             endif
             
             if (Me%PropsAddedByRain) then
-                if (MonitorPerformance) call StartWatch ("ModuleAtmosphere", "ModifyPropByRain")
                 call ModifyPropByRain
-                if (MonitorPerformance) call StopWatch ("ModuleAtmosphere", "ModifyPropByRain")
             endif
             
             !avoid negative values if read from files
-            if (MonitorPerformance) call StartWatch ("ModuleAtmosphere", "CheckPropertyValues")
             if (Me%CheckPropertyValues) then
                 call CheckPropertyValues (Constructing = .false.)
             endif
-            if (MonitorPerformance) call StopWatch ("ModuleAtmosphere", "CheckPropertyValues")
             
-            if (MonitorPerformance) call StartWatch ("ModuleAtmosphere", "ModifyOutPut")
             WarningString = 'Modify'
             call ModifyOutPut (WarningString)
-            if (MonitorPerformance) call StopWatch ("ModuleAtmosphere", "ModifyOutPut")
             !call RotateAtmosphereVectorFields(Constructing = .false.)
 
             nullify (Me%ExternalVar%MappingPoints2D)

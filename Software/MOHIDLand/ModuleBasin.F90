@@ -2123,16 +2123,13 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         call SetMatrixValue(Me%SCSCNRunOffModel%InfRate%Field, Me%Size, FillValueReal)
         
 #ifndef _SEWERGEMSENGINECOUPLER_
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructOneProperty_SCSCN WTF")
         allocate(Me%SCSCNRunOffModel%VegGrowthStage%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         call SetMatrixValue(Me%SCSCNRunOffModel%VegGrowthStage%Field, Me%Size, FillValueReal)
 
         call ConstructOneProperty (Me%SCSCNRunOffModel%VegGrowthStage, "VegGrowthStage",  &
                                    "<BeginVegGrowthStage>", "<EndVegGrowthStage>")
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructOneProperty_SCSCN WTF")
 #endif _SEWERGEMSENGINECOUPLER_ 
 
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructOneProperty_SCSCN")
         
         allocate(Me%SCSCNRunOffModel%ImpFrac%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))              
         call SetMatrixValue(Me%SCSCNRunOffModel%ImpFrac%Field, Me%Size, FillValueReal)
@@ -2141,7 +2138,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         call SetMatrixValue(Me%SCSCNRunOffModel%CurveNumber%Field, Me%Size, FillValueReal)
         call ConstructOneProperty (Me%SCSCNRunOffModel%CurveNumber, "CurveNumber", "<BeginCurveNumber>", "<EndCurveNumber>")
         
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructOneProperty_SCSCN")
         
         allocate (Me%SCSCNRunOffModel%S (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         call SetMatrixValue(Me%SCSCNRunOffModel%S, Me%Size, FillValueReal)
