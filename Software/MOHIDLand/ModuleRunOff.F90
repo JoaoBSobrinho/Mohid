@@ -1012,7 +1012,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             Me%CV%CurrentDT = Me%ExtVar%DT
 
             call ReadLockExternalVar (StaticOnly = .false.)
-            
             call CheckHorizontalGridRotation
 
             !Gets the size of the grid
@@ -1021,19 +1020,17 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                         WorkSize = Me%WorkSize,                          &
                                         STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructRunOff - ModuleRunOff - ERR020'
-            
             call ReadDataFile
             
             call AllocateVariables
 
             call InitializeVariables
-
+            
             call ConstructOverLandCoefficient
             
             call ComputeWCA_And_Bottom
 
             call ModifyGeometryAndMapping
-
             !Checks if River Network is consistent with the one previously constructed
             if (DrainageNetworkID /= 0) then
                 call CheckRiverNetWorkConsistency
@@ -1046,9 +1043,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
            
             !Constructs SewerStormWaterNodesMap
             if (Me%StormWaterModel) then
-                call ConstructSewerStormWater     
+                call ConstructSewerStormWater
             endif
-            
             !Constructs Boundary Cells
             if (Me%ImposeBoundaryValue) then
                 if (Me%HasRunoffProperties) then
@@ -1125,7 +1121,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call ComputeNextDT (Me%CV%NextNiteration)                                    
 
             call ReadUnLockExternalVar (StaticOnly = .false.)
-
             !Returns ID
             RunOffID          = Me%InstanceID
             DischargesID      = Me%ObjDischarges
@@ -5176,32 +5171,34 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
     subroutine AllocateVariables
 
         !Arguments-------------------------------------------------------------
-        !Local----------------------------------------------------------------- 
+        !Local-----------------------------------------------------------------
+        real(4)  :: ZeroValue = 0.0
+        real(4)  :: Aux
         !Begin-----------------------------------------------------------------       
 
         allocate(Me%iFlowToChannels  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%iFlowToChannels      = 0.0   !Sets values initially to zero, so 
+        call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0)   !Sets values initially to zero, so 
 
         
         if (Me%ObjDrainageNetwork /= 0) then
             allocate(Me%lFlowToChannels  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            Me%lFlowToChannels      = 0.0   !model can run without DNet
+            call SetMatrixValue(Me%lFlowToChannels, Me%Size, 0.0)   !model can run without DNet
         endif
         
         
         allocate(Me%iFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%iFlowBoundary        = 0.0   !model can run without BC
+        call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)   !model can run without BC
 
         if (Me%Discharges) then
             allocate(Me%lFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             allocate(Me%iFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            Me%lFlowDischarge        = 0.0   !Sets values initially to zero, so 
-            Me%iFlowDischarge        = 0.0   !model can run without Dis
+            call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0)   !Sets values initially to zero, so 
+            call SetMatrixValue(Me%iFlowDischarge, Me%Size, 0.0)   !model can run without Dis
         endif
 
         if (Me%RouteDFourPoints) then
             allocate(Me%iFlowRouteDFour  (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            Me%iFlowRouteDFour       = 0.0   !Sets values initially to zero, so  
+            call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)   !Sets values initially to zero, so  
         endif
         
         if (Me%HasRunoffProperties) then
@@ -5216,14 +5213,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            Me%myWaterColumnAfterTransport = null_real
+            call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, null_real)
             
         else
             allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
                
-            Me%myWaterColumn_R4        = null_real        
-            Me%myWaterLevel_R4         = null_real
+            call SetMatrixValue(Me%myWaterColumn_R4, Me%Size, null_real_4)       
+            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, null_real_4)
             
             allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5233,38 +5230,34 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%MaxVelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             
-            Me%CenterFlowX_R4 = 0.0
-            Me%CenterFlowY_R4 = 0.0
-            Me%CenterVelocityX_R4 = 0.0
-            Me%CenterVelocityY_R4 = 0.0
-            Me%FlowModulus_R4 = 0.0
-            Me%VelocityModulus_R4 = 0.0
-            Me%MaxVelocityModulus_R4 = 0.0
+            call SetMatrixValue(Me%CenterFlowX_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%CenterFlowY_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%CenterVelocityX_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%CenterVelocityY_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%FlowModulus_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%VelocityModulus_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%MaxVelocityModulus_R4, Me%Size, ZeroValue)
         endif
         
         if (.not. Me%LimitToCriticalFlow) then
             allocate(Me%myWaterVolumePred   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            Me%myWaterVolumePred = null_real
+            call SetMatrixValue(Me%myWaterVolumePred, Me%Size, null_real)
         endif
         
         allocate(Me%myWaterLevel         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
         allocate(Me%myWaterColumn        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !allocate(Me%InitialWaterColumn   (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
-        !allocate(Me%InitialWaterLevel    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
         allocate(Me%myWaterVolume        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterColumnOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
 
-        Me%myWaterLevel            = null_real
-        Me%myWaterColumn           = null_real
-        !Me%InitialWaterColumn      = null_real Sobrinho
-        !Me%InitialWaterLevel       = null_real Sobrinho
-        Me%myWaterVolume           = 0.0        !For OpenMI
-        Me%myWaterColumnOld        = null_real
-        Me%myWaterVolumeOld        = null_real
-        Me%MassError               = 0
+        call SetMatrixValue(Me%myWaterLevel, Me%Size, null_real)
+        call SetMatrixValue(Me%myWaterColumn, Me%Size, null_real)
+        call SetMatrixValue(Me%myWaterVolume, Me%Size, 0.0)        !For OpenMI
+        call SetMatrixValue(Me%myWaterColumnOld, Me%Size, null_real)
+        call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, null_real)
+        call SetMatrixValue(Me%MassError, Me%Size, 0.0)
 
         allocate(Me%iFlowX               (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%iFlowY               (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5279,75 +5272,70 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%ComputeFaceU         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ComputeFaceV         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%OpenPoints           (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !allocate(Me%NoAdvectionPoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB)) Sobrinho
-        !allocate(Me%ComputeAdvectionU    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        !allocate(Me%ComputeAdvectionV    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceU          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_Y          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
-        Me%iFlowX               = 0.0
-        Me%iFlowY               = 0.0
-        Me%lFlowX               = 0.0
-        Me%lFlowY               = 0.0
-        Me%FlowXOld             = 0.0
-        Me%FlowYOld             = 0.0
-        Me%InitialFlowX         = 0.0
-        Me%InitialFlowY         = 0.0
-        Me%AreaU                = AlmostZero
-        Me%AreaV                = AlmostZero
-        Me%ComputeFaceU         = 0
-        Me%ComputeFaceV         = 0
-        Me%OpenPoints           = 0
-        Me%Bottom_X             = 0
-        Me%Bottom_Y             = 0
+        call SetMatrixValue(Me%iFlowX, Me%Size, 0.0)
+        call SetMatrixValue(Me%iFlowY, Me%Size, 0.0)
+        call SetMatrixValue(Me%lFlowX, Me%Size, 0.0)
+        call SetMatrixValue(Me%lFlowY, Me%Size, 0.0)
+        call SetMatrixValue(Me%FlowXOld, Me%Size, 0.0)
+        call SetMatrixValue(Me%FlowYOld, Me%Size, 0.0)
+        call SetMatrixValue(Me%InitialFlowX, Me%Size, 0.0)
+        call SetMatrixValue(Me%InitialFlowY, Me%Size, 0.0)
+        call SetMatrixValue(Me%AreaU, Me%Size, AlmostZero)
+        call SetMatrixValue(Me%AreaV, Me%Size, AlmostZero)
+        call SetMatrixValue(Me%ComputeFaceU, Me%Size, 0)
+        call SetMatrixValue(Me%ComputeFaceV, Me%Size, 0)
+        call SetMatrixValue(Me%OpenPoints, Me%Size, 0)
+        call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
+        call SetMatrixValue(Me%Bottom_Y, Me%Size, 0.0)
         
-        !Me%NoAdvectionPoints    = 0.0 Sobrinho
-        !Me%ComputeAdvectionU    = 1
-        !Me%ComputeAdvectionV    = 1
 
-        Me%VelModFaceU          = 0.0
-        Me%VelModFaceV          = 0.0
+        call SetMatrixValue(Me%VelModFaceU, Me%Size, 0.0)
+        call SetMatrixValue(Me%VelModFaceV, Me%Size, 0.0)
 
         if (Me%HasRunoffProperties) then
             allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         
-            Me%Output%MaxFlowModulus = 0.0
+            call SetMatrixValue(Me%Output%MaxFlowModulus, Me%Size, 0.0)
         
-            Me%Output%MaxWaterColumn = Me%MinimumWaterColumn
+            call SetMatrixValue(Me%Output%MaxWaterColumn, Me%Size, Me%MinimumWaterColumn)
  
             allocate (Me%Output%VelocityAtMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            Me%Output%VelocityAtMaxWaterColumn = null_real
+            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
 
             allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            Me%Output%MaxFloodRisk = null_real
+            call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, null_real)
         else
             allocate (Me%Output%MaxFlowModulus_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         
-            Me%Output%MaxFlowModulus_R4 = 0.0
-            Me%Output%MaxWaterColumn_R4 = Me%MinimumWaterColumn
+            call SetMatrixValue(Me%Output%MaxFlowModulus_R4, Me%Size, ZeroValue)
+            Aux = Me%MinimumWaterColumn
+            call SetMatrixValue(Me%Output%MaxWaterColumn_R4, Me%Size, Aux)
  
             allocate (Me%Output%VelocityAtMaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            Me%Output%VelocityAtMaxWaterColumn_R4 = null_real
+            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn_R4, Me%Size, null_real_4)
 
             allocate (Me%Output%MaxFloodRisk_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            Me%Output%MaxFloodRisk_R4 = null_real
+            call SetMatrixValue(Me%Output%MaxFloodRisk_R4, Me%Size, null_real_4)
         endif
         
         allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        Me%Output%TimeOfMaxWaterColumn = -99.0
+        call SetMatrixValue(Me%Output%TimeOfMaxWaterColumn, Me%Size, -99.0)
         
         if (Me%Output%WriteFloodPeriod) then
             allocate (Me%Output%FloodPeriod (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            Me%Output%FloodPeriod = 0.
+            call SetMatrixValue(Me%Output%FloodPeriod, Me%Size, 0.0)
         endif
         
         if (Me%Output%WriteFloodArrivalTime) then
             allocate (Me%Output%FloodArrivalTime (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            Me%Output%FloodArrivalTime = -99.0
+            call SetMatrixValue(Me%Output%FloodArrivalTime, Me%Size, -99.0)
         endif
 
         if (Me%RouteDFourPoints) then !Sobrinho
@@ -5361,18 +5349,18 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         
         allocate (Me%StabilityPoints (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
                     
-        Me%StabilityPoints = 0
+        call SetMatrixValue(Me%StabilityPoints, Me%Size, 0)
         
         if (Me%ObjDrainageNetwork /= 0) then
             
             allocate(Me%NodeRiverLevel   (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            Me%NodeRiverLevel      = null_real  
+            call SetMatrixValue(Me%NodeRiverLevel, Me%Size, null_real) 
             
             allocate(Me%MarginRiverLevel   (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            Me%MarginRiverLevel      = null_real        
+            call SetMatrixValue(Me%MarginRiverLevel, Me%Size, null_real)        
             
             allocate(Me%MarginFlowToChannels   (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            Me%MarginFlowToChannels      = null_real              
+            call SetMatrixValue(Me%MarginFlowToChannels, Me%Size, null_real)          
         endif
 
 
@@ -5396,8 +5384,10 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         JUB = Me%WorkSize%JUB
 
         !TODO: OpenMP - Missing implementation
-        do j = JLB, JUB + 1
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do i = ILB, IUB
+        do j = JLB, JUB + 1
 
             if (Me%ExtVar%BasinPoints(i, j) + Me%ExtVar%BasinPoints(i, j-1) == 2) then !Two Basin Points
             
@@ -5408,7 +5398,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
 
         enddo
         enddo
-
+        !$OMP END DO
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
         do i = ILB, IUB + 1
 
@@ -5421,7 +5412,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
 
         enddo
         enddo
-
+        !$OMP END DO
+        !$OMP END PARALLEL
 
     end subroutine ConstructOverLandCoefficient
     

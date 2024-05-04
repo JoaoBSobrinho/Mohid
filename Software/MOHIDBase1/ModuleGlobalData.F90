@@ -143,6 +143,7 @@ Module ModuleGlobalData
 
     integer,            parameter :: null_int   = -999999
     real,               parameter :: null_real  = -9.9E15
+    real(4),               parameter :: null_real_4  = -9.9E15
     character(LEN = 5), parameter :: null_str   = '*****'
 
     !Time

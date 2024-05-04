@@ -771,43 +771,32 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             !Simulation time in seconds
             Me%SimulationTime = Me%EndTime - Me%BeginTime
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ReadFileNames")
             call ReadFileNames        
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ReadFileNames")
             !Constructs Horizontal Grid
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalGrid")
             call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
                                          STAT = STAT_CALL)           
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR04'
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructHorizontalGrid")
             !Constructs GridData
             
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructGridData")
             call ConstructGridData      (Me%ObjGridData, Me%ObjHorizontalGrid,           &
                                          FileName = Me%Files%TopographicFile,            &
                                          STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR05'
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructGridData")
 
             !Constructs BasinGeometry
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructBasinGeometry")
             call ConstructBasinGeometry (Me%ObjBasinGeometry, Me%ObjGridData,            &
                                          Me%ObjHorizontalGrid, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR06'
-
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructBasinGeometry")
             
             !Gets BasinPoints
             call GetBasinPoints         (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR07'
 
             !Constructs Mapping
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalMap")
             call ConstructHorizontalMap (Me%ObjHorizontalMap, Me%ObjGridData,            &
                                         Me%ObjHorizontalGrid, Me%CurrentTime,            &
                                         Me%ExtVar%BasinPoints, 2, STAT = STAT_CALL)  
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR08'
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructHorizontalMap")
             
             
             !Gets the size of the grid
@@ -820,7 +809,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call GetGridCellArea(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09b'            
             
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "BWB")
             Me%BWB%BasinArea     = 0.0
             Me%BWB%NumberOfCells = 0
             do j = Me%Size%JLB, Me%Size%JUB
@@ -831,7 +819,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 endif
             enddo
             enddo 
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "BWB")
             
             call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09c'
@@ -863,9 +850,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call ReadLockExternalVar (LockToWhichModules, OptionsType)
 
             !Reads Data File
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ReadDataFile")
             call ReadDataFile
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ReadDataFile")
             
             !ChunkI and ChunkJ are global variables (defined in ModuleGlobalData)
             !ChunkK is defined only if PorousMedia is ON and is defined in the ModulePorousMedia
@@ -874,9 +859,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             ChunkI = max((Me%Size%IUB - Me%Size%ILB) / ChunkIFactor, 1)            
 
             !Allocates Variables
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "AllocateVariables")
             call AllocateVariables ()
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "AllocateVariables")
 
             !Verifies User Options
             OptionsType = "GlobalOptions"
@@ -886,9 +869,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 #ifdef _ENABLE_CUDA
             call ConstructCoupledModules(Me%ObjCuda)
 #else
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructCoupledModules")
             call ConstructCoupledModules()
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructCoupledModules")
 #endif _ENABLE_CUDA                        
 
             !Checks property related options
@@ -2139,26 +2120,36 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         integer                                       :: i, j
         
         allocate(Me%SCSCNRunOffModel%InfRate%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%InfRate%Field = FillValueReal
+        call SetMatrixValue(Me%SCSCNRunOffModel%InfRate%Field, Me%Size, FillValueReal)
         
+#ifndef _SEWERGEMSENGINECOUPLER_
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructOneProperty_SCSCN WTF")
         allocate(Me%SCSCNRunOffModel%VegGrowthStage%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%VegGrowthStage%Field = FillValueReal
+        call SetMatrixValue(Me%SCSCNRunOffModel%VegGrowthStage%Field, Me%Size, FillValueReal)
+
         call ConstructOneProperty (Me%SCSCNRunOffModel%VegGrowthStage, "VegGrowthStage",  &
                                    "<BeginVegGrowthStage>", "<EndVegGrowthStage>")
- 
-        allocate(Me%SCSCNRunOffModel%ImpFrac%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))              
-        Me%SCSCNRunOffModel%ImpFrac%Field = FillValueReal
-        call ConstructOneProperty (Me%SCSCNRunOffModel%ImpFrac, "ImpFrac", "<BeginImpFrac>", "<EndImpFrac>")
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructOneProperty_SCSCN WTF")
+#endif _SEWERGEMSENGINECOUPLER_ 
+
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructOneProperty_SCSCN")
         
+        allocate(Me%SCSCNRunOffModel%ImpFrac%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))              
+        call SetMatrixValue(Me%SCSCNRunOffModel%ImpFrac%Field, Me%Size, FillValueReal)
+        call ConstructOneProperty (Me%SCSCNRunOffModel%ImpFrac, "ImpFrac", "<BeginImpFrac>", "<EndImpFrac>")
         allocate(Me%SCSCNRunOffModel%CurveNumber%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%CurveNumber%Field = FillValueReal
+        call SetMatrixValue(Me%SCSCNRunOffModel%CurveNumber%Field, Me%Size, FillValueReal)
         call ConstructOneProperty (Me%SCSCNRunOffModel%CurveNumber, "CurveNumber", "<BeginCurveNumber>", "<EndCurveNumber>")
         
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructOneProperty_SCSCN")
+        
         allocate (Me%SCSCNRunOffModel%S (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%S = FillValueReal
+        call SetMatrixValue(Me%SCSCNRunOffModel%S, Me%Size, FillValueReal)
         !Me%SCSCNRunOffModel%S updated here becasue whe using sewergems it remains constant over time
         
         !verify input
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = Me%Size%JLB, Me%Size%JUB
         do i = Me%Size%ILB, Me%Size%IUB
             if (Me%ExtVar%BasinPoints(i,j) == BasinPoint) then
@@ -2178,12 +2169,23 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             endif
         enddo
         enddo 
+        !$OMP END DO
+        !$OMP END PARALLEL
         
+
         if (Me%SCSCNRunOffModel%ConvertIAFactor) then
-            where(Me%ExtVar%BasinPoints(:,:) == BasinPoint)
-                Me%SCSCNRunOffModel%CurveNumber%Field(:,:) = 100.0  &
-                / (1.879 * (100.0 / Me%SCSCNRunOffModel%CurveNumber%Field(:,:) - 1.0)**1.15 + 1.0)
-            end where
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%Size%JLB, Me%Size%JUB
+            do i = Me%Size%ILB, Me%Size%IUB
+                if (Me%ExtVar%BasinPoints(i,j) == BasinPoint) then
+                    Me%SCSCNRunOffModel%CurveNumber%Field(i,j) = 100.0  &
+                    / (1.879 * (100.0 / Me%SCSCNRunOffModel%CurveNumber%Field(i,j) - 1.0)**1.15 + 1.0)
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
         endif
         
         Me%SCSCNRunOffModel%NextRainAccStart = Me%BeginTime + 86400
@@ -2192,19 +2194,19 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         Me%SCSCNRunOffModel%Last5DaysAccRain = 0.0
         
         allocate (Me%SCSCNRunOffModel%Last5DaysAccRainTotal (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%Last5DaysAccRainTotal = 0.0
+        call SetMatrixValue(Me%SCSCNRunOffModel%Last5DaysAccRainTotal, Me%Size, 0.0)
         
         allocate (Me%SCSCNRunOffModel%DailyAccRain (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%DailyAccRain = 0.0
+        call SetMatrixValue(Me%SCSCNRunOffModel%DailyAccRain, Me%Size, 0.0)
 
         allocate (Me%SCSCNRunOffModel%Current5DayAccRain (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%Current5DayAccRain = 0.0
+        call SetMatrixValue(Me%SCSCNRunOffModel%Current5DayAccRain, Me%Size, 0.0)
         
         allocate (Me%SCSCNRunOffModel%ActualCurveNumber (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%ActualCurveNumber = Me%SCSCNRunOffModel%CurveNumber%Field
+        call SetMatrixValue(Me%SCSCNRunOffModel%ActualCurveNumber, Me%Size, Me%SCSCNRunOffModel%CurveNumber%Field)
         
         allocate (Me%SCSCNRunOffModel%Q_Previous (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        Me%SCSCNRunOffModel%Q_Previous = 0.0
+        call SetMatrixValue(Me%SCSCNRunOffModel%Q_Previous, Me%Size, 0.0)
         
     end subroutine ConstructSCSCNRunOffModel
     
@@ -3479,7 +3481,6 @@ i1:         if (CoordON) then
                                          HasRunoffProperties = Me%Coupled%RunoffProperties, &
                                          STAT               = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR070'
-            
            
             !Constructs RunoffProperties 
             if (Me%Coupled%RunoffProperties) then
@@ -6307,7 +6308,6 @@ cd0:    if (Exist) then
         !Begin-----------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel_1")
         CHUNK = ChunkJ
         
         Me%ConstantCurveNumber = .True.
@@ -6320,28 +6320,27 @@ cd0:    if (Exist) then
             do J = Me%WorkSize%JLB, Me%WorkSize%JUB
             do I = Me%WorkSize%ILB, Me%WorkSize%IUB
                 
-                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2)
-                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3)
-                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4)
-                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
-                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5) = Me%SCSCNRunOffModel%DailyAccRain (i, j)
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2)
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3)
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4)
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
+                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5) = Me%SCSCNRunOffModel%DailyAccRain (i, j)
                     
-                Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j) =      &
-                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) +    &
-                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) +    &
-                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) +    &
-                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) +    &
-                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
+                    Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j) =      &
+                        Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) +    &
+                        Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) +    &
+                        Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) +    &
+                        Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) +    &
+                        Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
                     
-                Me%SCSCNRunOffModel%DailyAccRain (i, j) = 0.0
-            
+                    Me%SCSCNRunOffModel%DailyAccRain (i, j) = 0.0
+                endif
             enddo
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL            
         endif
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel_1")
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel_2")
         
         if (Me%NumberOfTimeSeries > 0) then
             
@@ -6374,13 +6373,12 @@ cd0:    if (Exist) then
                         qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
                         
                         Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
-                        !m/s = mm * 1E-3 m/mm / s
-                        !InfiltrationField = ((rain - qInTimeStep) * 1E-3) / Me%CurrentDT
-                        !Output mm/h = mm * 1E-3 m/mm / s * 3600 s/hour
-                        Me%InfiltrationRate (i, j) = (((rain - qInTimeStep) * 1E-3) / Me%CurrentDT) * 3600000.0
+                        
+                        !Output mm/h = mm/s * 3600 s/hour
+                        Me%InfiltrationRate (i, j) = ((rain - qInTimeStep) / Me%CurrentDT) * 3600.0
                         
                     else
-                        !m/s
+                        !Output mm/h = m/s * 3600000 (mm/m * s/hour)
                         Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
                     endif
                 
@@ -6455,7 +6453,6 @@ cd0:    if (Exist) then
             
         endif
         
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel_2")
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
     end subroutine SCSCNRunOffModel
