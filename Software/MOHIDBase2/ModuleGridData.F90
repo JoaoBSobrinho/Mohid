@@ -505,6 +505,7 @@ Module ModuleGridData
                                      keyword      = 'FILL_VALUE',                        &
                                      ClientModule = 'ModuleGridData',                    &
                                      default      = -99.0,                               &
+                                     StopAt       = '<BeginGridData2D>',                 &
                                      STAT         = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ReadGridDataFile - ModuleGridData - ERR20'
 
@@ -513,6 +514,7 @@ Module ModuleGridData
                                      keyword      = 'TYPE_ZUV',                          &
                                      ClientModule = 'ModuleGridData',                    &
                                      default      = "Z",                                 &
+                                     StopAt       = '<BeginGridData2D>',                 &
                                      STAT         = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ReadGridDataFile - ModuleGridData - ERR30'
 
@@ -521,6 +523,7 @@ Module ModuleGridData
                                      keyword      = 'EVOLUTION',                         &
                                      ClientModule = 'ModuleGridData',                    &
                                      default      =.false.,                              &
+                                     StopAt       = '<BeginGridData2D>',                 &
                                      STAT         = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ReadGridDataFile - ModuleGridData - ERR40'
 
@@ -556,6 +559,7 @@ Module ModuleGridData
                                      keyword      = 'CONSTANT_IN_SPACE',                &
                                      ClientModule = 'ModuleGridData',                   &
                                      default      =  .false.,                           &
+                                     StopAt       = '<BeginGridData2D>',                &
                                      STAT         = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ReadGridDataFile - ModuleGridData - ERR100'
 
@@ -565,6 +569,7 @@ Module ModuleGridData
                                      keyword      = 'DEFAULT_VALUE',                    &
                                      ClientModule = 'ModuleGridData',                   &
                                      default      =  DefaultValue,                      &
+                                     StopAt       = '<BeginGridData2D>',                &
                                      STAT         = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ReadGridDataFile - ModuleGridData - ERR110'        
 
