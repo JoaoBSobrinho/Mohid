@@ -7852,7 +7852,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !Calculates local Watercolumn
                 call ReadLockExternalVar   (StaticOnly = .true.)
                 call LocalWaterColumn      (Me%myWaterColumnOld)
-                !call ReadUnLockExternalVar (StaticOnly = .true.)
 
                 SumDT        = 0.0
                 Restart      = .false.                                 
@@ -8741,25 +8740,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = JLB, JUB
             do i = ILB, IUB
-                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    !Maximum Bottom Level
-                    Bottom = Me%Bottom_X(i,j)
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
 
-                    if (Me%myWaterLevel(i, j-1) > Me%myWaterLevel(i, j) ) then
-                        !Water Column Left (above MaxBottom)
-                        WCA       = max(Me%myWaterLevel(i, j-1) - Bottom, AlmostZero_Double)
-                    else
-                        !Water Column Right (above MaxBottom)
-                        WCA       = max(Me%myWaterLevel(i, j  ) - Bottom, AlmostZero_Double)
-                    endif
+                        WCA       = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j), AlmostZero_Double)
                 
-                    !Area  = Water Column * Side lenght of cell
-                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                        !Area  = Water Column * Side lenght of cell
+                        Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
                 
-                    if (WCA > Me%MinimumWaterColumn) then
-                        Me%ComputeFaceU(i, j) = 1
-                    else
-                        Me%ComputeFaceU(i, j) = 0
+                        if (WCA > Me%MinimumWaterColumn) then
+                            Me%ComputeFaceU(i, j) = 1
+                        else
+                            Me%ComputeFaceU(i, j) = 0
+                        endif
                     endif
                 endif
             enddo
@@ -8891,16 +8884,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do j = JLB, JUB
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    !Maximum Bottom Level
-                    Bottom = Me%Bottom_Y(i,j)
                     
-                    if (Me%myWaterLevel(i-1, j) > Me%myWaterLevel(i, j) ) then
-                        !Water Column Left (above MaxBottom)
-                        WCA = max(Me%myWaterLevel(i-1, j) - Bottom, AlmostZero_Double)
-                    else
-                        !Water Column Right (above MaxBottom)
-                        WCA = max(Me%myWaterLevel(i, j  ) - Bottom, AlmostZero_Double)
-                    endif
+                    WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
                 
                     !Area  = Water Column * Side lenght of cell
                     Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
