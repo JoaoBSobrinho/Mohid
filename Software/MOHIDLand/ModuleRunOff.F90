@@ -8777,7 +8777,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
-                        
                         if (Me%myWaterColumn(i, j-1) > 0 .or. Me%myWaterColumn(i, j) > 0) then
 
                             WCA       = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j), AlmostZero_Double)
@@ -8795,7 +8794,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
                             Me%ComputeFaceU(i, j) = 0
                         endif
-                        
                     endif
                 endif
             enddo
@@ -8867,27 +8865,28 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do j = JLB, JUB
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint) then
                         
-                    if (Me%myWaterColumn(i-1, j) > 0 .or. Me%myWaterColumn(i, j) > 0) then
-                        !Average Bottom Level
-                        Bottom = Me%Bottom_Y(i,j)
+                        if (Me%myWaterColumn(i-1, j) > 0 .or. Me%myWaterColumn(i, j) > 0) then
+                            !Average Bottom Level
+                            Bottom = Me%Bottom_Y(i,j)
                     
-                        !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-                        WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
+                            !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                            WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
                 
-                        !Area  = Water Column * Side lenght of cell
-                        Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
                 
-                        if (WCA > Me%MinimumWaterColumn) then
-                            Me%ComputeFaceV(i, j) = 1
+                            if (WCA > Me%MinimumWaterColumn) then
+                                Me%ComputeFaceV(i, j) = 1
+                            else
+                                Me%ComputeFaceV(i, j) = 0
+                            endif
                         else
+                            Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
                             Me%ComputeFaceV(i, j) = 0
                         endif
-                    else
-                        Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
-                        Me%ComputeFaceV(i, j) = 0
-                    endif
-                        
+                    endif    
                 endif
             enddo
             enddo
