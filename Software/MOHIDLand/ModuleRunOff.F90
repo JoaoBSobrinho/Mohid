@@ -326,7 +326,8 @@ Module ModuleRunOff
     !Parameters----------------------------------------------------------------
     integer, parameter                              :: KinematicWave_   = 1
     integer, parameter                              :: DiffusionWave_   = 2
-    integer, parameter                              :: DynamicWave_     = 3      
+    integer, parameter                              :: DynamicWave_     = 3
+    integer, parameter                              :: FVFluxVectorSplitting_     = 4
 
     integer, parameter                              :: UnitMax          = 80
     
@@ -1349,7 +1350,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
         if (Me%HydrodynamicApproximation /= KinematicWave_ .and.                &
             Me%HydrodynamicApproximation /= DiffusionWave_ .and.                &
-            Me%HydrodynamicApproximation /= DynamicWave_) then
+            Me%HydrodynamicApproximation /= DynamicWave_   .and.                &
+            Me%HydrodynamicApproximation /= FVFluxVectorSplitting_) then
             write (*,*) 'Invalid Hydrodynamic Approximation [HYDRODYNAMIC_APROX]'
             stop 'ReadDataFile - ModuleRunOff - ERR0150'
         end if     
@@ -7871,231 +7873,243 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call InterpolateRiverLevelToCells
             endif
             
-            Restart = .true.
-            n_restart = 0
+            if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then 
+                
+                !compute fluxes
+                call ComputeFluxesFVS(temp)
+                !return dt to basin and get new dt
+                
+                !integrate solution by dt
+                call ComputeStateFVS(temp)
+                !apply BC and impose local modifications (discharges, coupling with external models, etc)
+                
+            else !other models, no changes
+                
+                Restart = .true.
+                n_restart = 0
 
-            if (Me%CV%NextNiteration > 1 .and. Me%ExtVar%DT < (Me%CV%CurrentDT * Me%CV%NextNiteration)) then
-                Me%CV%NextNiteration = max(aint(Me%ExtVar%DT / Me%CV%CurrentDT), 1.0)
-            endif
-            
-            firstRestart = .True.
-            
-            call ReadUnLockExternalVar (StaticOnly = .true.)
-            
-            do while (Restart)
-            
-                !Calculates local Watercolumn
-                call ReadLockExternalVar   (StaticOnly = .true.)
-                call LocalWaterColumn      (Me%myWaterColumnOld)
-
-                SumDT        = 0.0
-                Restart      = .false.                                 
-                iter         = 1
-                Niter        = Me%CV%NextNiteration    !DB
-                Me%CV%CurrentDT = Me%ExtVar%DT / Niter
-
-                if (Niter > 1) then                
-                    call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
+                if (Me%CV%NextNiteration > 1 .and. Me%ExtVar%DT < (Me%CV%CurrentDT * Me%CV%NextNiteration)) then
+                    Me%CV%NextNiteration = max(aint(Me%ExtVar%DT / Me%CV%CurrentDT), 1.0)
                 endif
-                
-                call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
-                call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
-                
-                if (firstRestart) then
-                    !using Me%InitialFlowX and Me%InitialFlowY directly
-                else
-                    call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                    call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
-                endif
-                
-                if (Me%ObjDrainageNetwork /= 0 .or. Me%Use1D2DInteractionMapping) then
-                    call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0, Me%ExtVar%BasinPoints)
-                endif
-                
-                if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
-                if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
-                
+            
+                firstRestart = .True.
+            
                 call ReadUnLockExternalVar (StaticOnly = .true.)
+            
+                do while (Restart)
+            
+                    !Calculates local Watercolumn
+                    call ReadLockExternalVar   (StaticOnly = .true.)
+                    call LocalWaterColumn      (Me%myWaterColumnOld)
+
+                    SumDT        = 0.0
+                    Restart      = .false.                                 
+                    iter         = 1
+                    Niter        = Me%CV%NextNiteration    !DB
+                    Me%CV%CurrentDT = Me%ExtVar%DT / Niter
+
+                    if (Niter > 1) then                
+                        call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
+                    endif
                 
-doIter:         do while (iter <= Niter)
-
-                    !Gets ExternalVars
-                    call ReadLockExternalVar (StaticOnly = .false.)
-
-                    !Stores WaterVolume for convergence test
-                    call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
-
+                    call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
+                    call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
+                
                     if (firstRestart) then
-                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
-                        firstRestart = .false.
+                        !using Me%InitialFlowX and Me%InitialFlowY directly
                     else
-                        call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ExtVar%BasinPoints)
-                        call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ExtVar%BasinPoints)
+                        call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                        call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                     endif
-
-                    !Updates Geometry
-                    call ModifyGeometryAndMapping
-                    
-                    !save most recent water volume to predict if negative occur. in that case flux will be
-                    !limited to water volume and next fluxes will be zero
-                    if (.not. Me%LimitToCriticalFlow) then
-                        call SetMatrixValue (Me%myWaterVolumePred, Me%Size, Me%myWaterVolume)
-                    endif        
-                    
-                    select case (Me%HydrodynamicApproximation)
-                        case (KinematicWave_)
-                            call KinematicWave  ()            !Slope based on topography
-                        case (DiffusionWave_)
-                            call KinematicWave  ()            !Slope based on surface
-                        case (DynamicWave_)
-                            call ComputeFaceVelocityModulus
-                            call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
-                            call DynamicWaveYY    (Me%CV%CurrentDT)
-                    end select
-
-                    !Updates waterlevels, based on fluxes
-                    call UpdateWaterLevels(Me%CV%CurrentDT)
-                    
-                    !Interaction with channels
-                    if (.not. Me%Use1D2DInteractionMapping .and. Me%ObjDrainageNetwork /= 0 .and. .not. Me%SimpleChannelInteraction) then
-                        call FlowIntoChannels       (Me%CV%CurrentDT)
-                    endif
-
-                    !Boundary Condition
-!                    if (Me%ImposeBoundaryValue) then
-!                        call ImposeBoundaryValue    (Me%CV%CurrentDT)
-!                    endif
-
-                    !Inputs Water from discharges
-                    if (Me%Discharges) then
-                        call ModifyWaterDischarges  (Me%CV%CurrentDT)                
-                    endif
-
-                    call CheckStability(Restart) 
-                    
-                    call ReadUnLockExternalVar (StaticOnly = .false.)
-                    
-                    if (Restart) then
-                        exit doIter
-                    endif
-
-                    call IntegrateFlow     (Me%CV%CurrentDT, SumDT)  
-                        
-                    SumDT = SumDT + Me%CV%CurrentDT
-                    iter  = iter  + 1                                        
-                    
-                enddo doIter
-                                            
-            enddo
-            
-!            !DB
-!            if (Niter <= Me%LastGoodNiter) then
-!                Me%CV%NextNiteration = max (min(int(Niter / Me%InternalTimeStepSplit), NIter - 1), 1)
-!            else
-!                Me%CV%NextNiteration = Niter
-!            endif     
-            
-            !save water column before removes from next processes
-            !important for property transport if river cells get out of water, conc has to be computed
-            !after transport and not zero because there was no water left
-            if (Me%HasRunoffProperties) then
-                call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, Me%myWaterColumn)
-            endif
-            !Gets ExternalVars
-            call ReadLockExternalVar (StaticOnly = .false.)
-
-            if (Me%Use1D2DInteractionMapping) then
-                !it will use mapping for any model (DN or SWMM or other)
-                call OverLandChannelInteraction_6_NewMapping            
-            else            
-                if (Me%ObjDrainageNetwork /= 0) then
                 
-                    if (Me%SimpleChannelInteraction) then
-                        !There were many methods to do this calculation that were implemented and abandoned
-                        !Many of the abandoned methods were commented:
-                        !OverLandChannelInteraction, OverLandChannelInteraction, 3, 4, 5, New
-                        !In June/July 2022 they were deleted in a code clean up.
-                        !Anyone trying to improved this code should look at code versions from around June 2022
-                        !and check those routines as reference 
-                    
-                        !TODO: Remove this and have only one method!! This is a workaround
-                        !Try to use the in _6 the code from _2 where water exits the river (celerity limited)
-                        if (Me%ChannelHasTwoGridPoints) then
-                            !new method adapted to hydraulic simulation with two grid points per river node (e.g. UKBenchmark Test7)
-                            call OverLandChannelInteraction_6
+                    if (Me%ObjDrainageNetwork /= 0 .or. Me%Use1D2DInteractionMapping) then
+                        call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                    endif
+                
+                    if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                    if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                
+                    call ReadUnLockExternalVar (StaticOnly = .true.)
+                
+    doIter:         do while (iter <= Niter)
+
+                        !Gets ExternalVars
+                        call ReadLockExternalVar (StaticOnly = .false.)
+
+                        !Stores WaterVolume for convergence test
+                        call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
+
+                        if (firstRestart) then
+                            call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                            call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                            firstRestart = .false.
                         else
-                            !old method that is stable on normal cases only one cell per river node (e.g. Trancao sample generates "rendilhado"
-                            !when water exits the river if _6 method is used but is stable with this one _2)
-                            call OverLandChannelInteraction_2
+                            call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ExtVar%BasinPoints)
+                            call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ExtVar%BasinPoints)
                         endif
-                    else
-                        !Calculates flow from channels to land -> First ever implement approach
-                        call FlowFromChannels
-                    endif
-                endif
-            endif
-            
-            if (Me%StormWaterModel) then
-                
-                call ComputeStormWaterModel
 
-                call ModifyGeometryAndMapping
-                
-            endif
-
-            !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
-            !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
-            !because of resistance. However in both methods the area used is not consistent (regular faces flow
-            !already used all the cell vertical areas and the route D4 will overlapp areas - review this in the future
-            if (Me%RouteDFourPoints) then
-                if (Me%RouteDFourMethod == Manning_) then
-                    call RouteDFourPoints
-                elseif (Me%RouteDFourMethod == Celerity_) then
-                    call RouteDFourPoints_v3
-                endif
-            endif
-
-            !Boundary Condition
-            !Only compute if case of waterlevel higher than boundary (overflow)
-            !the default method was instantaneous flow (instantaneous go to boundary level)
-            !but it was changed to compute flow (based on celerity) to be more consistent
-            !with a free drop to boundary level (that can be much lower than topography)
-            if (Me%ImposeBoundaryValue) then
-
-                if (Me%BoundaryImposedLevelInTime)then
-                    if (Me%HasRunoffProperties) then
-                        call ModifyBoundaryLevel
-                    else
-                        call ModifyBoundaryLevel_2
-                    endif
-                endif
-                
-                if (Me%BoundaryMethod == ComputeFlow_) then
-                    if (Me%HasRunoffProperties) then
-                        call ImposeBoundaryValue
-                    else
-                        call ImposeBoundaryValue_1D
-                    endif
+                        !Updates Geometry
+                        call ModifyGeometryAndMapping
                     
-                elseif (Me%BoundaryMethod == InstantaneousFlow_) then
-                    if (Me%HasRunoffProperties) then
-                        call ImposeBoundaryValue_v2
-                    else
-                        call ImposeBoundaryValue_v2_1D
+                        !save most recent water volume to predict if negative occur. in that case flux will be
+                        !limited to water volume and next fluxes will be zero
+                        if (.not. Me%LimitToCriticalFlow) then
+                            call SetMatrixValue (Me%myWaterVolumePred, Me%Size, Me%myWaterVolume)
+                        endif        
+                    
+                        select case (Me%HydrodynamicApproximation)
+                            case (KinematicWave_)
+                                call KinematicWave  ()            !Slope based on topography
+                            case (DiffusionWave_)
+                                call KinematicWave  ()            !Slope based on surface
+                            case (DynamicWave_)
+                                call ComputeFaceVelocityModulus
+                                call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
+                                call DynamicWaveYY    (Me%CV%CurrentDT)
+                        end select
+
+                        !Updates waterlevels, based on fluxes
+                        call UpdateWaterLevels(Me%CV%CurrentDT)
+                    
+                        !Interaction with channels
+                        if (.not. Me%Use1D2DInteractionMapping .and. Me%ObjDrainageNetwork /= 0 .and. .not. Me%SimpleChannelInteraction) then
+                            call FlowIntoChannels       (Me%CV%CurrentDT)
+                        endif
+
+                        !Boundary Condition
+    !                    if (Me%ImposeBoundaryValue) then
+    !                        call ImposeBoundaryValue    (Me%CV%CurrentDT)
+    !                    endif
+
+                        !Inputs Water from discharges
+                        if (Me%Discharges) then
+                            call ModifyWaterDischarges  (Me%CV%CurrentDT)                
+                        endif
+
+                        call CheckStability(Restart) 
+                    
+                        call ReadUnLockExternalVar (StaticOnly = .false.)
+                    
+                        if (Restart) then
+                            exit doIter
+                        endif
+
+                        call IntegrateFlow     (Me%CV%CurrentDT, SumDT)  
+                        
+                        SumDT = SumDT + Me%CV%CurrentDT
+                        iter  = iter  + 1                                        
+                    
+                    enddo doIter
+                                            
+                enddo
+            
+    !            !DB
+    !            if (Niter <= Me%LastGoodNiter) then
+    !                Me%CV%NextNiteration = max (min(int(Niter / Me%InternalTimeStepSplit), NIter - 1), 1)
+    !            else
+    !                Me%CV%NextNiteration = Niter
+    !            endif     
+            
+                !save water column before removes from next processes
+                !important for property transport if river cells get out of water, conc has to be computed
+                !after transport and not zero because there was no water left
+                if (Me%HasRunoffProperties) then
+                    call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, Me%myWaterColumn)
+                endif
+                !Gets ExternalVars
+                call ReadLockExternalVar (StaticOnly = .false.)
+
+                if (Me%Use1D2DInteractionMapping) then
+                    !it will use mapping for any model (DN or SWMM or other)
+                    call OverLandChannelInteraction_6_NewMapping            
+                else            
+                    if (Me%ObjDrainageNetwork /= 0) then
+                
+                        if (Me%SimpleChannelInteraction) then
+                            !There were many methods to do this calculation that were implemented and abandoned
+                            !Many of the abandoned methods were commented:
+                            !OverLandChannelInteraction, OverLandChannelInteraction, 3, 4, 5, New
+                            !In June/July 2022 they were deleted in a code clean up.
+                            !Anyone trying to improved this code should look at code versions from around June 2022
+                            !and check those routines as reference 
+                    
+                            !TODO: Remove this and have only one method!! This is a workaround
+                            !Try to use the in _6 the code from _2 where water exits the river (celerity limited)
+                            if (Me%ChannelHasTwoGridPoints) then
+                                !new method adapted to hydraulic simulation with two grid points per river node (e.g. UKBenchmark Test7)
+                                call OverLandChannelInteraction_6
+                            else
+                                !old method that is stable on normal cases only one cell per river node (e.g. Trancao sample generates "rendilhado"
+                                !when water exits the river if _6 method is used but is stable with this one _2)
+                                call OverLandChannelInteraction_2
+                            endif
+                        else
+                            !Calculates flow from channels to land -> First ever implement approach
+                            call FlowFromChannels
+                        endif
                     endif
                 endif
-            endif
+            
+                if (Me%StormWaterModel) then
+                
+                    call ComputeStormWaterModel
 
-            !Calculates center flow and velocities (for output and next DT)
-            if (Me%HasRunoffProperties) then
-                call ComputeCenterValues
-            else
-                call ComputeCenterValues_R4
+                    call ModifyGeometryAndMapping
+                
+                endif
+
+                !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
+                !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
+                !because of resistance. However in both methods the area used is not consistent (regular faces flow
+                !already used all the cell vertical areas and the route D4 will overlapp areas - review this in the future
+                if (Me%RouteDFourPoints) then
+                    if (Me%RouteDFourMethod == Manning_) then
+                        call RouteDFourPoints
+                    elseif (Me%RouteDFourMethod == Celerity_) then
+                        call RouteDFourPoints_v3
+                    endif
+                endif
+
+                !Boundary Condition
+                !Only compute if case of waterlevel higher than boundary (overflow)
+                !the default method was instantaneous flow (instantaneous go to boundary level)
+                !but it was changed to compute flow (based on celerity) to be more consistent
+                !with a free drop to boundary level (that can be much lower than topography)
+                if (Me%ImposeBoundaryValue) then
+
+                    if (Me%BoundaryImposedLevelInTime)then
+                        if (Me%HasRunoffProperties) then
+                            call ModifyBoundaryLevel
+                        else
+                            call ModifyBoundaryLevel_2
+                        endif
+                    endif
+                
+                    if (Me%BoundaryMethod == ComputeFlow_) then
+                        if (Me%HasRunoffProperties) then
+                            call ImposeBoundaryValue
+                        else
+                            call ImposeBoundaryValue_1D
+                        endif
+                    
+                    elseif (Me%BoundaryMethod == InstantaneousFlow_) then
+                        if (Me%HasRunoffProperties) then
+                            call ImposeBoundaryValue_v2
+                        else
+                            call ImposeBoundaryValue_v2_1D
+                        endif
+                    endif
+                endif
+
+                !Calculates center flow and velocities (for output and next DT)
+                if (Me%HasRunoffProperties) then
+                    call ComputeCenterValues
+                else
+                    call ComputeCenterValues_R4
+                endif
+            
+                call ComputeNextDT (Niter)                                
             endif
-            
-            call ComputeNextDT (Niter)                                    
-            
             !Output Results
             if (Me%OutPut%Yes) then
                 if (Me%HasRunoffProperties) then
@@ -8162,6 +8176,386 @@ doIter:         do while (iter <= Niter)
         if (present(STAT)) STAT = STAT_
         
     end subroutine ModifyRunOff
+    
+    !---------------------------------------------------------------------------
+    
+    !---------------------------------------------------------------------------
+    !> @author Ricardo Birjukovs Canelas - Bentley Systems
+    !> @brief
+    !> Computes the fluxes between cells using a finite volume flux vector
+    !> spliting method. Returns a maximum admissable time step to ensure stability
+    !---------------------------------------------------------------------------
+    subroutine ComputeFluxesFVS(criticalDt)
+    real, intent(out) :: criticalDt                 !> the maximum dt is computed based on a CFL condition applied to the stability region
+    integer :: i,j, k, q, c                         !> iterators
+    integer, dimension(2) :: cellI, cellJ           !> cell addresses
+    integer, dimension(2,2) :: strideJ              !> stencil
+    integer :: ILB, IUB, JLB, JUB                   !> Grid cell counts
+    real :: ui, uj, vi, vj, hi, hj, bi, bj, ai, aj  !>local variables
+    real :: lenght_act, min_area                    !> local variables
+    real :: dz, di, dj, hi_1s, hj_3s                !> local variables
+    real :: ubar, vbar, cbar, vel_normal            !> local variables
+    real :: aux1, aux2, aux3                        !> local variables
+    real :: bottom, bottom1, bottom2, dz_bar, delta_x !> local variables
+    real :: dt, dt2, dt3, dt4                       !> local variables
+    logical :: wettingDrying                        !> wetting and drying flag
+    real :: nx, ny                                  !>normal components between cells
+    real, dimension(3) :: lambda, lambda_aux, lambda_i, lambda_j !>Jacobian eigenvalues
+    real, dimension(3,3) :: eig                     !>Jacobian eigenvectors
+    real, dimension(3) :: alpha                     !>homogenous terms wave strengths
+    real, dimension(3) :: beta                      !>bottom thrust terms wave strengths
+    real, dimension(3) :: flux_left, flux_right     !>flux accumulators
+
+    real, dimension(:,:,:), allocatable :: element_flux
+    character(len=30)                           :: time_string
+
+    ILB = Me%WorkSize%ILB
+    IUB = Me%WorkSize%IUB
+    JLB = Me%WorkSize%JLB
+    JUB = Me%WorkSize%JUB
+
+    dt = 999999999.0
+
+    allocate(element_flux(IUB-ILB, JUB-JLB, 3))
+    element_flux = 0.0
+    strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
+    
+    !Iterating trough every cell to compute the approximate Jacobian across each edge
+    do j = JLB, JUB-1
+        do i = ILB, IUB-1
+
+            do c = 1, size(strideJ,1)
+                                
+                !todo
+                !check if face or cell is valid
+                !Compute normal between cells
+                !compute tangential between cells
+                !store obstacle info to nullify normal velocity during integration latter
+                
+                cellI(1) = i
+                cellI(2) = j
+                cellJ(1) = i +  strideJ(c, 1)
+                cellJ(2) = j +  strideJ(c, 2)
+
+                ui=Me%VelModFaceU(cellI(1), cellI(2))
+                uj=Me%VelModFaceU(cellJ(1), cellJ(2))
+                vi=Me%VelModFaceV(cellI(1), cellI(2))
+                vj=Me%VelModFaceV(cellJ(1), cellJ(2))
+                hi=Me%myWaterColumn(cellI(1), cellI(2))
+                hj=Me%myWaterColumn(cellJ(1), cellJ(2))
+
+                bi=Me%ExtVar%Topography(cellI(1), cellI(2))
+                bj=Me%ExtVar%Topography(cellJ(1), cellJ(2))
+
+                ai=Me%ExtVar%GridCellArea(cellI(1), cellI(2))
+                aj=Me%ExtVar%GridCellArea(cellJ(1), cellJ(2))
+                lenght_act = Me%ExtVar%DXX(cellI(1), cellI(2)) !-this is not always DXX!
+                min_area = min(ai, aj)
+
+                if (hi+hj >= AlmostZero) then
+
+                    !Aproximate variables (Roe, 1981)
+                    aux1 = sqrt(hi)
+                    aux2 = sqrt(hj)
+                    aux3 = sqrt(hi)+sqrt(hj)
+                    ubar = (ui*aux1+uj*aux2)/aux3 !xx speed aproximation in i edge
+                    vbar = (vi*aux1+vj*aux2)/aux3 !yy speed aproximation in i edge
+                    cbar = sqrt(Gravity*(hi+hj)/2) !c aproximation in i edge
+                    
+                    nx = strideJ(c, 1)
+                    ny = strideJ(c, 2)
+
+                    vel_normal = ubar*nx+vbar*ny !normal speed
+
+                    !Aproximate eigenvalues
+                    lambda(1) = vel_normal - cbar
+                    lambda(2) = vel_normal
+                    lambda(3) = vel_normal + cbar
+
+                    !Entropy corrections
+                    lambda_aux(1) = 0
+                    lambda_aux(2) = 0
+                    lambda_aux(3) = 0
+
+                    lambda_i(1) = ui*nx+vi*ny - sqrt(Gravity*hi)
+                    lambda_i(3) = ui*nx+vi*ny + sqrt(Gravity*hi)        !lambda(U*)
+                    lambda_j(1) = uj*nx+vj*ny - sqrt(Gravity*hj)
+                    lambda_j(3) = uj*nx+vj*ny + sqrt(Gravity*hj)
+
+                    if ( lambda_i(1) < 0.0 ) then
+                        if ( lambda_j(1) > 0.0 ) then
+                            aux1 = (lambda_j(1) - lambda(1))/(lambda_j(1) - lambda_i(1))
+                            aux2 = (lambda(1) - lambda_i(1))/(lambda_j(1) - lambda_i(1))
+                            lambda_aux(1) = lambda_j(1)*aux2
+                            lambda(1)     = lambda_i(1)*aux1
+                        end if
+                    end if
+
+                    if ( lambda_i(3) < 0.0 ) then
+                        if ( lambda_j(3) > 0.0 ) then
+                            aux1 = (lambda(3) - lambda_i(3))/(lambda_j(3) - lambda_i(3))
+                            aux2 = (lambda_j(3) - lambda(3))/(lambda_j(3) - lambda_i(3))
+                            lambda_aux(3) = lambda_i(3)*aux2
+                            lambda(3)     = lambda_j(3)*aux1
+                        end if
+                    end if
+
+                    !Aproximate eigenvectors
+                    eig(1,1) = 1.0
+                    eig(1,2) = ubar - cbar*nx
+                    eig(1,3) = vbar - cbar*ny
+
+                    eig(2,1) = 0.0
+                    eig(2,2) = -cbar*ny
+                    eig(2,3) =  cbar*nx
+
+                    eig(3,1) = 1.0
+                    eig(3,2) = ubar + cbar*nx
+                    eig(3,3) = vbar + cbar*ny
+
+                    !Wave strengths - homogenous terms
+                    aux1 = (uj*hj-ui*hi)-ubar*(hj-hi)
+                    aux2 = (vj*hj-vi*hi)-vbar*(hj-hi)
+
+                    alpha(1) = (hj-hi)/2 - 1/(2*cbar)*(aux1*nx+aux2*ny)
+                    alpha(2) = (1/cbar)*(-aux1*ny+aux2*nx)
+                    alpha(3) = (hj-hi)/2 + 1/(2*cbar)*(aux1*nx+aux2*ny)
+
+                    !Wave strengths - bottom terms
+                    dz = bj - bi
+                    di = hi + bi
+                    dj = hj + bj
+
+                    bottom1 = -Gravity*((hi+hj)/2)*dz !initial trust term
+                    dz_bar = dz
+
+                    if ( dz >= 0.0 ) then
+                        if ( di < bj ) dz_bar = hi
+                    end if
+
+                    if ( dz < 0.0 ) then
+                        if ( dj < bi ) dz_bar = -hj      !See Murillo, 2010
+                    end if
+
+                    aux1 = hj
+                    if ( dz >= 0 ) aux1 =  hi
+
+                    bottom2 = -Gravity*(aux1-abs(dz_bar)/2)*dz_bar !alternative trust term
+                    bottom = bottom2
+
+                    if ( (dj-di)*dz >= 0.0 ) then
+                        if ( vel_normal*dz > 0.0 ) then
+                            if (abs(bottom1) > abs(bottom2)) bottom = bottom1 !choice of the better trust term
+                        end if
+                    end if
+
+                    beta(1) = -1/(cbar*2)*bottom
+                    beta(2) = 0
+                    beta(3) = -beta(1)
+
+                    !local structure wave corrections
+                    aux1 = lambda(1)*lambda(3)
+                    if (aux1 < 0.0) then !Subcritical Flow, source terms need to be taken into account
+                        hi_1s  = hi + alpha(1)-beta(1)/lambda(1) !intermediate upstream height
+                        hj_3s  = hj - alpha(3)+beta(3)/lambda(3) !intermediate downstream height
+                        if ((hi_1s < 0.0) .or. (hj_3s < 0.0)) then !non-physical solution detected
+                            delta_x= min(ai,aj)/lenght_act
+                            dt2 = min(abs(delta_x/lambda(3)),abs(delta_x/lambda(1)))
+                            dt3=dt2
+                            dt4=dt2
+                            if (hi_1s < 0.0) dt3 = abs(0.5*hi/(hi-hi_1s)*delta_x/lambda(1))
+                            if (hj_3s < 0.0) dt4 = abs(0.5*hj/(hj-hj_3s)*delta_x/lambda(3))
+                            if ((dt3 < dt2) .or. (dt4 < dt2)) then
+                                if (hi_1s < 0.0) then
+                                    if (hj_3s > 0.0) then
+                                        aux1 = -(hi+alpha(1))*abs(lambda(1))   !beta(1) min
+                                        aux2 = -(hj-alpha(3))*   (lambda(3))   !beta(3) min
+                                        if (-aux1 >= aux2) then
+                                            beta(1)= -(hi+alpha(1))*abs(lambda(1)) !beta(1) min
+                                            beta(3)= - beta(1)                     !to ensure conservation
+                                        end if
+                                    end if
+                                end if
+                            end if
+                            if (hi_1s > 0.0) then
+                                if (hj_3s < 0.0) then
+                                    aux1 =   -(hi+alpha(1))*abs(lambda(1))   !beta(1) min
+                                    aux2 =   -(hj-alpha(3))*   (lambda(3))   !beta(3) min
+                                    if (-aux2 >= aux1) then
+                                        beta(3)= -(hj-alpha(3))*(lambda(3))  !beta(3) min
+                                        beta(1)= - beta(3)                   !to ensure conservation
+                                    end if
+                                end if
+                            end if
+                        end if
+                    end if
+
+                    !Flux computation
+                    flux_left = 0.0
+                    flux_right = 0.0
+                    hi_1s = 0.0
+                    hj_3s = 0.0
+
+                    do k=1, 3
+                        if (abs(lambda(k)) > 0.0) dt = min(dt, min_area/(lenght_act*abs(lambda(k))))     !only "entering" caracteristics contribute to the stability region
+                    end do
+
+                    if ( abs(bottom) > 0.0) then
+                        if ( lambda(1)*lambda(3) < 0.0 ) then !Subcritical Flow
+                            hi_1s = hi + alpha(1) - beta(1)/lambda(1) !intermediate upstream height
+                            hj_3s = hj - alpha(3) + beta(3)/lambda(3) !intermediate downstream height
+                            if ( hj > 0.0 ) then
+                                if ( hj_3s < 0.0 ) then
+                                    aux1 = hj/(2.0*(hj - hj_3s))
+                                    dt = min(dt, aux1*min_area/(lenght_act*abs(lambda(3))))     !correcting the time step
+                                end if
+                            end if
+                            if ( hi > 0.0 ) then
+                                if ( hi_1s < 0.0 ) then
+                                    aux1 = hi/(2.0*(hi - hi_1s))
+                                    dt = min(dt, aux1*min_area/(lenght_act*abs(lambda(1))))     !correcting the time step
+                                end if
+                            end if
+                        end if
+                    end if
+
+                    wettingDrying = .false.
+
+                    if ( hj == 0.0 ) then
+                        if ( hj_3s < 0.0 ) then !Wetting case
+                            do k=1, 3
+                                flux_left(1) = flux_left(1) + (lambda(k)*alpha(k)-beta(k))*eig(k,1)
+                                flux_left(1) = flux_left(1) + (lambda_aux(k)*alpha(k))*eig(k,1)
+                                wettingDrying = .true.
+                                !vel_wall_nill(i) = 1 !setting as a physical obstacle
+                            end do
+                        end if
+                    end if
+
+                    if ( hi == 0.0 ) then
+                        if ( hi_1s < 0.0 ) then  !drying case
+                            do k=1,3
+                                flux_right(1) = flux_right(1) + (lambda(k)*alpha(k)-beta(k))*eig(k,1)
+                                flux_right(1) = flux_right(1) + (lambda_aux(k)*alpha(k))*eig(k,1)
+                                wettingDrying = .true.
+                                !vel_wall_nill(i) = 1 !setting as a physical obstacle
+                            end do
+                        end if
+                    end if
+
+                    if (.not.wettingDrying) then      !no wetting/drying fronts, normal flux update
+                        do k=1, 3
+                            if (lambda(k) < 0.0 ) then !all to the left element
+                                do q=1, 3
+                                    flux_left(q) = flux_left(q) + (lambda(k)*alpha(k)-beta(k))*eig(k,q)
+                                end do
+                            elseif ( lambda(k) > 0.0 ) then !all to the right element
+                                do q=1, 3
+                                    flux_right(q) = flux_right(q) + (lambda(k)*alpha(k)-beta(k))*eig(k,q)
+                                end do
+                            end if
+                            !entropy corrections aplication directly in the numerical flux
+                            if ( lambda_aux(k) < 0.0 ) then !all to the left element
+                                do q=1, 3
+                                    flux_left(q) = flux_left(q) + (lambda_aux(k)*alpha(k))*eig(k,q)
+                                end do
+                            elseif ( lambda_aux(k) > 0.0 ) then !all to the right element
+                                do q=1, 3
+                                    flux_right(q) = flux_right(q) + (lambda_aux(k)*alpha(k))*eig(k,q)
+                                end do
+                            end if
+                        end do
+                    end if
+
+                    do q=1, 3
+                        element_flux(cellI(1), cellI(2), q) = element_flux(cellI(1), cellI(2), q) + flux_left(q)*(- lenght_act/ai)
+                        element_flux(cellJ(1), cellJ(2), q) = element_flux(cellJ(1), cellJ(2), q) + flux_right(q)*(- lenght_act/aj)
+                    end do
+
+                end if !wet cells
+
+            end do
+
+        end do
+    end do
+
+    criticalDt = dt!*CFLCoeff
+    
+    time_string = ConvertTimeToString (Me%ExtVar%Now)
+    print*, 'dt would be ', dt, time_string
+
+    end subroutine ComputeFluxesFVS
+    
+    !---------------------------------------------------------------------------
+    !> @author Ricardo Birjukovs Canelas - Bentley Systems
+    !> @brief
+    !> Integrates the fluxes using a Godunov style solver. Returns a new 
+    !> solution state.
+    !---------------------------------------------------------------------------
+    subroutine ComputeStateFVS(Dt)
+    real, intent(in) :: Dt                 !> time step
+    real, dimension(3) :: conservedVar     !> conserved quantities - water column and momentum
+    real, dimension(3) :: primitiveVar     !> primitive quantities - water column and velocities
+    integer :: ILB, IUB, JLB, JUB          !> Grid cell counts
+    integer :: i, j ,q                     !> Iterators
+    real :: h_treshold                     !> Depth threshold to desingularize velocity computation
+    real :: aux3                           !> Local var
+
+    real, dimension(:,:,:), allocatable :: element_flux
+
+    allocate(element_flux(IUB-ILB, JUB-JLB, 3))
+    element_flux = 0.0
+
+    ILB = Me%WorkSize%ILB
+    IUB = Me%WorkSize%IUB
+    JLB = Me%WorkSize%JLB
+    JUB = Me%WorkSize%JUB
+
+    do j = JLB, JUB
+        do i = ILB, IUB
+
+            primitiveVar(1) = Me%myWaterColumn(i, j)
+            primitiveVar(2) = Me%VelModFaceU(i, j)
+            primitiveVar(3) = Me%VelModFaceV(i, j)
+
+            conservedVar(1) = primitiveVar(1)
+            conservedVar(2) = primitiveVar(2) * primitiveVar(1)
+            conservedVar(3) = primitiveVar(3) * primitiveVar(1)
+
+            !updating independant conserved quantities
+            do q=1, 3
+                conservedVar(q) = conservedVar(q) + element_flux(i, j, q)*Dt
+            end do
+
+            if (abs(conservedVar(1)) > AlmostZero) then !Acceptable flow depth, above machine precision
+                primitiveVar(1) = conservedVar(1)
+                primitiveVar(2) = conservedVar(2)/conservedVar(1)
+                primitiveVar(3) = conservedVar(3)/conservedVar(1)
+                if (primitiveVar(1) < h_treshold)then !non-acceptable flow depth for velocity computation, only for momentum
+                    primitiveVar(2) = sqrt(2.0)*conservedVar(2)/sqrt(conservedVar(1)**4.0 + max(conservedVar(1)**4.0, h_treshold*max(1.0,sqrt(2*Me%ExtVar%GridCellArea(i, j))))) !desingularizing the computation
+                    primitiveVar(3) = sqrt(2.0)*conservedVar(3)/sqrt(conservedVar(1)**4.0 + max(conservedVar(1)**4.0, h_treshold*max(1.0,sqrt(2*Me%ExtVar%GridCellArea(i, j))))) !anyting goes - Kurganov-Petrova
+                end if
+            else
+                primitiveVar(1) = 0.0
+                primitiveVar(2) = 0.0
+                primitiveVar(3) = 0.0
+            end if
+            aux3 = sqrt(primitiveVar(2)*primitiveVar(2)+primitiveVar(3)*primitiveVar(3)) !velocity magnitude
+            if (aux3 < AlmostZero)then !Filtering numerical noise
+                primitiveVar(2) = 0.0
+                primitiveVar(3) = 0.0
+                aux3 = 0.d0
+            end if
+
+            !Friction source terms
+
+            !Obstacles and BC velocity corrections
+            !nullify normal velocity for obstacles
+
+        end do
+    end do
+
+    end subroutine ComputeStateFVS
     
     !---------------------------------------------------------------------------
     
