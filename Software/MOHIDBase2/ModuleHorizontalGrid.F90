@@ -159,6 +159,7 @@ Module ModuleHorizontalGrid
     public  :: GetSonWindow
     
     public  :: GetConstDX_NoRot
+    public  :: ConstantGridSize
 
     public  :: GetConnections
     public  :: UnGetConnections
@@ -12737,6 +12738,58 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                 &
     end function GetConstDX_NoRot
 
     !--------------------------------------------------------------------------
+    
+    subroutine ConstantGridSize(HorizontalGridID, DX, DY, IsConstantGridSize, STAT)
+
+        !Arguments-------------------------------------------------------------
+        integer,                     intent(IN )    :: HorizontalGridID
+        real(8), intent(OUT)                        :: DX, DY
+        integer,   optional,         intent(OUT)    :: STAT
+        logical, intent(OUT)                        :: IsConstantGridSize
+
+        !External--------------------------------------------------------------
+
+        integer :: ready_
+
+        !Local-----------------------------------------------------------------
+
+        integer :: STAT_              !Auxiliar local variable
+
+        !----------------------------------------------------------------------
+
+        STAT_ = UNKNOWN_
+
+        IsConstantGridSize = .false.
+        DX      = null_real
+        DY      = null_real
+
+        call Ready(HorizontalGridID, ready_)
+
+cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                 &
+            (ready_ .EQ. READ_LOCK_ERR_)) then
+    
+    
+            if (Me%ConstantSpacingX .and. Me%ConstantSpacingY) then
+
+                IsConstantGridSize  = .true.
+                DX                = Me%DX   
+                DY                = Me%DY   
+
+            endif
+
+            STAT_ = SUCCESS_
+        else
+            STAT_ = ready_
+        end if cd1
+
+
+        if (present(STAT))  STAT = STAT_
+
+        !----------------------------------------------------------------------
+
+    end subroutine ConstantGridSize
+    
+    !----------------------------------------------------------------------
     
     logical function GetGhostCorners(HorizontalGridID, STAT)
 
