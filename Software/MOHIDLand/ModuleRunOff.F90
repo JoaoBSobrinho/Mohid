@@ -15901,7 +15901,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     highest_dh = 0.0
                     dh_left = 0.0
                     dh_bottom = 0.0
-                    !$OMP PARALLEL PRIVATE(I,J, dVol)
+                    !$OMP PARALLEL PRIVATE(I,J)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
                     do j = JLB, JUB
                     do i = ILB, IUB
