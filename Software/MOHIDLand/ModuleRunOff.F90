@@ -14974,18 +14974,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         sumDischarge = Me%TotalDischargeFlowVolume
         SumDTs = SumDT + LocalDT
-        !$OMP PARALLEL PRIVATE(I,J) 
+        !$OMP PARALLEL PRIVATE(I,J, DischargeVolume) 
         if (Me%Discharges) then
             !Integrates along X and Y Directions
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
                 
-                DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
-                Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / SumDTs
-                sumDischarge = sumDischarge + DischargeVolume
+                    DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
+                    Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / SumDTs
+                    sumDischarge = sumDischarge + DischargeVolume
+                endif
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -14994,8 +14996,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+                endif
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -15006,8 +15010,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                Me%iFlowToChannels(i, j) = (Me%iFlowToChannels(i, j) * SumDT + Me%lFlowToChannels(i, j) * LocalDT) / &
-                                           (SumDT + LocalDT)
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    Me%iFlowToChannels(i, j) = (Me%iFlowToChannels(i, j) * SumDT + Me%lFlowToChannels(i, j) * LocalDT) / &
+                                               (SumDT + LocalDT)
+                endif
             enddo
             enddo
             !$OMP END DO NOWAIT
