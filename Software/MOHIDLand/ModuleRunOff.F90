@@ -7987,14 +7987,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         endif
 
                         call CheckStability(Restart) 
+                        
+                        call ReadUnLockExternalVar (StaticOnly = .false.)
                     
                         if (Restart) then
                             exit doIter
                         endif
 
                         call IntegrateFlow     (Me%CV%CurrentDT, SumDT) 
-                        
-                        call ReadUnLockExternalVar (StaticOnly = .false.)
                         
                         SumDT = SumDT + Me%CV%CurrentDT
                         iter  = iter  + 1                                        
@@ -9113,186 +9113,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine ModifyGeometryAndMapping
     
     !--------------------------------------------------------------------------
-
-    !subroutine ModifyGeometryAndMapping_X
-    !
-    !    !Arguments-------------------------------------------------------------
-    !    
-    !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j
-    !    integer                                     :: ILB, IUB, JLB, JUB
-    !    real                                        :: WCA, Bottom
-    !    integer                                     :: CHUNK
-    !
-    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !    
-    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_X")
-    !
-    !    ILB = Me%WorkSize%ILB
-    !    IUB = Me%WorkSize%IUB
-    !    JLB = Me%WorkSize%JLB
-    !    JUB = Me%WorkSize%JUB
-    !    
-    !    !$OMP PARALLEL PRIVATE(I,J, WCA, Bottom)
-    !    if (Me%HydrodynamicApproximation == KinematicWave_) then
-    !        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !        do j = JLB, JUB
-    !        do i = ILB, IUB
-    !            if (Me%ExtVar%BasinPoints(i, j-1) + Me%ExtVar%BasinPoints(i, j) > 1) then
-    !            
-    !                !Maximum Bottom Level
-    !                Bottom = Me%Bottom_X(i,j)
-    !                
-    !                !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-    !                if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
-    !                    !Water Column Left (above MaxBottom)
-    !                    WCA = max(Me%myWaterLevel(i, j-1) - Bottom, AlmostZero_Double)
-    !                else
-    !                    !Water Column Right (above MaxBottom)
-    !                    WCA = max(Me%myWaterLevel(i, j  ) - Bottom, AlmostZero_Double)
-    !                endif
-    !            
-    !                !Area  = Water Column * Side lenght of cell
-    !                Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
-    !            
-    !                if (WCA > Me%MinimumWaterColumn) then
-    !                    Me%ComputeFaceU(i, j) = 1
-    !                else
-    !                    Me%ComputeFaceU(i, j) = 0
-    !                endif
-    !            endif
-    !        enddo
-    !        enddo
-    !        !$OMP END DO NOWAIT
-    !    
-    !    else
-            !!$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            !do j = JLB, JUB
-            !do i = ILB, IUB
-            !    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-            !        if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
-            !            if (Me%myWaterColumn(i, j-1) > 0 .or. Me%myWaterColumn(i, j) > 0) then
-            !
-            !                WCA       = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j), AlmostZero_Double)
-            !    
-            !                !Area  = Water Column * Side lenght of cell
-            !                Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
-            !    
-            !                if (WCA > Me%MinimumWaterColumn) then
-            !                    Me%ComputeFaceU(i, j) = 1
-            !                else
-            !                    Me%ComputeFaceU(i, j) = 0
-            !                endif
-            !            else
-            !                !Area  = Water Column * Side lenght of cell
-            !                Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
-            !                Me%ComputeFaceU(i, j) = 0
-            !            endif
-            !        endif
-            !    endif
-            !enddo
-            !enddo
-            !!$OMP END DO NOWAIT
-    !    endif
-    !    !$OMP END PARALLEL
-    !
-    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_X")
-    !
-    !
-    !end subroutine ModifyGeometryAndMapping_X
-    !
-    !!--------------------------------------------------------------------------
-    !
-    !subroutine ModifyGeometryAndMapping_Y
-    !
-    !    !Arguments-------------------------------------------------------------
-    !    
-    !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j
-    !    integer                                     :: ILB, IUB, JLB, JUB
-    !    real                                        :: WCA, Bottom
-    !    integer                                     :: CHUNK
-    !
-    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !    
-    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_Y")
-    !
-    !    ILB = Me%WorkSize%ILB
-    !    IUB = Me%WorkSize%IUB
-    !    JLB = Me%WorkSize%JLB
-    !    JUB = Me%WorkSize%JUB
-    !    
-    !    !$OMP PARALLEL PRIVATE(I,J, WCA, Bottom)
-    !    if (Me%HydrodynamicApproximation == KinematicWave_) then
-    !        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !        do j = JLB, JUB
-    !        do i = ILB, IUB
-    !            if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) > 1) then
-    !            
-    !                !Maximum Bottom Level
-    !                Bottom = Me%Bottom_Y(i,j)
-    !                
-    !                !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-    !                if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
-    !                    !Water Column Left (above MaxBottom)
-    !                    WCA = max(Me%myWaterLevel(i-1, j) - Bottom, AlmostZero_Double)
-    !                else
-    !                    !Water Column Right (above MaxBottom)
-    !                    WCA = max(Me%myWaterLevel(i, j  ) - Bottom, AlmostZero_Double)
-    !                endif
-    !            
-    !                !Area  = Water Column * Side lenght of cell
-    !                Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
-    !            
-    !                if (WCA > Me%MinimumWaterColumn) then
-    !                    Me%ComputeFaceV(i, j) = 1
-    !                else
-    !                    Me%ComputeFaceV(i, j) = 0
-    !                endif
-    !            endif
-    !        enddo
-    !        enddo
-    !        !$OMP END DO NOWAIT
-    !    
-    !    else
-    !        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !        do j = JLB, JUB
-    !        do i = ILB, IUB
-    !            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-    !                if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint) then
-    !                    
-    !                    if (Me%myWaterColumn(i-1, j) > 0 .or. Me%myWaterColumn(i, j) > 0) then
-    !                        !Average Bottom Level
-    !                        Bottom = Me%Bottom_Y(i,j)
-    !                
-    !                        !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-    !                        WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
-    !            
-    !                        !Area  = Water Column * Side lenght of cell
-    !                        Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
-    !            
-    !                        if (WCA > Me%MinimumWaterColumn) then
-    !                            Me%ComputeFaceV(i, j) = 1
-    !                        else
-    !                            Me%ComputeFaceV(i, j) = 0
-    !                        endif
-    !                    else
-    !                        Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
-    !                        Me%ComputeFaceV(i, j) = 0
-    !                    endif
-    !                endif    
-    !            endif
-    !        enddo
-    !        enddo
-    !        !$OMP END DO NOWAIT
-    !    endif
-    !    !$OMP END PARALLEL
-    !    
-    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_Y")
-    !
-    !
-    !end subroutine ModifyGeometryAndMapping_Y
-    
+   
     
     subroutine ModifyGeometryAndMapping_X
 
@@ -15137,10 +14958,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !--------------------------------------------------------------------------
 
     subroutine IntegrateFlow (LocalDT, SumDT)
-
+    
         !Arguments-------------------------------------------------------------
         real                                        :: LocalDT, SumDT
-
+    
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: CHUNK
@@ -15150,7 +14971,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !----------------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "IntegrateFlow")
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-
+    
         sumDischarge = Me%TotalDischargeFlowVolume
         SumDTs = SumDT + LocalDT
         !$OMP PARALLEL PRIVATE(I,J, DischargeVolume) 
@@ -15159,14 +14980,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
-                
-                    DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
-                    Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / SumDTs
-                    sumDischarge = sumDischarge + DischargeVolume
-                endif
+                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / SumDTs
+                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / SumDTs
+                DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
+                Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / &
+                                            SumDTs
+                sumDischarge = sumDischarge + DischargeVolume
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -15175,10 +14994,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
-                endif
+                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -15189,22 +15006,104 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     Me%iFlowToChannels(i, j) = (Me%iFlowToChannels(i, j) * SumDT + Me%lFlowToChannels(i, j) * LocalDT) / &
                                                (SumDT + LocalDT)
-                endif
             enddo
             enddo
             !$OMP END DO NOWAIT
         endif
-
+    
         !$OMP END PARALLEL        
-
+    
         Me%TotalDischargeFlowVolume = sumDischarge
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "IntegrateFlow")
-
+    
     end subroutine IntegrateFlow
+    
+    
+    !subroutine IntegrateFlow (LocalDT, SumDT)
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    real                                        :: LocalDT, SumDT
+    !
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j
+    !    integer                                     :: CHUNK
+    !    real(8)                                     :: sumDischarge
+    !    
+    !    !----------------------------------------------------------------------
+    !
+    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !
+    !    sumDischarge = Me%TotalDischargeFlowVolume
+    !
+    !    !$OMP PARALLEL PRIVATE(I,J) 
+    !
+    !    !Integrates along X Directions
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+    !        Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / &
+    !                          (SumDT + LocalDT)
+    !    enddo
+    !    enddo
+    !    !$OMP END DO NOWAIT
+    !
+    !    !Integrates along Y Directions
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+    !        Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / &
+    !                          (SumDT + LocalDT)
+    !    enddo
+    !    enddo
+    !    !$OMP END DO NOWAIT
+    !
+    !    !Integrates Flow to Channels
+    !    if (Me%ObjDrainageNetwork /= 0) then
+    !       !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+    !            Me%iFlowToChannels(i, j) = (Me%iFlowToChannels(i, j) * SumDT + Me%lFlowToChannels(i, j) * LocalDT) / &
+    !                                       (SumDT + LocalDT)
+    !        enddo
+    !        enddo
+    !        !$OMP END DO NOWAIT
+    !    endif
+    !    
+    !    !Integrates Flow At boundary 
+    !    !if (Me%ImposeBoundaryValue) then
+    !    !   !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumBoundary)
+    !    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+    !    !        Me%iFlowBoundary(i, j) = (Me%iFlowBoundary(i, j) * SumDT + Me%lFlowBoundary(i, j) * LocalDT) / &
+    !    !                                 (SumDT + LocalDT)
+    !    !
+    !    !        sumBoundary = sumBoundary + (Me%iFlowBoundary(i, j) * LocalDT)
+    !    !    enddo
+    !    !    enddo
+    !    !    !$OMP END DO NOWAIT
+    !    !endif
+    !
+    !    !Integrates Flow Discharges
+    !    if (Me%Discharges) then
+    !       !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
+    !        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    !        do i = Me%WorkSize%ILB, Me%WorkSize%IUB                
+    !            Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + Me%lFlowDischarge(i, j) * LocalDT) / &
+    !                                      (SumDT + LocalDT)
+    !            sumDischarge = sumDischarge + (Me%lFlowDischarge(i, j) * LocalDT)
+    !        enddo
+    !        enddo
+    !        !$OMP END DO NOWAIT
+    !    endif
+    !
+    !    !$OMP END PARALLEL        
+    !
+    !    Me%TotalDischargeFlowVolume = sumDischarge
+    !
+    !end subroutine IntegrateFlow
 
     !--------------------------------------------------------------------------
     
