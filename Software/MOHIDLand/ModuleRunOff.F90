@@ -5375,7 +5375,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%Output%FloodArrivalTime, Me%Size, -99.0)
         endif
 
-        if (Me%RouteDFourPoints) then !Sobrinho
+        if (Me%RouteDFourPoints) then
             allocate (Me%LowestNeighborI (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%LowestNeighborJ (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%DFourSinkPoint  (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -15864,15 +15864,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: Niter        
         
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, STAT_CALL, CHUNK, i_dt, j_dt
+        integer                                     :: i, j, STAT_CALL, CHUNK
         integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: nextDTCourant, aux
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
         real                                        :: CurrentDT, highest_dh, Distance_Courant, dh_bottom, dh_left
-        !real                                        :: Vel_U, Vel_V, celerity, highest_vel
-        real                                        :: dVol
-        real                                        :: i_left_dt, j_left_dt, i_bottom_dt, j_bottom_dt
         real, dimension(4)                          :: dh
     
         !----------------------------------------------------------------------
@@ -15908,45 +15905,24 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
                     do j = JLB, JUB
                     do i = ILB, IUB
-
-                        !Method 5 : Using original formula of Ifs, but dH only computed when flux > 2% of total cell volume
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                            
-                            
-                            !Ignore cells that are in a pool of water that is not moving
                             dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
-                            
-                            !Ignore cells that are in a pool of water that is not moving
+                        
                             dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
                             
-                            !dVol = (abs(Me%iFlowX(i, j)) * Me%ExtVar%DT) / Me%MyWaterVolume(i,j)
-                            !!Ignore cells that are in a pool of water that is not moving
-                            !if (dVol > 0.02) then
-                            !    dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
-                            !endif
-                            !
-                            !dVol = (abs(Me%iFlowY(i, j)) * Me%ExtVar%DT) / Me%MyWaterVolume(i,j)
-                            !!Ignore cells that are in a pool of water that is not moving
-                            !if (dVol > 0.02) then
-                            !    dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
-                            !endif
-                            
                         endif
-                        
                     enddo
                     enddo
                     !$OMP END DO NOWAIT 
                     !$OMP END PARALLEL
                     
                     !m
-                    
                     highest_dh = max(dh_left, dh_bottom)
                     
                     if (highest_dh > 0.0) then
                         aux = Distance_Courant / sqrt(Gravity * highest_dh)
                         
                         nextDTCourant = min(nextDTCourant, aux)
-                        !write(*,*)"nextDTCourant, I, J : ", nextDTCourant, i_dt, j_dt
                     endif
                     
                 else
