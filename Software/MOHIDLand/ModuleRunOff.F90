@@ -15870,7 +15870,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
         real                                        :: CurrentDT, highest_dh, Distance_Courant, dh_bottom, dh_left
-        real                                        :: Vel_U, Vel_V, celerity, highest_vel
+        !real                                        :: Vel_U, Vel_V, celerity, highest_vel
+        real                                        :: dVol
+        real                                        :: i_left_dt, j_left_dt, i_bottom_dt, j_bottom_dt
         real, dimension(4)                          :: dh
     
         !----------------------------------------------------------------------
@@ -15900,79 +15902,52 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%GridIsConstant) then
                     Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
                     highest_dh = 0.0
-                    Vel_U = 0.0
                     dh_left = 0.0
-                    Vel_V = 0.0
                     dh_bottom = 0.0
-                    !$OMP PARALLEL PRIVATE(I,J)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:Vel_U, Vel_V, dh_left, dh_bottom)
-                    !!$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
+                    !$OMP PARALLEL PRIVATE(I,J, dVol)
+                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
                     do j = JLB, JUB
                     do i = ILB, IUB
 
-                        if (Me%ComputeFaceU(i, j) == BasinPoint) then
-                            Vel_U = max(abs(Me%iFlowX(i, j) / Me%AreaU(i,j)), Vel_U)
+                        !Method 5 : Using original formula of Ifs, but dH only computed when flux > 2% of total cell volume
+                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            
+                            
+                            !Ignore cells that are in a pool of water that is not moving
                             dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
+                            
+                            !Ignore cells that are in a pool of water that is not moving
+                            dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
+                            
+                            !dVol = (abs(Me%iFlowX(i, j)) * Me%ExtVar%DT) / Me%MyWaterVolume(i,j)
+                            !!Ignore cells that are in a pool of water that is not moving
+                            !if (dVol > 0.02) then
+                            !    dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
+                            !endif
+                            !
+                            !dVol = (abs(Me%iFlowY(i, j)) * Me%ExtVar%DT) / Me%MyWaterVolume(i,j)
+                            !!Ignore cells that are in a pool of water that is not moving
+                            !if (dVol > 0.02) then
+                            !    dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
+                            !endif
+                            
                         endif
                         
-                        if (Me%ComputeFaceV(i, j) == BasinPoint) then
-                            Vel_V = max(abs(Me%iFlowY(i, j) / Me%AreaV(i,j)), Vel_V)
-                            dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
-                        endif   
-                        
-                        
-                        
-                        !if (Me%ComputeFaceU(i, j) == BasinPoint) then
-                        !    dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
-                        !
-                        !endif
-                        !
-                        !if (Me%ComputeFaceV(i, j) == BasinPoint) then
-                        !    dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
-                        !endif
-                        
-                        
-                        !if (highest_dh > 0.0) then
-                        !    aux = Distance_Courant / sqrt(Gravity * highest_dh)
-                        !
-                        !    nextDTCourant = min(nextDTCourant, aux)
-                        !endif
-                        
-                        !if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                        !
-                        !    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                        !        if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
-                        !            dh_left = max(dh_left, max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j))
-                        !        endif
-                        !        if (Me%ExtVar%BasinPoints(i-1,j) == BasinPoint) then
-                        !            dh_bottom = max(dh_bottom, max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j))
-                        !        endif
-                        !
-                        !    endif
-                        !endif
                     enddo
                     enddo
                     !$OMP END DO NOWAIT 
                     !$OMP END PARALLEL
                     
                     !m
+                    
                     highest_dh = max(dh_left, dh_bottom)
-                    !m/s. Using 50% more to try and account for rain+stormwater because using velocity will not consider the increase in water level
-                    highest_vel = max(Vel_U, Vel_V)*1.5
+                    
                     if (highest_dh > 0.0) then
-                        ! use Velocity to compute the next time step
-                        celerity = sqrt(Gravity * highest_dh)
-                        aux = Distance_Courant / min(celerity, highest_vel)
+                        aux = Distance_Courant / sqrt(Gravity * highest_dh)
                         
                         nextDTCourant = min(nextDTCourant, aux)
-                        write(*,*)"nextDTCourant, highest_vel, celerity : ", nextDTCourant, highest_vel, celerity
+                        !write(*,*)"nextDTCourant, I, J : ", nextDTCourant, i_dt, j_dt
                     endif
-                    !highest_dh = max(dh_left, dh_bottom)
-                    !if (highest_dh > 0.0) then
-                    !    aux = Distance_Courant / sqrt(Gravity * highest_dh)
-                    !    
-                    !    nextDTCourant = min(nextDTCourant, aux)
-                    !endif
                     
                 else
                     highest_dh = 0.0

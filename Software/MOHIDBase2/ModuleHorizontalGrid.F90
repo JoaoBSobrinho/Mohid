@@ -12769,7 +12769,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                 &
             (ready_ .EQ. READ_LOCK_ERR_)) then
     
     
-            if (Me%ConstantSpacingX .and. Me%ConstantSpacingY) then
+            if (Me%ConstantSpacingX .and. Me%ConstantSpacingY .and. Me%CoordType == GRID_COORD_) then
 
                 IsConstantGridSize  = .true.
                 DX                = Me%DX   
