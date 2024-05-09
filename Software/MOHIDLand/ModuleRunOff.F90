@@ -7988,13 +7988,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                         call CheckStability(Restart) 
                     
-                        call ReadUnLockExternalVar (StaticOnly = .false.)
-                    
                         if (Restart) then
                             exit doIter
                         endif
 
-                        call IntegrateFlow     (Me%CV%CurrentDT, SumDT)  
+                        call IntegrateFlow     (Me%CV%CurrentDT, SumDT) 
+                        
+                        call ReadUnLockExternalVar (StaticOnly = .false.)
                         
                         SumDT = SumDT + Me%CV%CurrentDT
                         iter  = iter  + 1                                        
