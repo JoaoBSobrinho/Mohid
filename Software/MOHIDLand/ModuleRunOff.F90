@@ -8492,19 +8492,24 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !> Integrates the fluxes using a Godunov style solver. Returns a new 
     !> solution state.
     !---------------------------------------------------------------------------
-    subroutine ComputeStateFVS(Dt)
+    subroutine ComputeStateFVS(Dt, element_flux)
     real, intent(in) :: Dt                 !> time step
     real, dimension(3) :: conservedVar     !> conserved quantities - water column and momentum
-    real, dimension(3) :: primitiveVar     !> primitive quantities - water column and velocities
+    real, dimension(3) :: primitiveVar     !> primitive quantities - water column and velocities - apagar esta linha depois de substituir pelos nomes certos
+    real               :: waterColumn, waterColumn_new, velocityU, velocityV     !> primitive quantities - water column and velocities
     integer :: ILB, IUB, JLB, JUB          !> Grid cell counts
     integer :: i, j ,q                     !> Iterators
     real :: h_treshold                     !> Depth threshold to desingularize velocity computation
-    real :: aux3                           !> Local var
+    real :: velMod                           !> velocity modulus
 
-    real, dimension(:,:,:), allocatable :: element_flux
-
-    allocate(element_flux(IUB-ILB, JUB-JLB, 3))
-    element_flux = 0.0
+    !TODO: É preciso eliminar isto porque é o resultado da routina anterior
+    !real, dimension(:,:,:), allocatable :: element_flux
+    !
+    !allocate(element_flux(IUB-ILB, JUB-JLB, 3))
+    !element_flux = 0.0
+    
+    !É isto que queremos certo?
+    h_treshold = Me%MinimumWaterColumn
 
     ILB = Me%WorkSize%ILB
     IUB = Me%WorkSize%IUB
@@ -8514,41 +8519,68 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     do j = JLB, JUB
         do i = ILB, IUB
 
-            primitiveVar(1) = Me%myWaterColumn(i, j)
-            primitiveVar(2) = Me%VelModFaceU(i, j)
-            primitiveVar(3) = Me%VelModFaceV(i, j)
+            !Primitive variables
+            waterColumn = Me%myWaterColumn(i, j)
+            velocityU = Me%VelModFaceU(i, j)
+            velocityV = Me%VelModFaceV(i, j)
 
-            conservedVar(1) = primitiveVar(1)
-            conservedVar(2) = primitiveVar(2) * primitiveVar(1)
-            conservedVar(3) = primitiveVar(3) * primitiveVar(1)
+            !Conserved variables
+            waterColumn_new = waterColumn
+            momentumU = velocityU * waterColumn
+            momentumV = velocityV * waterColumn
 
             !updating independant conserved quantities
-            do q=1, 3
-                conservedVar(q) = conservedVar(q) + element_flux(i, j, q)*Dt
-            end do
+            waterColumn_new = waterColumn_new + element_flux(i, j, 1) * Dt
+            momentumU       = momentumU       + element_flux(i, j, 2) * Dt
+            momentumV       = momentumV       + element_flux(i, j, 2) * Dt
 
-            if (abs(conservedVar(1)) > AlmostZero) then !Acceptable flow depth, above machine precision
-                primitiveVar(1) = conservedVar(1)
-                primitiveVar(2) = conservedVar(2)/conservedVar(1)
-                primitiveVar(3) = conservedVar(3)/conservedVar(1)
-                if (primitiveVar(1) < h_treshold)then !non-acceptable flow depth for velocity computation, only for momentum
-                    primitiveVar(2) = sqrt(2.0)*conservedVar(2)/sqrt(conservedVar(1)**4.0 + max(conservedVar(1)**4.0, h_treshold*max(1.0,sqrt(2*Me%ExtVar%GridCellArea(i, j))))) !desingularizing the computation
-                    primitiveVar(3) = sqrt(2.0)*conservedVar(3)/sqrt(conservedVar(1)**4.0 + max(conservedVar(1)**4.0, h_treshold*max(1.0,sqrt(2*Me%ExtVar%GridCellArea(i, j))))) !anyting goes - Kurganov-Petrova
+            if (abs(waterColumn_new) > AlmostZero) then !Acceptable flow depth, above machine precision
+                waterColumn = waterColumn_new
+                velocityU = momentumU/waterColumn_new
+                velocityV = momentumV/waterColumn_new
+                if (waterColumn < h_treshold)then !non-acceptable flow depth for velocity computation, only for momentum
+                    velocityU = sqrt(2.0)*momentumU/sqrt(waterColumn_new**4.0 + max(waterColumn_new**4.0, h_treshold*max(1.0,sqrt(2*Me%ExtVar%GridCellArea(i, j))))) !desingularizing the computation
+                    velocityV = sqrt(2.0)*momentumV/sqrt(waterColumn_new**4.0 + max(waterColumn_new**4.0, h_treshold*max(1.0,sqrt(2*Me%ExtVar%GridCellArea(i, j))))) !anyting goes - Kurganov-Petrova
                 end if
             else
-                primitiveVar(1) = 0.0
-                primitiveVar(2) = 0.0
-                primitiveVar(3) = 0.0
+                waterColumn = 0.0
+                velocityU = 0.0
+                velocityV = 0.0
             end if
-            aux3 = sqrt(primitiveVar(2)*primitiveVar(2)+primitiveVar(3)*primitiveVar(3)) !velocity magnitude
-            if (aux3 < AlmostZero)then !Filtering numerical noise
-                primitiveVar(2) = 0.0
-                primitiveVar(3) = 0.0
-                aux3 = 0.d0
+            velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude
+            if (velMod < AlmostZero)then !Filtering numerical noise
+                velocityU = 0.0
+                velocityV = 0.0
+                velMod = 0.d0
             end if
 
-            !Friction source terms
-
+            !----------------------------------------------Friction source terms-----------------------------------------
+            !Eventualmente passa-se isto para uma nova routina para não atulhar esta
+            
+            !inclui o if abaixo para só calcular a friccao se houver água na célula
+            !if (primitiveVar(1) > 0) then
+            
+            if ( velMod .gt. 1.d-12 )then     !only to valid cells (non-nill velocity and considerable water height)
+                if (waterColumn .gt. 0.1 * h_treshold) then
+                    ! TODO: Mudar isto para usar o Manning como usualmente.
+                    Friction_Coef = FrictionCoefficient(waterColumn, 1/Me%OverlandCoefficient(i,j))
+                    
+                    tau_u = Bed_Shear(velocityU, velMod, Friction_Coef)
+                    tau_v = Bed_Shear(velocityV, velMod, Friction_Coef)
+                    
+                    !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
+                    velocityU = sign(max(abs(velocityU) - abs((dt/2)*(1/1000.0)*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
+                    velocityV = sign(max(abs(velocityV) - abs((dt/2)*(1/1000.0)*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive                                              
+                end if
+            end if
+        
+            velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
+            if (velMod .lt. 1.d-12)then !Filtering numerical noise
+                velocityU = 0.0
+                velocityV = 0.0
+                velMod = 0.0
+            end if 
+            
             !Obstacles and BC velocity corrections
             !nullify normal velocity for obstacles
 
@@ -8557,7 +8589,34 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
     end subroutine ComputeStateFVS
     
-    !---------------------------------------------------------------------------
+	!____________________________________________________________________________________
+	
+	real function FrictionCoefficient(waterColumn, K_Strickler)       
+        real, intent(IN) :: waterColumn
+        real, intent(IN) :: K_Strickler
+        
+        !Da solucao do ricardo, que usa o coefficiente de Strickler em vez do de manning.
+        FrictionCoefficient = Gravity*waterColumn**(1./3.)/(K_Strickler**(2.0)) !Strickler
+        
+    end function FrictionCoefficient
+
+    !____________________________________________________________________________________
+    
+    
+	real function Bed_Shear(vel, velMod, FrictionCoeff)
+    !Argumnets--------------------------------------------------------------
+		real, intent(IN)  :: vel, velMod
+    !Begin------------------------------------------------------------------
+		if ( abs(vel) .lt. 1.d-8) then
+			Bed_Shear = 0.0
+        else
+			!Bed_Shear = rhow*FrictionCoeff*(vel)*velMod
+            !  Pa     =  kg/m3  *   []       * m/s * m/s
+			Bed_Shear = 1000.0 * FrictionCoeff * vel * velMod !abs made on update
+		endif		
+    end function Bed_Shear
+    
+    !____________________________________________________________________________________
     
     subroutine InterpolateRiverLevelToCells
     
