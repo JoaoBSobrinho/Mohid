@@ -15942,186 +15942,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
     !--------------------------------------------------------------------------
     
-    !subroutine ComputeNextDT (Niter)
-    !
-    !    !Arguments-------------------------------------------------------------
-    !    integer                                     :: Niter        
-    !    
-    !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j, STAT_CALL, CHUNK
-    !    integer                                     :: ILB, IUB, JLB, JUB
-    !    real                                        :: nextDTCourant, aux
-    !    real                                        :: nextDTVariation, MaxDT
-    !    logical                                     :: VariableDT
-    !    real                                        :: CurrentDT, highest_dh, Distance_Courant, dh_bottom, dh_left
-    !    real, dimension(4)                          :: dh
-    !
-    !    !----------------------------------------------------------------------
-    !
-    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
-    !
-    !
-    !    call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
-    !    if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
-    !
-    !    call GetMaxComputeTimeStep(Me%ObjTime, MaxDT, STAT = STAT_CALL)
-    !    if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR020'
-    !
-    !    nextDTCourant   = -null_real
-    !    nextDTVariation = -null_real
-    !    
-    !    if (VariableDT) then
-    !
-    !        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !
-    !        ILB = Me%WorkSize%ILB
-    !        IUB = Me%WorkSize%IUB
-    !        JLB = Me%WorkSize%JLB
-    !        JUB = Me%WorkSize%JUB
-    !        
-    !        if (Me%CV%LimitDTCourant) then
-    !            if (Me%GridIsConstant) then
-    !                Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-    !                highest_dh = 0.0
-    !                dh_left = 0.0
-    !                dh_bottom = 0.0
-    !                !$OMP PARALLEL PRIVATE(I,J)
-    !                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
-    !                do j = JLB, JUB
-    !                do i = ILB, IUB
-    !                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-    !                        dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
-    !                    
-    !                        dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
-    !                        
-    !                    endif
-    !                enddo
-    !                enddo
-    !                !$OMP END DO NOWAIT 
-    !                !$OMP END PARALLEL
-    !                
-    !                !m
-    !                highest_dh = max(dh_left, dh_bottom)
-    !                
-    !                if (highest_dh > 0.0) then
-    !                    aux = Distance_Courant / sqrt(Gravity * highest_dh)
-    !                    
-    !                    nextDTCourant = min(nextDTCourant, aux)
-    !                endif
-    !                
-    !            else
-    !                highest_dh = 0.0
-    !                !$OMP PARALLEL PRIVATE(I,J,aux, dh, highest_dh)
-    !                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-    !                do j = JLB, JUB
-    !                do i = ILB, IUB
-    !                
-    !                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-    !                    
-    !                        if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-    !                            dh = 0.0
-    !                            if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
-    !                                dh(1) = max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j)
-    !                            endif
-    !                        
-    !                            if (Me%ExtVar%BasinPoints(i,j+1) == BasinPoint) then
-    !                                dh(2) = max(Me%myWaterLevel(i, j+1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j+1)
-    !                            endif
-    !                        
-    !                            if (Me%ExtVar%BasinPoints(i-1,j) == BasinPoint) then
-    !                                dh(3) = max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j)
-    !                            endif
-    !
-    !                            if (Me%ExtVar%BasinPoints(i+1,j) == BasinPoint) then
-    !                                dh(4) = max(Me%myWaterLevel(i+1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i+1,j)
-    !                            endif
-    !                        
-    !                            highest_dh = maxval(dh)
-    !                            if (highest_dh > 0.0) then
-    !                                aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
-    !                                        Me%CV%MaxCourant / sqrt(Gravity * highest_dh)
-    !                                
-    !                                nextDTCourant = min(nextDTCourant, aux)
-    !                            endif
-    !                        endif
-    !                    endif
-    !                enddo
-    !                enddo
-    !                !$OMP END DO NOWAIT 
-    !                !$OMP END PARALLEL
-    !            endif
-    !        endif
-    !        
-    !        
-    !        if (Niter == 1) then
-    !        
-    !            nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
-    !            Me%CV%NextNiteration = Niter
-    !            
-    !        elseif (Niter <= Me%CV%MinIterations) then                            
-    !        
-    !            if (Niter > Me%CV%LastGoodNiteration) then
-    !
-    !                nextDTVariation = Me%ExtVar%DT
-    !                Me%CV%NextNiteration = Niter
-    !
-    !            else
-    !            
-    !                nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
-    !                Me%CV%NextNiteration = Niter
-    !
-    !            endif
-    !            
-    !        else
-    !        
-    !            if (Niter >= Me%CV%StabilizeHardCutLimit) then
-    !            
-    !                nextDTVariation = (Me%ExtVar%DT / Niter) * Me%CV%MinIterations
-    !                Me%CV%NextNiteration = Me%CV%MinIterations
-    !                
-    !            elseif (Niter > Me%CV%LastGoodNiteration) then
-    !            
-    !                nextDTVariation = Me%ExtVar%DT / Me%CV%DTFactorDown
-    !                Me%CV%NextNiteration = max(int(nextDTVariation / Me%CV%CurrentDT), 1)
-    !                
-    !            else
-    !            
-    !                nextDTVariation = Me%ExtVar%DT
-    !                Me%CV%NextNiteration = max(min(int(Niter / Me%CV%DTSplitFactor), Niter - 1), 1)
-    !                
-    !            endif 
-    !                           
-    !        endif
-    !        
-    !        CurrentDT = nextDTVariation / Me%CV%NextNiteration                                     
-    !                  
-    !        Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
-    !        
-    !        if (Me%CV%NextDT < nextDTVariation) then                
-    !            Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
-    !        endif
-    !                   
-    !    else
-    !    
-    !        Me%CV%NextDT = Me%ExtVar%DT
-    !        Me%CV%NextNiteration = Niter            
-    !    
-    !    endif
-    !    
-    !    Me%CV%LastGoodNiteration = Niter
-    !    Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
-    !
-    !    if (Me%StormWaterModel) then
-    !        if (Me%StormWaterModelDT < Me%CV%NextDT) then        
-    !            Me%CV%NextDT = Me%StormWaterModelDT            
-    !        endif
-    !    end if
-    !
-    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
-    !
-    !end subroutine ComputeNextDT
-    
-    
     subroutine ComputeNextDT (Niter)
     
         !Arguments-------------------------------------------------------------
@@ -16133,7 +15953,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: nextDTCourant, aux
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
-        real                                        :: CurrentDT
+        real                                        :: CurrentDT, highest_dh, Distance_Courant, dh_bottom, dh_left
+        real, dimension(4)                          :: dh
     
         !----------------------------------------------------------------------
     
@@ -16159,35 +15980,78 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             JUB = Me%WorkSize%JUB
             
             if (Me%CV%LimitDTCourant) then
+                if (Me%GridIsConstant) then
+                    Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
+                    highest_dh = 0.0
+                    dh_left = 0.0
+                    dh_bottom = 0.0
+                    !$OMP PARALLEL PRIVATE(I,J)
+                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
+                    do j = JLB, JUB
+                    do i = ILB, IUB
+                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                            dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
                         
-                !$OMP PARALLEL PRIVATE(I,J,aux)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-                do j = JLB, JUB
-                do i = ILB, IUB
-                        
-                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-    
-                        !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
-                        !
-                        !if (vel .gt. 0.0) then
-                        !
-                        !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
-                        !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
-                            aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
-                                   Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
-                        
-                            nextDTCourant = min(nextDTCourant, aux)
+                            dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
                             
-                        !endif
-                            
+                        endif
+                    enddo
+                    enddo
+                    !$OMP END DO NOWAIT 
+                    !$OMP END PARALLEL
+                    
+                    !m
+                    highest_dh = max(dh_left, dh_bottom)
+                    
+                    if (highest_dh > 0.0) then
+                        aux = Distance_Courant / sqrt(Gravity * highest_dh)
+                        
+                        nextDTCourant = min(nextDTCourant, aux)
                     endif
+                    
+                else
+                    highest_dh = 0.0
+                    !$OMP PARALLEL PRIVATE(I,J,aux, dh, highest_dh)
+                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+                    do j = JLB, JUB
+                    do i = ILB, IUB
+                    
+                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        
+                            if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                                dh = 0.0
+                                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
+                                    dh(1) = max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j)
+                                endif
+                            
+                                if (Me%ExtVar%BasinPoints(i,j+1) == BasinPoint) then
+                                    dh(2) = max(Me%myWaterLevel(i, j+1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j+1)
+                                endif
+                            
+                                if (Me%ExtVar%BasinPoints(i-1,j) == BasinPoint) then
+                                    dh(3) = max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j)
+                                endif
     
-                enddo
-                enddo
-                !$OMP END DO NOWAIT 
-                !$OMP END PARALLEL
-    
+                                if (Me%ExtVar%BasinPoints(i+1,j) == BasinPoint) then
+                                    dh(4) = max(Me%myWaterLevel(i+1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i+1,j)
+                                endif
+                            
+                                highest_dh = maxval(dh)
+                                if (highest_dh > 0.0) then
+                                    aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
+                                            Me%CV%MaxCourant / sqrt(Gravity * highest_dh)
+                                    
+                                    nextDTCourant = min(nextDTCourant, aux)
+                                endif
+                            endif
+                        endif
+                    enddo
+                    enddo
+                    !$OMP END DO NOWAIT 
+                    !$OMP END PARALLEL
+                endif
             endif
+            
             
             if (Niter == 1) then
             
@@ -16256,6 +16120,142 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
     
     end subroutine ComputeNextDT
+    
+    
+    !subroutine ComputeNextDT (Niter)
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    integer                                     :: Niter        
+    !    
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j, STAT_CALL, CHUNK
+    !    integer                                     :: ILB, IUB, JLB, JUB
+    !    real                                        :: nextDTCourant, aux
+    !    real                                        :: nextDTVariation, MaxDT
+    !    logical                                     :: VariableDT
+    !    real                                        :: CurrentDT
+    !
+    !    !----------------------------------------------------------------------
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
+    !
+    !
+    !    call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
+    !    if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
+    !
+    !    call GetMaxComputeTimeStep(Me%ObjTime, MaxDT, STAT = STAT_CALL)
+    !    if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR020'
+    !
+    !    nextDTCourant   = -null_real
+    !    nextDTVariation = -null_real
+    !    
+    !    if (VariableDT) then
+    !
+    !        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !
+    !        ILB = Me%WorkSize%ILB
+    !        IUB = Me%WorkSize%IUB
+    !        JLB = Me%WorkSize%JLB
+    !        JUB = Me%WorkSize%JUB
+    !        
+    !        if (Me%CV%LimitDTCourant) then
+    !                    
+    !            !$OMP PARALLEL PRIVATE(I,J,aux)
+    !            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+    !            do j = JLB, JUB
+    !            do i = ILB, IUB
+    !                    
+    !                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+    !
+    !                    !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
+    !                    !
+    !                    !if (vel .gt. 0.0) then
+    !                    !
+    !                    !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
+    !                    !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
+    !                        aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
+    !                               Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
+    !                    
+    !                        nextDTCourant = min(nextDTCourant, aux)
+    !                        
+    !                    !endif
+    !                        
+    !                endif
+    !
+    !            enddo
+    !            enddo
+    !            !$OMP END DO NOWAIT 
+    !            !$OMP END PARALLEL
+    !
+    !        endif
+    !        
+    !        if (Niter == 1) then
+    !        
+    !            nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
+    !            Me%CV%NextNiteration = Niter
+    !            
+    !        elseif (Niter <= Me%CV%MinIterations) then                            
+    !        
+    !            if (Niter > Me%CV%LastGoodNiteration) then
+    !
+    !                nextDTVariation = Me%ExtVar%DT
+    !                Me%CV%NextNiteration = Niter
+    !
+    !            else
+    !            
+    !                nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
+    !                Me%CV%NextNiteration = Niter
+    !
+    !            endif
+    !            
+    !        else
+    !        
+    !            if (Niter >= Me%CV%StabilizeHardCutLimit) then
+    !            
+    !                nextDTVariation = (Me%ExtVar%DT / Niter) * Me%CV%MinIterations
+    !                Me%CV%NextNiteration = Me%CV%MinIterations
+    !                
+    !            elseif (Niter > Me%CV%LastGoodNiteration) then
+    !            
+    !                nextDTVariation = Me%ExtVar%DT / Me%CV%DTFactorDown
+    !                Me%CV%NextNiteration = max(int(nextDTVariation / Me%CV%CurrentDT), 1)
+    !                
+    !            else
+    !            
+    !                nextDTVariation = Me%ExtVar%DT
+    !                Me%CV%NextNiteration = max(min(int(Niter / Me%CV%DTSplitFactor), Niter - 1), 1)
+    !                
+    !            endif 
+    !                           
+    !        endif
+    !        
+    !        CurrentDT = nextDTVariation / Me%CV%NextNiteration                                     
+    !                  
+    !        Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
+    !        
+    !        if (Me%CV%NextDT < nextDTVariation) then                
+    !            Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
+    !        endif
+    !                   
+    !    else
+    !    
+    !        Me%CV%NextDT = Me%ExtVar%DT
+    !        Me%CV%NextNiteration = Niter            
+    !    
+    !    endif
+    !    
+    !    Me%CV%LastGoodNiteration = Niter
+    !    Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
+    !
+    !    if (Me%StormWaterModel) then
+    !        if (Me%StormWaterModelDT < Me%CV%NextDT) then        
+    !            Me%CV%NextDT = Me%StormWaterModelDT            
+    !        endif
+    !    end if
+    !
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
+    !
+    !end subroutine ComputeNextDT
 
     !--------------------------------------------------------------------------
     
