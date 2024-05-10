@@ -7876,11 +7876,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then 
                 
                 !compute fluxes
-                call ComputeFluxesFVS(temp)
+                call ComputeFluxesFVS(temp, element_flux)
                 !return dt to basin and get new dt
                 
                 !integrate solution by dt
-                call ComputeStateFVS(temp)
+                call ComputeStateFVS(temp, element_flux)
                 !apply BC and impose local modifications (discharges, coupling with external models, etc)
                 
             else !other models, no changes
@@ -8185,7 +8185,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !> Computes the fluxes between cells using a finite volume flux vector
     !> spliting method. Returns a maximum admissable time step to ensure stability
     !---------------------------------------------------------------------------
-    subroutine ComputeFluxesFVS(criticalDt)
+    subroutine ComputeFluxesFVS(criticalDt, element_flux)
     real, intent(out) :: criticalDt                 !> the maximum dt is computed based on a CFL condition applied to the stability region
     integer :: i,j, k, q, c                         !> iterators
     integer, dimension(2) :: cellI, cellJ           !> cell addresses
@@ -8206,7 +8206,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real, dimension(3) :: beta                      !>bottom thrust terms wave strengths
     real, dimension(3) :: flux_left, flux_right     !>flux accumulators
 
-    real, dimension(:,:,:), allocatable :: element_flux
+    real, dimension(:,:,:), allocatable, intent(OUT) :: element_flux
     character(len=30)                           :: time_string
 
     ILB = Me%WorkSize%ILB
@@ -8493,7 +8493,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !> solution state.
     !---------------------------------------------------------------------------
     subroutine ComputeStateFVS(Dt, element_flux)
-    real, intent(in) :: Dt                 !> time step
+    real, intent(IN)                    :: Dt !> time step
+    real, dimension(:,:,3), intent(IN)  :: element_flux
     real, dimension(3) :: conservedVar     !> conserved quantities - water column and momentum
     real, dimension(3) :: primitiveVar     !> primitive quantities - water column and velocities - apagar esta linha depois de substituir pelos nomes certos
     real               :: waterColumn, waterColumn_new, velocityU, velocityV     !> primitive quantities - water column and velocities
