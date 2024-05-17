@@ -5703,7 +5703,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
     subroutine ConstructSewerGEMS
         
         !--------------------------------------------------------------------------
-        integer                                         :: STAT_CALL, n, m, i, c, dpos, SaveResults, nodeType
+        integer                                         :: STAT_CALL, n, i, c, dpos, SaveResults, nodeType
         integer                                         :: InletNumber, Aux
         integer                                         :: ObjStormWaterEnterData = 0, iflag, xn
         character(len = :, kind = c_char), allocatable  :: inpFile, rptFile, outFile
@@ -7942,12 +7942,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_, ready_
         integer                                     :: STAT_CALL
-        real                                        :: SumDT, temp
+        real                                        :: SumDT
         logical                                     :: Restart
         integer                                     :: Niter, iter
         integer                                     :: n_restart
-        logical                                     :: IsFinalFile, firstRestart
-        real, dimension(:,:,:), allocatable         :: element_flux
+        logical                                     :: firstRestart
         !----------------------------------------------------------------------
 
         STAT_ = UNKNOWN_
@@ -8245,16 +8244,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !---------------------------------------------------------------------------
     subroutine ComputeFluxesFVS
     integer :: i,j, k, q, c                         !> iterators
-    integer, dimension(2) :: cellI, cellJ           !> cell addresses
     integer, dimension(2,2) :: strideJ              !> stencil
     integer :: ILB, IUB, JLB, JUB                   !> Grid cell counts
-    integer :: i_North, j_East                   !> Grid cell counts
-    real :: ui, uj, vi, vj, hi, hj, bi, bj, ai, aj  !>local variables
+    integer :: i_North, j_East                      !> Grid cell counts
     real :: lenght_act, min_area, distance          !> local variables
-    real :: dz, di, dj, hi_1s, hj_3s                !> local variables
-    real :: ubar, vbar, cbar, vel_normal            !> local variables
+    real :: dz                                      !> local variables
+    real :: vel_normal                              !> local variables
     real :: aux1, aux2, aux3                        !> local variables
-    real :: bottom, bottom1, bottom2, dz_bar, delta_x !> local variables
+    real :: bottom, bottom1, bottom2, dz_bar        !> local variables
     real :: bottom_NE, velU_NE, velU, velV, velV_NE !> local variables
     real :: cellArea, cellArea_NE, depth, depth_NE !> local variables
     real :: sqrt_depth, sqrt_depth_NE, vel_FaceU, vel_FaceV !> local variables
@@ -8268,9 +8265,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real, dimension(3) :: alpha                     !>homogenous terms wave strengths
     real, dimension(3) :: beta                      !>bottom thrust terms wave strengths
     real, dimension(3) :: flux_left, flux_right     !>flux accumulators
-
-    !real, dimension(:,:,:), allocatable, intent(OUT) :: element_flux
-    character(len=30)                           :: time_string
+    !Begin---------------------------------------------------------------------------------------
 
     ILB = Me%WorkSize%ILB
     IUB = Me%WorkSize%IUB
@@ -8316,10 +8311,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     distance = min_area / lenght_act
 
                     if (depth + depth_NE >= AlmostZero) then !wet cell
-                        
-                        if (depth_NE < 0) then
-                            write(*,*) "valor negativo em i, j : ", i, j, depth_NE
-                        endif
                         
                         !Aproximate variables (Roe, 1981)
                         sqrt_depth = sqrt(depth)
@@ -8574,16 +8565,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     end do
     end do
 
-    !criticalDt = dt!*CFLCoeff
     Me%CV%NextDT = dt
-    
-    time_string = ConvertTimeToString (Me%ExtVar%Now)
-    print*, 'dt would be ', dt, time_string
     
     !Time step depends on StormWaterModel (will probably need to do some flux integration to avoid this limitation)
     if (Me%StormWaterModel) then
         if (Me%StormWaterModelDT < Me%CV%NextDT) then
-            print*, 'dt changed by stormwater ', dt, Me%StormWaterModelDT
+            !print*, 'dt changed by stormwater ', dt, Me%StormWaterModelDT
             Me%CV%NextDT = Me%StormWaterModelDT            
         endif
     end if
@@ -8597,16 +8584,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !> solution state.
     !---------------------------------------------------------------------------
     subroutine ComputeStateFVS(Dt)
-    real, intent(IN)                    :: Dt !> time step
-    !real, dimension(:,:,:), intent(IN)  :: element_flux
-    real, dimension(3) :: conservedVar     !> conserved quantities - water column and momentum
-    real, dimension(3) :: primitiveVar     !> primitive quantities - water column and velocities - apagar esta linha depois de substituir pelos nomes certos
-    real               :: waterColumn, waterColumn_new, velocityU, velocityV     !> primitive quantities - water column and velocities
-    real               :: momentumU, momentumV, Friction_Coef, tau_u, tau_v, cellArea     !> primitive quantities - water column and velocities
-    integer :: ILB, IUB, JLB, JUB          !> Grid cell counts
-    integer :: i, j ,q                     !> Iterators
-    real :: h_treshold                     !> Depth threshold to desingularize velocity computation
-    real :: velMod                           !> velocity modulus
+    real, intent(IN)        :: Dt !> time step
+    real                    :: waterColumn, waterColumn_new, velocityU, velocityV     !> primitive quantities - water column and velocities
+    real                    :: momentumU, momentumV, Friction_Coef, tau_u, tau_v, cellArea     !> primitive quantities - water column and velocities
+    integer                 :: ILB, IUB, JLB, JUB        !> Grid cell counts
+    integer                 :: i, j                      !> Iterators
+    real                    :: h_treshold                !> Depth threshold to desingularize velocity computation
+    real                    :: velMod                    !> velocity modulus
     !Begin----------------------------------------------------------------------------------------------
     h_treshold = Me%MinimumWaterColumn
 
@@ -8877,318 +8861,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         
     end subroutine UpdateFVSOutputVariables
     
-    !____________________________________________________________________________________
-    
-    !!---------------------------------------------------------------------------
-    !!> @author Ricardo Birjukovs Canelas - Bentley Systems
-    !!> @brief
-    !!> Computes the fluxes between cells using a finite volume flux vector
-    !!> spliting method. Returns a maximum admissable time step to ensure stability
-    !!---------------------------------------------------------------------------
-    !subroutine ComputeFluxesFVS(criticalDt, element_flux)
-    !real, intent(out) :: criticalDt                 !> the maximum dt is computed based on a CFL condition applied to the stability region
-    !integer :: i,j, k, q, c                         !> iterators
-    !integer, dimension(2) :: cellI, cellJ           !> cell addresses
-    !integer, dimension(2,2) :: strideJ              !> stencil
-    !integer :: ILB, IUB, JLB, JUB                   !> Grid cell counts
-    !real :: ui, uj, vi, vj, hi, hj, bi, bj, ai, aj  !>local variables
-    !real :: lenght_act, min_area                    !> local variables
-    !real :: dz, di, dj, hi_1s, hj_3s                !> local variables
-    !real :: ubar, vbar, cbar, vel_normal            !> local variables
-    !real :: aux1, aux2, aux3                        !> local variables
-    !real :: bottom, bottom1, bottom2, dz_bar, delta_x !> local variables
-    !real :: dt, dt2, dt3, dt4                       !> local variables
-    !logical :: wettingDrying                        !> wetting and drying flag
-    !real :: nx, ny                                  !>normal components between cells
-    !real, dimension(3) :: lambda, lambda_aux, lambda_i, lambda_j !>Jacobian eigenvalues
-    !real, dimension(3,3) :: eig                     !>Jacobian eigenvectors
-    !real, dimension(3) :: alpha                     !>homogenous terms wave strengths
-    !real, dimension(3) :: beta                      !>bottom thrust terms wave strengths
-    !real, dimension(3) :: flux_left, flux_right     !>flux accumulators
-    !
-    !real, dimension(:,:,:), allocatable, intent(OUT) :: element_flux
-    !character(len=30)                           :: time_string
-    !
-    !ILB = Me%WorkSize%ILB
-    !IUB = Me%WorkSize%IUB
-    !JLB = Me%WorkSize%JLB
-    !JUB = Me%WorkSize%JUB
-    !
-    !dt = 999999999.0
-    !
-    !allocate(element_flux(IUB-ILB, JUB-JLB, 3))
-    !element_flux = 0.0
-    !strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
-    !
-    !!Iterating trough every cell to compute the approximate Jacobian across each edge
-    !do j = JLB, JUB-1
-    !    do i = ILB, IUB-1
-    !
-    !        do c = 1, size(strideJ,1)
-    !            !Compute fluxes of east and north cell faces
-    !            
-    !            !todo
-    !            !check if face or cell is valid (Joao: ComputeFacesU and V?)
-    !            !Compute normal between cells (Joao: For rotated grids?)
-    !            !compute tangential between cells (Joao: For rotated grids?)
-    !            !store obstacle info to nullify normal velocity during integration latter (Joao: Not relevant for now, or usefull for 1D links?)
-    !            
-    !            
-    !            cellI(1) = i
-    !            cellI(2) = j
-    !            cellJ(1) = i +  strideJ(c, 1)
-    !            cellJ(2) = j +  strideJ(c, 2)
-    !
-    !            ui=Me%VelModFaceU(cellI(1), cellI(2))
-    !            uj=Me%VelModFaceU(cellJ(1), cellJ(2))
-    !            vi=Me%VelModFaceV(cellI(1), cellI(2))
-    !            vj=Me%VelModFaceV(cellJ(1), cellJ(2))
-    !            hi=Me%myWaterColumn(cellI(1), cellI(2))
-    !            hj=Me%myWaterColumn(cellJ(1), cellJ(2))
-    !
-    !            bi=Me%ExtVar%Topography(cellI(1), cellI(2))
-    !            bj=Me%ExtVar%Topography(cellJ(1), cellJ(2))
-    !
-    !            ai=Me%ExtVar%GridCellArea(cellI(1), cellI(2))
-    !            aj=Me%ExtVar%GridCellArea(cellJ(1), cellJ(2))
-    !            lenght_act = Me%ExtVar%DXX(cellI(1), cellI(2)) !-this is not always DXX!
-    !            min_area = min(ai, aj)
-    !
-    !            if (hi+hj >= AlmostZero) then
-    !
-    !                !Aproximate variables (Roe, 1981)
-    !                aux1 = sqrt(hi)
-    !                aux2 = sqrt(hj)
-    !                aux3 = sqrt(hi)+sqrt(hj)
-    !                ubar = (ui*aux1+uj*aux2)/aux3 !xx speed aproximation in i edge
-    !                vbar = (vi*aux1+vj*aux2)/aux3 !yy speed aproximation in i edge
-    !                cbar = sqrt(Gravity*(hi+hj)/2) !c aproximation in i edge
-    !                
-    !                nx = strideJ(c, 1)
-    !                ny = strideJ(c, 2)
-    !
-    !                vel_normal = ubar*nx+vbar*ny !normal speed
-    !
-    !                !Aproximate eigenvalues
-    !                lambda(1) = vel_normal - cbar
-    !                lambda(2) = vel_normal
-    !                lambda(3) = vel_normal + cbar
-    !
-    !                !Entropy corrections
-    !                lambda_aux(1) = 0
-    !                lambda_aux(2) = 0
-    !                lambda_aux(3) = 0
-    !
-    !                lambda_i(1) = ui*nx+vi*ny - sqrt(Gravity*hi)
-    !                lambda_i(3) = ui*nx+vi*ny + sqrt(Gravity*hi)        !lambda(U*)
-    !                lambda_j(1) = uj*nx+vj*ny - sqrt(Gravity*hj)
-    !                lambda_j(3) = uj*nx+vj*ny + sqrt(Gravity*hj)
-    !
-    !                if ( lambda_i(1) < 0.0 ) then
-    !                    if ( lambda_j(1) > 0.0 ) then
-    !                        aux1 = (lambda_j(1) - lambda(1))/(lambda_j(1) - lambda_i(1))
-    !                        aux2 = (lambda(1) - lambda_i(1))/(lambda_j(1) - lambda_i(1))
-    !                        lambda_aux(1) = lambda_j(1)*aux2
-    !                        lambda(1)     = lambda_i(1)*aux1
-    !                    end if
-    !                end if
-    !
-    !                if ( lambda_i(3) < 0.0 ) then
-    !                    if ( lambda_j(3) > 0.0 ) then
-    !                        aux1 = (lambda(3) - lambda_i(3))/(lambda_j(3) - lambda_i(3))
-    !                        aux2 = (lambda_j(3) - lambda(3))/(lambda_j(3) - lambda_i(3))
-    !                        lambda_aux(3) = lambda_i(3)*aux2
-    !                        lambda(3)     = lambda_j(3)*aux1
-    !                    end if
-    !                end if
-    !
-    !                !Aproximate eigenvectors
-    !                eig(1,1) = 1.0
-    !                eig(1,2) = ubar - cbar*nx
-    !                eig(1,3) = vbar - cbar*ny
-    !
-    !                eig(2,1) = 0.0
-    !                eig(2,2) = -cbar*ny
-    !                eig(2,3) =  cbar*nx
-    !
-    !                eig(3,1) = 1.0
-    !                eig(3,2) = ubar + cbar*nx
-    !                eig(3,3) = vbar + cbar*ny
-    !
-    !                !Wave strengths - homogenous terms
-    !                aux1 = (uj*hj-ui*hi)-ubar*(hj-hi)
-    !                aux2 = (vj*hj-vi*hi)-vbar*(hj-hi)
-    !
-    !                alpha(1) = (hj-hi)/2 - 1/(2*cbar)*(aux1*nx+aux2*ny)
-    !                alpha(2) = (1/cbar)*(-aux1*ny+aux2*nx)
-    !                alpha(3) = (hj-hi)/2 + 1/(2*cbar)*(aux1*nx+aux2*ny)
-    !
-    !                !Wave strengths - bottom terms
-    !                dz = bj - bi
-    !                di = hi + bi
-    !                dj = hj + bj
-    !
-    !                bottom1 = -Gravity*((hi+hj)/2)*dz !initial trust term
-    !                dz_bar = dz
-    !
-    !                if ( dz >= 0.0 ) then
-    !                    if ( di < bj ) dz_bar = hi
-    !                end if
-    !
-    !                if ( dz < 0.0 ) then
-    !                    if ( dj < bi ) dz_bar = -hj      !See Murillo, 2010
-    !                end if
-    !
-    !                aux1 = hj
-    !                if ( dz >= 0 ) aux1 =  hi
-    !
-    !                bottom2 = -Gravity*(aux1-abs(dz_bar)/2)*dz_bar !alternative trust term
-    !                bottom = bottom2
-    !
-    !                if ( (dj-di)*dz >= 0.0 ) then
-    !                    if ( vel_normal*dz > 0.0 ) then
-    !                        if (abs(bottom1) > abs(bottom2)) bottom = bottom1 !choice of the better trust term
-    !                    end if
-    !                end if
-    !
-    !                beta(1) = -1/(cbar*2)*bottom
-    !                beta(2) = 0
-    !                beta(3) = -beta(1)
-    !
-    !                !local structure wave corrections
-    !                aux1 = lambda(1)*lambda(3)
-    !                if (aux1 < 0.0) then !Subcritical Flow, source terms need to be taken into account
-    !                    hi_1s  = hi + alpha(1)-beta(1)/lambda(1) !intermediate upstream height
-    !                    hj_3s  = hj - alpha(3)+beta(3)/lambda(3) !intermediate downstream height
-    !                    if ((hi_1s < 0.0) .or. (hj_3s < 0.0)) then !non-physical solution detected
-    !                        delta_x= min(ai,aj)/lenght_act
-    !                        dt2 = min(abs(delta_x/lambda(3)),abs(delta_x/lambda(1)))
-    !                        dt3=dt2
-    !                        dt4=dt2
-    !                        if (hi_1s < 0.0) dt3 = abs(0.5*hi/(hi-hi_1s)*delta_x/lambda(1))
-    !                        if (hj_3s < 0.0) dt4 = abs(0.5*hj/(hj-hj_3s)*delta_x/lambda(3))
-    !                        if ((dt3 < dt2) .or. (dt4 < dt2)) then
-    !                            if (hi_1s < 0.0) then
-    !                                if (hj_3s > 0.0) then
-    !                                    aux1 = -(hi+alpha(1))*abs(lambda(1))   !beta(1) min
-    !                                    aux2 = -(hj-alpha(3))*   (lambda(3))   !beta(3) min
-    !                                    if (-aux1 >= aux2) then
-    !                                        beta(1)= -(hi+alpha(1))*abs(lambda(1)) !beta(1) min
-    !                                        beta(3)= - beta(1)                     !to ensure conservation
-    !                                    end if
-    !                                end if
-    !                            end if
-    !                        end if
-    !                        if (hi_1s > 0.0) then
-    !                            if (hj_3s < 0.0) then
-    !                                aux1 =   -(hi+alpha(1))*abs(lambda(1))   !beta(1) min
-    !                                aux2 =   -(hj-alpha(3))*   (lambda(3))   !beta(3) min
-    !                                if (-aux2 >= aux1) then
-    !                                    beta(3)= -(hj-alpha(3))*(lambda(3))  !beta(3) min
-    !                                    beta(1)= - beta(3)                   !to ensure conservation
-    !                                end if
-    !                            end if
-    !                        end if
-    !                    end if
-    !                end if
-    !
-    !                !Flux computation
-    !                flux_left = 0.0
-    !                flux_right = 0.0
-    !                hi_1s = 0.0
-    !                hj_3s = 0.0
-    !
-    !                do k=1, 3
-    !                    if (abs(lambda(k)) > 0.0) dt = min(dt, min_area/(lenght_act*abs(lambda(k))))     !only "entering" caracteristics contribute to the stability region
-    !                end do
-    !
-    !                if ( abs(bottom) > 0.0) then
-    !                    if ( lambda(1)*lambda(3) < 0.0 ) then !Subcritical Flow
-    !                        hi_1s = hi + alpha(1) - beta(1)/lambda(1) !intermediate upstream height
-    !                        hj_3s = hj - alpha(3) + beta(3)/lambda(3) !intermediate downstream height
-    !                        if ( hj > 0.0 ) then
-    !                            if ( hj_3s < 0.0 ) then
-    !                                aux1 = hj/(2.0*(hj - hj_3s))
-    !                                dt = min(dt, aux1*min_area/(lenght_act*abs(lambda(3))))     !correcting the time step
-    !                            end if
-    !                        end if
-    !                        if ( hi > 0.0 ) then
-    !                            if ( hi_1s < 0.0 ) then
-    !                                aux1 = hi/(2.0*(hi - hi_1s))
-    !                                dt = min(dt, aux1*min_area/(lenght_act*abs(lambda(1))))     !correcting the time step
-    !                            end if
-    !                        end if
-    !                    end if
-    !                end if
-    !
-    !                wettingDrying = .false.
-    !
-    !                if ( hj == 0.0 ) then
-    !                    if ( hj_3s < 0.0 ) then !Wetting case
-    !                        do k=1, 3
-    !                            flux_left(1) = flux_left(1) + (lambda(k)*alpha(k)-beta(k))*eig(k,1)
-    !                            flux_left(1) = flux_left(1) + (lambda_aux(k)*alpha(k))*eig(k,1)
-    !                            wettingDrying = .true.
-    !                            !vel_wall_nill(i) = 1 !setting as a physical obstacle
-    !                        end do
-    !                    end if
-    !                end if
-    !
-    !                if ( hi == 0.0 ) then
-    !                    if ( hi_1s < 0.0 ) then  !drying case
-    !                        do k=1,3
-    !                            flux_right(1) = flux_right(1) + (lambda(k)*alpha(k)-beta(k))*eig(k,1)
-    !                            flux_right(1) = flux_right(1) + (lambda_aux(k)*alpha(k))*eig(k,1)
-    !                            wettingDrying = .true.
-    !                            !vel_wall_nill(i) = 1 !setting as a physical obstacle
-    !                        end do
-    !                    end if
-    !                end if
-    !
-    !                if (.not.wettingDrying) then      !no wetting/drying fronts, normal flux update
-    !                    do k=1, 3
-    !                        if (lambda(k) < 0.0 ) then !all to the left element
-    !                            do q=1, 3
-    !                                flux_left(q) = flux_left(q) + (lambda(k)*alpha(k)-beta(k))*eig(k,q)
-    !                            end do
-    !                        elseif ( lambda(k) > 0.0 ) then !all to the right element
-    !                            do q=1, 3
-    !                                flux_right(q) = flux_right(q) + (lambda(k)*alpha(k)-beta(k))*eig(k,q)
-    !                            end do
-    !                        end if
-    !                        !entropy corrections aplication directly in the numerical flux
-    !                        if ( lambda_aux(k) < 0.0 ) then !all to the left element
-    !                            do q=1, 3
-    !                                flux_left(q) = flux_left(q) + (lambda_aux(k)*alpha(k))*eig(k,q)
-    !                            end do
-    !                        elseif ( lambda_aux(k) > 0.0 ) then !all to the right element
-    !                            do q=1, 3
-    !                                flux_right(q) = flux_right(q) + (lambda_aux(k)*alpha(k))*eig(k,q)
-    !                            end do
-    !                        end if
-    !                    end do
-    !                end if
-    !
-    !                do q=1, 3
-    !                    element_flux(cellI(1), cellI(2), q) = element_flux(i, i, q) + flux_left(q)*(- lenght_act/ai)
-    !                    element_flux(cellJ(1), cellJ(2), q) = element_flux(cellJ(1), cellJ(2), q) + flux_right(q)*(- lenght_act/aj)
-    !                end do
-    !
-    !            end if !wet cells
-    !
-    !        end do
-    !
-    !    end do
-    !end do
-    !
-    !criticalDt = dt!*CFLCoeff
-    !
-    !time_string = ConvertTimeToString (Me%ExtVar%Now)
-    !print*, 'dt would be ', dt, time_string
-    !
-    !end subroutine ComputeFluxesFVS
-    !
-    !!---------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
 	
 	real function FrictionCoefficient(waterColumn, K_Strickler)       
         real, intent(IN) :: waterColumn
@@ -10888,33 +10561,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine DynamicWaveXX (LocalDT)
     
         !Arguments-------------------------------------------------------------
-        real                                        :: LocalDT
+        real, intent(IN)         :: LocalDT
         
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j
-        integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: Slope
-        real                                        :: level_left, level_right
-        real                                        :: HydraulicRadius
-        real                                        :: Friction
-        real                                        :: Pressure
-        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
-        real                                        :: Advection, Qf, WetPerimeter
-        real(8)                                     :: CriticalFlow
-        real                                        :: Margin1, Margin2
-        integer                                     :: CHUNK, dj
-        real                                        :: MaxBottom, WaterDepth
-    
     
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX")
-    
-    
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
         
         if (Me%AdjustSlope) then
             if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
@@ -11053,7 +10704,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then 
+                    if (Me%ComputeFaceU(i, j+1) == 1) then 
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
                             Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
@@ -11068,7 +10719,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XLeftAdv = 0.0
                     !Face XU(i,j). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
@@ -11262,7 +10913,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -11279,7 +10930,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -11394,7 +11045,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
         real(8)                                     :: CriticalFlow
-        real                                        :: Margin1, Margin2
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
@@ -11407,7 +11057,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, WetPerimeter)
+        !$OMP CriticalFlow, MaxBottom, WaterDepth, WetPerimeter)
 
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
@@ -11441,7 +11091,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -11458,7 +11108,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -11580,7 +11230,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: Pressure
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
-        real                                        :: Margin1, Margin2
         integer                                     :: CHUNK
         real                                        :: Flow
         
@@ -11593,7 +11242,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP Margin1, Margin2, WetPerimeter, Flow)
+        !$OMP WetPerimeter, Flow)
 
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
@@ -11627,7 +11276,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -11644,7 +11293,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -11759,9 +11408,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
         real(8)                                     :: CriticalFlow
-        real                                        :: Margin1, Margin2
         integer                                     :: CHUNK
-        real                                        :: MaxBottom, WaterDepth
+        real                                        :: WaterDepth
         
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -11772,7 +11420,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP Margin1, Margin2, MaxBottom, WaterDepth, WetPerimeter)
+        !$OMP WaterDepth, WetPerimeter)
 
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
@@ -11806,7 +11454,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -11823,7 +11471,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -12017,7 +11665,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -12034,7 +11682,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -12227,7 +11875,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -12244,7 +11892,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -12359,7 +12007,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
         real(8)                                     :: CriticalFlow
-        real                                        :: Margin1, Margin2
         integer                                     :: CHUNK
         real                                        :: MaxBottom, WaterDepth
         
@@ -12372,7 +12019,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, WetPerimeter)
+        !$OMP CriticalFlow, MaxBottom, WaterDepth, WetPerimeter)
 
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
@@ -12406,7 +12053,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -12423,7 +12070,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -12545,9 +12192,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: Pressure
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
-        real                                        :: Margin1, Margin2
         integer                                     :: CHUNK
-        real                                        :: MaxBottom, Flow
+        real                                        :: Flow
         
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -12557,7 +12203,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         JUB = Me%WorkSize%JUB
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP Margin1, Margin2, MaxBottom, WetPerimeter, Flow)
+        !$OMP WetPerimeter, Flow)
 
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
@@ -12591,7 +12237,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -12608,7 +12254,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -12723,9 +12369,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
         real(8)                                     :: CriticalFlow
-        real                                        :: Margin1, Margin2
         integer                                     :: CHUNK
-        real                                        :: MaxBottom, WaterDepth
+        real                                        :: WaterDepth
         
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -12735,7 +12380,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         JUB = Me%WorkSize%JUB
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, WetPerimeter)
+        !$OMP CriticalFlow, WaterDepth, WetPerimeter)
 
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
@@ -12769,7 +12414,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     XRightAdv = 0.0
                     !Face XU(i,j+1). Z U Faces have to be open
-                    if (Me%ComputeFaceU(i, j+1)) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                    
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                             
@@ -12786,7 +12431,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     !Face XU(i,j). Z U Faces have to be open
                     XLeftAdv = 0.0
-                    if (Me%ComputeFaceU(i, j-1)) then  
+                    if (Me%ComputeFaceU(i, j-1) == 1) then  
                         !New Version
                         if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                             
@@ -13765,7 +13410,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real(c_double)              :: dt, elapsedTime
         integer                     :: STAT_CALL, n, i, j, xn
         real                        :: Flow, Flow_1, Flow_2, Flow_3, Flow_4, Flow_5, myWaterLevel, Flow_formulation_2, tF
-        real                        :: SecondLinkWaterLevel, dh, area, WaterLevelSWMM, sign
+        real                        :: SecondLinkWaterLevel, dh, area, WaterLevelSWMM
 
         !--------------------------------------------------------------------------
 
@@ -15918,10 +15563,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: di, dj, i, j, n
-        integer                                     :: ILB, IUB, JLB, JUB, CHUNK, NonComputeFaces
+        integer                                     :: i, j, n
+        integer                                     :: CHUNK, NonComputeFaces
         real                                        :: dh
-        real(8)                                     :: dVol, MaxFlow, FlowBoundary
+        real(8)                                     :: dVol, MaxFlow
         real                                        :: WaveHeight, Celerity, minHeight
         real                                        :: WaterLevelBoundaryValue, BoundaryFlowAux_U, BoundaryFlowAux_V
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
@@ -15942,7 +15587,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         !$OMP PARALLEL PRIVATE(i,j,n,WaveHeight,dh,WaterLevelBoundaryValue,Celerity,minHeight,BoundaryFlowAux_U,BoundaryFlowAux_V,MaxFlow,dVol, &
-        !$OMP GridCellArea, NonComputeFaces, Topography, FlowBoundary)
+        !$OMP GridCellArea, NonComputeFaces, Topography)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
         do n = 1, size(Me%WaterLevelBoundaryValue_1D)
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
