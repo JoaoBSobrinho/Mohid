@@ -15921,8 +15921,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: di, dj, i, j, n
         integer                                     :: ILB, IUB, JLB, JUB, CHUNK, NonComputeFaces
         real                                        :: dh
-        real(8)                                     :: dVol
-        real                                        :: WaveHeight, Celerity, MaxFlow, minHeight
+        real(8)                                     :: dVol, MaxFlow, FlowBoundary
+        real                                        :: WaveHeight, Celerity, minHeight
         real                                        :: WaterLevelBoundaryValue, BoundaryFlowAux_U, BoundaryFlowAux_V
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
         real                                        :: Topography, GridCellArea
@@ -15942,7 +15942,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         !$OMP PARALLEL PRIVATE(i,j,n,WaveHeight,dh,WaterLevelBoundaryValue,Celerity,minHeight,BoundaryFlowAux_U,BoundaryFlowAux_V,MaxFlow,dVol, &
-        !$OMP GridCellArea, NonComputeFaces, Topography)
+        !$OMP GridCellArea, NonComputeFaces, Topography, FlowBoundary)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
         do n = 1, size(Me%WaterLevelBoundaryValue_1D)
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
@@ -15988,7 +15988,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 !m3/s = m * m2 / s
                                 !MaxFlow = - minHeight *  GridCellArea / Me%ExtVar%DT
                                 MaxFlow = - Me%myWaterVolume(i, j) / Me%ExtVar%DT
-                    
+                                
                                 if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
                                     Me%iFlowBoundary(i, j) = MaxFlow
                                 endif                    
@@ -15997,7 +15997,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 dVol = Me%iFlowBoundary(i, j) * Me%ExtVar%DT
                         
                                 !Updates Water Volume
-                                Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol 
+                                Me%myWaterVolume (i, j) = max(Me%myWaterVolume (i, j) + dVol, 0.0)
 
                                 BoundaryFlowVolume     = BoundaryFlowVolume + dVol
 
