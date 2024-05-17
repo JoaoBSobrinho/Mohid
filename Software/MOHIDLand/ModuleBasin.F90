@@ -82,7 +82,8 @@ Module ModuleBasin
                                      GetRunoffTotalStoredVolume, GetMassError,           &
                                      GetRunOffStoredVolumes, GetRunOffBoundaryFlowVolume,& 
                                      GetRunOffTotalDischargeFlowVolume,                  &
-                                     SetBasinStatsToRunoff, ActualizeWaterColumn_RunOff
+                                     SetBasinStatsToRunoff, ActualizeWaterColumn_RunOff, &
+                                     GetFVSHydroApprox, SetRunOffRainFall, SetRunOffInfiltration
                                      
                                      
     use ModuleRunoffProperties,                                                          &
@@ -564,6 +565,7 @@ Module ModuleBasin
         real(8), dimension(:,:), pointer            :: PotentialInfCol        => null()
         real(8), dimension(:,:), pointer            :: FlowProduction         => null()
         real(8), dimension(:,:), pointer            :: InfiltrationRate       => null()
+        real(8), dimension(:,:), pointer            :: Infiltration           => null() !m
         real(8), dimension(:,:), pointer            :: SnowMeltingRate        => null() !mm/hour
         real(8), dimension(:,:), pointer            :: PrecipRate             => null()
         real(8), dimension(:,:), pointer            :: ThroughRate            => null()
@@ -605,7 +607,7 @@ Module ModuleBasin
         real, dimension(:), pointer                 :: TimeSeriesBuffer3 => null() !Properties Error
         real, dimension(:), pointer                 :: BWBBuffer         => null() !buffer to be used for Basin Water Balance
         logical                                     :: ConstantCurveNumber = .false.
-        integer, dimension(:,:), allocatable        :: CellHasRain
+        integer, dimension(:,:), pointer            :: CellHasRain
         
         !Basin Water Balance
         type (T_BasinWaterBalance)                  :: BWB
@@ -636,6 +638,7 @@ Module ModuleBasin
         logical                                     :: UseRefEVTPIfNeeded       = .true.
         logical                                     :: ControlDTChanges         = .false.
         integer                                     :: NumberOftimeSeries       = 0
+        logical                                     :: RunOffUsingFVS           = .false.
         
         !Instance IDs
         integer                                     :: ObjTime                  = 0
@@ -3228,6 +3231,7 @@ i1:         if (CoordON) then
         integer, pointer, dimension(:,:,:)          :: mapping
         integer                                     :: id
         integer, dimension(:),    pointer           :: ReservoirDNNodeID               => null()
+        logical                                     :: Flag
 
         !Begin-----------------------------------------------------------------
 
@@ -3438,7 +3442,7 @@ i1:         if (CoordON) then
                                          GeometryID         = Me%ObjGeometry,                &
                                          BasinGeometryID    = Me%ObjBasinGeometry,           &
                                          CoupledAtmosphere  = Me%Coupled%Atmosphere,         &
-										 KcThresholds       = Me%UseKCThresholds,            &      !Added by Ana Oliveira to compute Kc according to FAO56. See vegetation module
+                                         KcThresholds       = Me%UseKCThresholds,            & !Added by Ana Oliveira to compute Kc according to FAO56. See vegetation module
                                          UsePotLAI          = Me%UsePotLAI,                  &
                                          STAT               = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR090'
@@ -3477,6 +3481,11 @@ i1:         if (CoordON) then
                                          HasRunoffProperties = Me%Coupled%RunoffProperties, &
                                          STAT               = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR070'
+            
+            call GetFVSHydroApprox(Me%ObjRunOff, Flag, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR071'
+            
+            if (Flag) Me%RunOffUsingFVS = .true.
            
             !Constructs RunoffProperties 
             if (Me%Coupled%RunoffProperties) then
@@ -4643,7 +4652,7 @@ cd0:    if (Exist) then
 
     !--------------------------------------------------------------------------
 #ifndef _SEWERGEMSENGINECOUPLER_
-    subroutine DividePrecipitation (PrecipitationFlux, IrrigationFlux)
+    subroutine # (PrecipitationFlux, IrrigationFlux)
 
         !Arguments-------------------------------------------------------------
         real, dimension(:, :), pointer                       :: PrecipitationFlux
@@ -4968,10 +4977,9 @@ cd0:    if (Exist) then
         real, dimension(:, :), pointer                       :: PrecipitationFlux
 
         !Local-----------------------------------------------------------------     
-        integer                                     :: i, j
+        integer                                     :: i, j, STAT_CALL
         real                                        :: GrossPrecipitation
         real                                        :: CurrentFlux
-        logical                                     :: ChangeRain
         
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")
@@ -4997,9 +5005,6 @@ cd0:    if (Exist) then
                         !Accumulated rainfall
                         !m
                         Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
-                
-                        !Put rain on water column - it will facilitate the structure of the property mixture
-                        Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + GrossPrecipitation
                     
                         !mm/ hour                   m                       s         1000mm/m   *  3600s/h
                         Me%ThroughRate(i, j) = GrossPrecipitation / Me%CurrentDT * 3600000.0
@@ -5033,9 +5038,6 @@ cd0:    if (Exist) then
                         !Accumulated rainfall
                         !m
                         Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
-                
-                        !Put rain on water column - it will facilitate the structure of the property mixture
-                        Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + GrossPrecipitation
                     
                         ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
@@ -5048,6 +5050,25 @@ cd0:    if (Exist) then
             !$OMP END DO
             !$OMP END PARALLEL
             
+        endif
+        
+        if (Me%RunOffUsingFVS) then
+            call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
+        else
+            !This actualy should be done in module runoff... changing the water level inside Basin just seems like a really bad idea
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%CellHasRain(i,j) == BasinPoint) then
+                    !Put rain on water column - it will facilitate the structure of the property mixture
+                    Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
         endif
         
 
@@ -6297,7 +6318,7 @@ cd0:    if (Exist) then
         integer                                     :: Chunk
         
         real                                        :: previousInDayRain, rain, qNew, rain_m
-        real                                        :: qInTimeStep, Infiltration
+        real                                        :: qInTimeStep, Infiltration, aux
         
         integer                                     :: STAT_CALL
         
@@ -6337,242 +6358,84 @@ cd0:    if (Exist) then
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL            
         endif
-        
-        if (Me%NumberOfTimeSeries > 0) then
             
-            !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep, Infiltration)
-            !$OMP DO SCHEDULE(DYNAMIC)
-            do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
-                if (Me%CellHasRain(i,j)) then
-                    !       mm        =                mm
-                    previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
+        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep)
+        !$OMP DO SCHEDULE(DYNAMIC)
+        do J = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
+            if (Me%CellHasRain(i,j) == 1) then
+                !       mm        =                mm
+                previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
                     
-                    rain_m = Me%ThroughFall (i, j)
+                rain_m = Me%ThroughFall (i, j)
                     
-                    !mm  =              m                  * mm/m
-                    rain = rain_m * 1000.0
-                    !               mm                 =                 mm                 +  mm
-                    Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+                !mm  =              m                  * mm/m
+                rain = rain_m * 1000.0
+                !               mm                 =                 mm                 +  mm
+                Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
         
-                    !mm  =        mm         +                     mm
-                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
-                                                        + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                !mm  =        mm         +                     mm
+                Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
+                                                    + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                     
                     
-                    if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
+                if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
                         
-                        !mm         = (mm - mm)**2 / (mm + mm)
-                        qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
-                                        (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
+                    !mm         = (mm - mm)**2 / (mm + mm)
+                    qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
+                                    (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
                         
-                        qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
+                    qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
                         
-                        Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
+                    Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
                         
-                        !Output mm/h = mm/s * 3600 s/hour
-                        Me%InfiltrationRate (i, j) = ((rain - qInTimeStep) / Me%CurrentDT) * 3600.0
+                    !Output mm/h = mm/s * 3600 s/hour
+                    Me%InfiltrationRate (i, j) = ((rain - qInTimeStep) / Me%CurrentDT) * 3600.0
                         
-                    else
-                        !Output mm/h = m/s * 3600000 (mm/m * s/hour)
-                        Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
-                    endif
-                
-                    Infiltration = Me%InfiltrationRate(i, j) *     &
-                                                    (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * Me%CurrentDT / 3600000.0
-                    !m - Accumulated Infiltration of the entite area
-                    Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
-                
-                    !m                            = m - mm/hour * s / s/hour / mm/m
-                    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
-                  
                 else
-                    !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
-                    Me%InfiltrationRate (i, j)    =  0.0
+                    !Output mm/h = m/s * 3600000 (mm/m * s/hour)
+                    Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
                 endif
+                  
+            else
+                !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
+                Me%InfiltrationRate (i, j)    =  0.0
+            endif
             
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
-            !$OMP END PARALLEL
+        enddo
+        enddo
+        !$OMP END DO NOWAIT
+        !$OMP END PARALLEL
         
+        if (Me%RunOffUsingFVS) then
+            call SetRunOffInfiltration(Me%ObjRunoff, Me%InfiltrationRate, Me%SCSCNRunOffModel%ImpFrac%Field, STAT = STAT_CALL)
         else
             
-            !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep, Infiltration)
+            aux = Me%CurrentDT / 3600000.0
+            !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, Infiltration)
             !$OMP DO SCHEDULE(DYNAMIC)
             do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
-                if (Me%CellHasRain(i,j)) then
-                    !       mm        =                mm
-                    previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
-                    
-                    rain_m = Me%ThroughFall (i, j)
-                    
-                    !mm  =              m                  * mm/m
-                    rain = rain_m * 1000.0
-                    !               mm                 =                 mm                 +  mm
-                    Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
-        
-                    !mm  =        mm         +                     mm
-                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
-                                                        + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
-                    
-                    
-                    if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
-                        
-                        !mm         = (mm - mm)**2 / (mm + mm)
-                        qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
-                                        (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
-                        
-                        qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
-                        
-                        Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
-                        !m = (m * 1E3 mm/m - mm) * 1E-3 m/mm * []
-                        Infiltration = (rain_m * 1000.0 - qInTimeStep) * 1E-3 * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j))
-                        
-                    else
-                        !m
-                        Infiltration = rain_m * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j))
-                    endif
-                
+            do I = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%CellHasRain(i,j) == 1) then
+                    !m
+                    Infiltration = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux
                     !m - Accumulated Infiltration of the entite area
                     Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
                 
                     !m                            = m - mm/hour * s / s/hour / mm/m
                     Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
                 endif
-            
             enddo
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
-            
         endif
-        
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
     end subroutine SCSCNRunOffModel
 #endif _SEWERGEMSENGINECOUPLER_    
     !--------------------------------------------------------------------------
 
-!    !--------------------------------------------------------------------------
-!#ifdef _SEWERGEMSENGINECOUPLER_
-!    subroutine SCSCNRunOffModel
-!    
-!        !Arguments-------------------------------------------------------------
-!    
-!        !Local-----------------------------------------------------------------
-!        integer                                     :: I, J
-!    
-!        integer                                     :: Chunk
-!        
-!        real                                        :: previousInDayRain, rain, qNew, rain_m
-!        real                                        :: qInTimeStep, FractionOfSimTime, Infiltration
-!        
-!        integer                                     :: STAT_CALL
-!        
-!        !Begin-----------------------------------------------------------------
-!        
-!        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
-!        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel_1")
-!        CHUNK = ChunkJ
-!        
-!        Me%ConstantCurveNumber = .True.
-!        
-!        if (Me%CurrentTime > Me%SCSCNRunOffModel%NextRainAccStart) then
-!            Me%SCSCNRunOffModel%NextRainAccStart = Me%CurrentTime + 86400
-!                    
-!            !$OMP PARALLEL PRIVATE(I,J)
-!            !$OMP DO SCHEDULE(DYNAMIC)
-!            do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-!            do I = Me%WorkSize%ILB, Me%WorkSize%IUB
-!                
-!                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2)
-!                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3)
-!                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4)
-!                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) = Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
-!                Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5) = Me%SCSCNRunOffModel%DailyAccRain (i, j)
-!                    
-!                Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j) =      &
-!                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 1) +    &
-!                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 2) +    &
-!                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 3) +    &
-!                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 4) +    &
-!                    Me%SCSCNRunOffModel%Last5DaysAccRain (i, j, 5)
-!                    
-!                Me%SCSCNRunOffModel%DailyAccRain (i, j) = 0.0
-!            
-!            enddo
-!            enddo
-!            !$OMP END DO NOWAIT
-!            !$OMP END PARALLEL            
-!        endif
-!        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel_1")
-!        if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel_2")
-!        
-!        FractionOfSimTime = Me%CurrentDT / Me%SimulationTime
-!        
-!        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep, Infiltration)
-!        !$OMP DO SCHEDULE(DYNAMIC)
-!        do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-!        do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
-!            if (Me%CellHasRain(i,j)) then
-!                !       mm        =                mm
-!                previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
-!                    
-!                rain_m = Me%ThroughFall (i, j)
-!                    
-!                !mm  =              m                  * mm/m
-!                rain = rain_m * 1000.0
-!                !               mm                 =                 mm                 +  mm
-!                Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
-!        
-!                !mm  =        mm         +                     mm
-!                Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
-!                                                    + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
-!                    
-!                    
-!                if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
-!                        
-!                    !mm         = (mm - mm)**2 / (mm + mm)
-!                    qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
-!                                    (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
-!                        
-!                    qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
-!                        
-!                    Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
-!                    !m/s = mm * 1E-3 m/mm / s
-!                    !InfiltrationField = ((rain - qInTimeStep) * 1E-3) / Me%CurrentDT
-!                    !Output mm/h = mm * 1E-3 m/mm / s * 3600 s/hour
-!                    Me%InfiltrationRate (i, j) = (((rain - qInTimeStep) * 1E-3) / Me%CurrentDT) * 3600000.0
-!                        
-!                else
-!                    !m/s
-!                    Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
-!                endif
-!                
-!                Infiltration = Me%InfiltrationRate(i, j) *     &
-!                                                (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * Me%CurrentDT / 3600000.0
-!                !m - Accumulated Infiltration of the entite area
-!                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
-!                
-!                !m                            = m - mm/hour * s / s/hour / mm/m
-!                Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
-!                  
-!            else
-!                !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
-!                Me%InfiltrationRate (i, j)    =  0.0
-!            endif
-!            
-!        enddo
-!        enddo
-!        !$OMP END DO NOWAIT
-!        !$OMP END PARALLEL
-!        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel_2")
-!        if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
-!        
-!    end subroutine SCSCNRunOffModel
-!#endif _SEWERGEMSENGINECOUPLER_    
 !    !--------------------------------------------------------------------------
 
 #ifndef _SEWERGEMSENGINECOUPLER_
@@ -8374,9 +8237,11 @@ cd0:    if (Exist) then
         integer                                     :: STAT_CALL
         
         !Update Runoff WaterColumns and level
-        call ActualizeWaterColumn_RunOff (ObjRunOffID = Me%ObjRunoff, STAT = STAT_CALL)        
-        if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'        
-
+        if (.not. Me%RunOffUsingFVS) then
+            call ActualizeWaterColumn_RunOff (ObjRunOffID = Me%ObjRunoff, STAT = STAT_CALL)        
+            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'
+        endif
+        
     end subroutine ActualizeWaterColumn
     
     !--------------------------------------------------------------------------
