@@ -9024,7 +9024,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real                    :: momentumU, momentumV, Friction_Coef, tau_u, tau_v  !> primitive quantities - water column and velocities
     integer                 :: ILB, IUB, JLB, JUB        !> Grid cell counts
     integer                 :: i, j                      !> Iterators
-    real                    :: h_treshold                !> Depth threshold to desingularize velocity computation
+    real                    :: h_treshold, h_treshold_friction   !> Depth threshold to desingularize velocity computation
     real                    :: velMod, aux1, aux2       !> velocity modulus
     integer                 :: CHUNK
     !Begin----------------------------------------------------------------------------------------------
@@ -9034,6 +9034,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
     
     h_treshold = Me%MinimumWaterColumn
+    h_treshold_friction = h_treshold * 0.1
     
     Dt = Me%ExtVar%DT
     
@@ -9096,28 +9097,26 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                 !----------------------------------------------Friction source terms-----------------------------------------
                 
-                if (Me%ComputeFriction == 1) then
-                    if ( velMod .gt. AlmostZero )then     !only to valid cells (non-nill velocity and considerable water height)
-                        if (waterColumn .gt. 0.1 * h_treshold) then
+                if ( velMod .gt. AlmostZero )then     !only to valid cells (non-nill velocity and considerable water height)
+                    if (waterColumn .gt. h_treshold_friction) then
                             
-                            Friction_Coef = FrictionCoefficient(waterColumn, 1/Me%OverlandCoefficient(i,j))
+                        Friction_Coef = Gravity * waterColumn**(1./3.)/(1/Me%OverlandCoefficient(i,j)**(2.0)) !Strickler
                     
-                            tau_u = Bed_Shear(velocityU, velMod, Friction_Coef)
-                            tau_v = Bed_Shear(velocityV, velMod, Friction_Coef)
+                        tau_u = 1000.0 * Friction_Coef * velocityU * velMod !abs made on update
+                        tau_v = 1000.0 * Friction_Coef * velocityV * velMod !abs made on update
                     
-                            !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
-                            velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
-                            velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
-                        end if
+                        !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
+                        velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
+                        velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
                     end if
+                end if
         
-                    velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
-                    if (velMod .lt. AlmostZero)then !Filtering numerical noise
-                        velocityU = 0.0
-                        velocityV = 0.0
-                        velMod = 0.0
-                    end if 
-                endif
+                velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
+                if (velMod .lt. AlmostZero)then !Filtering numerical noise
+                    velocityU = 0.0
+                    velocityV = 0.0
+                    velMod = 0.0
+                end if
             
                 !Update velocities
                 Me%VelModFaceU(i, j) = velocityU
@@ -9134,10 +9133,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     end do
     !$OMP END DO
     !$OMP END PARALLEL
-    
-    !nullify normal velocity for obstacles
-    !Obstacles and BC velocity corrections
-    call NullifyVelocitesAtObstacles
     
     if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeStateFVS_CG")
     
@@ -9157,7 +9152,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real                    :: momentumU, momentumV, Friction_Coef, tau_u, tau_v, cellArea     !> primitive quantities - water column and velocities
     integer                 :: ILB, IUB, JLB, JUB        !> Grid cell counts
     integer                 :: i, j                      !> Iterators
-    real                    :: h_treshold                !> Depth threshold to desingularize velocity computation
+    real                    :: h_treshold, h_treshold_friction   !> Depth threshold to desingularize velocity computation
     real                    :: velMod, aux2       !> velocity modulus
     integer                 :: CHUNK
     !Begin----------------------------------------------------------------------------------------------
@@ -9169,6 +9164,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     Dt = Me%ExtVar%DT
     
     h_treshold = Me%MinimumWaterColumn
+    h_treshold_friction = Me%MinimumWaterColumn * 0.1
 
     ILB = Me%WorkSize%ILB
     IUB = Me%WorkSize%IUB
@@ -9224,28 +9220,26 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 end if
 
                 !----------------------------------------------Friction source terms-----------------------------------------
-                if (Me%ComputeFriction == 1) then
-                    if ( velMod .gt. AlmostZero )then     !only to valid cells (non-nill velocity and considerable water height)
-                        if (waterColumn .gt. 0.1 * h_treshold) then
-                            ! TODO: Mudar isto para usar o Manning como usualmente.
-                            Friction_Coef = FrictionCoefficient(waterColumn, 1/Me%OverlandCoefficient(i,j))
+                if ( velMod .gt. AlmostZero )then     !only to valid cells (non-nill velocity and considerable water height)
+                    if (waterColumn .gt. h_treshold_friction) then
+                        ! TODO: Mudar isto para usar o Manning como usualmente.
+                        Friction_Coef = Gravity * waterColumn**(1./3.)/(1/Me%OverlandCoefficient(i,j)**(2.0)) !Strickler
                     
-                            tau_u = Bed_Shear(velocityU, velMod, Friction_Coef)
-                            tau_v = Bed_Shear(velocityV, velMod, Friction_Coef)
+                        tau_u = 1000.0 * Friction_Coef * velocityU * velMod !abs made on update
+                        tau_v = 1000.0 * Friction_Coef * velocityV * velMod !abs made on update
                     
-                            !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
-                            velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
-                            velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
-                        end if
+                        !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
+                        velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
+                        velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
                     end if
+                end if
         
-                    velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
-                    if (velMod .lt. AlmostZero)then !Filtering numerical noise
-                        velocityU = 0.0
-                        velocityV = 0.0
-                        velMod = 0.0
-                    end if 
-                endif
+                velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
+                if (velMod .lt. AlmostZero)then !Filtering numerical noise
+                    velocityU = 0.0
+                    velocityV = 0.0
+                    velMod = 0.0
+                end if
             
                 !Update velocities
                 Me%VelModFaceU(i, j) = velocityU
@@ -9642,35 +9636,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG")
         
     end subroutine UpdateFVSOutputVariables_VG
-    
-    !---------------------------------------------------------------------------
-    
-	
-	real function FrictionCoefficient(waterColumn, K_Strickler)       
-        real, intent(IN) :: waterColumn
-        real, intent(IN) :: K_Strickler
-        
-        !Da solucao do ricardo, que usa o coefficiente de Strickler em vez do de manning.
-        FrictionCoefficient = Gravity*waterColumn**(1./3.)/(K_Strickler**(2.0)) !Strickler
-        
-    end function FrictionCoefficient
 
-    !____________________________________________________________________________________
-    
-    
-	real function Bed_Shear(vel, velMod, FrictionCoeff)
-    !Argumnets--------------------------------------------------------------
-		real, intent(IN)  :: vel, velMod, FrictionCoeff
-    !Begin------------------------------------------------------------------
-		if ( abs(vel) .lt. 1.d-8) then
-			Bed_Shear = 0.0
-        else
-			!Bed_Shear = rhow*FrictionCoeff*(vel)*velMod
-            !  Pa     =  kg/m3  *   []       * m/s * m/s
-			Bed_Shear = 1000.0 * FrictionCoeff * vel * velMod !abs made on update
-		endif		
-    end function Bed_Shear
-    
     !____________________________________________________________________________________
     
     subroutine InterpolateRiverLevelToCells
