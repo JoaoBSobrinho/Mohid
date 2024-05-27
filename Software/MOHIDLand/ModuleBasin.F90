@@ -6332,8 +6332,10 @@ cd0:    if (Exist) then
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL            
         endif
-            
-        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep)
+        
+        aux = Me%CurrentDT / 3600000.0
+        
+        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep, Infiltration)
         !$OMP DO SCHEDULE(DYNAMIC)
         do J = Me%WorkSize%JLB, Me%WorkSize%JUB
         do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
@@ -6370,7 +6372,16 @@ cd0:    if (Exist) then
                     !Output mm/h = m/s * 3600000 (mm/m * s/hour)
                     Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
                 endif
-                  
+                
+                Infiltration = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux
+                !m - Accumulated Infiltration of the entite area
+                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
+                
+                if (.not. Me%RunOffUsingFVS) then
+                    ! TODO : Need to update runoff code to apply this inside it, instead of doing it here.
+                    !m                            = m - mm/hour * s / s/hour / mm/m
+                    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
+                endif
             else
                 !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
                 Me%InfiltrationRate (i, j)    =  0.0
@@ -6382,28 +6393,9 @@ cd0:    if (Exist) then
         !$OMP END PARALLEL
         
         if (Me%RunOffUsingFVS) then
+            
             call SetRunOffInfiltration(Me%ObjRunoff, Me%InfiltrationRate, Me%SCSCNRunOffModel%ImpFrac%Field, &
                                        Me%CellHasRain, STAT = STAT_CALL)
-        else
-            
-            aux = Me%CurrentDT / 3600000.0
-            !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, Infiltration)
-            !$OMP DO SCHEDULE(DYNAMIC)
-            do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do I = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%CellHasRain(i,j) == 1) then
-                    !m
-                    Infiltration = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux
-                    !m - Accumulated Infiltration of the entite area
-                    Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
-                
-                    !m                            = m - mm/hour * s / s/hour / mm/m
-                    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
-                endif
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
-            !$OMP END PARALLEL
         endif
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         

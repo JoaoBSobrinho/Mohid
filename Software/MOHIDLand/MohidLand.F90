@@ -207,7 +207,6 @@ program MohidLand
 
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_CALL
-        real                                        :: NewDt
 
         if (ConfigByArgument) then
             call SetInputFullPath (DataFile)

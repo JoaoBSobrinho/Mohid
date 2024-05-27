@@ -8257,7 +8257,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     integer :: i,j, k, q, c                         !> iterators
     integer, dimension(2,2) :: strideJ              !> stencil
     integer :: ILB, IUB, JLB, JUB                   !> Grid cell counts
-    integer :: i_North, j_East                      !> Grid cell counts
+    integer :: i_North, j_East, a                      !> Grid cell counts
     real :: lenght_act, min_area, distance          !> local variables
     real :: dz                                      !> local variables
     real :: vel_normal                              !> local variables
@@ -8284,7 +8284,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     JUB = Me%WorkSize%JUB
 
     dt = 60.0
-
+    a = 0
     !allocate(element_flux(IUB-ILB, JUB-JLB, 3))
     Me%FVS%element_flux = 0.0
     strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
@@ -8488,24 +8488,44 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         depth_NE_3s = 0.0
 
                         do k=1, 3
+                            
                             !if (abs(lambda(k)) > 0.0) dt = min(dt, min_area / (lenght_act * abs(lambda(k))))
-                            if (abs(lambda(k)) > 0.0) dt = min(dt, distance / abs(lambda(k)))
+                            if (abs(lambda(k)) > AlmostZero) then
+                                
+                                if (distance / abs(lambda(k)) < 0.8) then
+                                    a = 1
+                                endif
+                                dt = min(dt, distance / abs(lambda(k)))
+                            endif
+                            
+                            
+                            if (dt < 0.55) then
+                                a = 1
+                            endif
+                            
                             !only "entering" caracteristics contribute to the stability region. Velocity > 0 and > celerity
                         end do
 
-                        if ( abs(bottom) > 0.0) then
+                        if ( abs(bottom) > AlmostZero) then
                             if ( lambda(1) * lambda(3) < 0.0 ) then !Subcritical Flow
                                 depth_1s    = depth    + alpha(1) - beta(1) / lambda(1) !intermediate upstream height
                                 depth_NE_3s = depth_NE - alpha(3) + beta(3) / lambda(3) !intermediate downstream height
+                                
                                 if ( depth_NE > 0.0 ) then
-                                    if ( depth_NE_3s < 0.0 ) then
+                                    if ( depth_NE_3s < AllmostZeroNegative ) then
                                         aux1 = depth_NE / (2.0 * (depth_NE - depth_NE_3s))
+                                        if (aux1 * distance / abs(lambda(3)) < 0.8) then
+                                            a = 1
+                                        endif
                                         dt   = min(dt, aux1 * distance / abs(lambda(3)))     !correcting the time step
                                     end if
                                 end if
                                 if ( depth > 0.0 ) then
-                                    if ( depth_1s < 0.0 ) then
+                                    if ( depth_1s < AllmostZeroNegative ) then
                                         aux1 = depth / (2.0 * (depth - depth_1s))
+                                        if (aux1 * distance / abs(lambda(1)) < 0.8) then
+                                            a = 1
+                                        endif
                                         dt   = min(dt, aux1 * distance / abs(lambda(1)))     !correcting the time step
                                     end if
                                 end if
@@ -8516,7 +8536,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         wettingDrying = .false.
 
                         if ( depth_NE == 0.0 ) then
-                            if ( depth_NE_3s < 0.0 ) then !Wetting case
+                            if ( depth_NE_3s < AllmostZeroNegative ) then !Wetting case
                                 !There was no water in the cell, but now there incoming flow
                                 do k=1, 3
                                     flux_left(1) = flux_left(1) + (lambda(k) * alpha(k) - beta(k)) * eig(k,1)
@@ -8528,7 +8548,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         end if
 
                         if ( depth == 0.0 ) then
-                            if ( depth_1s < 0.0 ) then  !drying case
+                            if ( depth_1s < AllmostZeroNegative ) then  !drying case
                                 do k=1,3
                                     flux_right(1) = flux_right(1) + (lambda(k) * alpha(k) - beta(k)) * eig(k,1)
                                     flux_right(1) = flux_right(1) + (lambda_aux(k) * alpha(k)) * eig(k,1)
@@ -15584,8 +15604,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             !or add more up to boundary level if boundary level higher
                             GridCellArea = Me%ExtVar%GridCellArea(i, j)
                             !m3/s = m * m2 / s
-                            !MaxFlow = - minHeight *  GridCellArea / Me%ExtVar%DT
-                            MaxFlow = - Me%myWaterVolume(i, j) / Me%ExtVar%DT
+                            MaxFlow = - minHeight *  GridCellArea / Me%ExtVar%DT
+                            !MaxFlow = - Me%myWaterVolume(i, j) / Me%ExtVar%DT
                                 
                             if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
                                 Me%iFlowBoundary(i, j) = MaxFlow
