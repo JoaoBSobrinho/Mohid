@@ -705,7 +705,7 @@ Module ModuleBasin
 
         !Arguments---------------------------------------------------------------
         integer                                         :: ObjBasinID 
-        integer                                         :: ObjTime 
+        integer                                         :: ObjTime
         character(len=*)                                :: ModelName
         logical                                         :: StopOnBathymetryChange
         integer, optional, intent(OUT)                  :: STAT     
@@ -912,6 +912,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             if (VariableDT) then 
                 call ComputeNextDT(Me%CurrentDT)
+                
+                call ActualizeDT(TimeID = Me%ObjTime, DT = Me%CurrentDT, STAT = STAT_CALL)     
+                if (STAT_CALL /= SUCCESS_) stop 'ModuleBasin - ConstructBasin - ERR100'
             endif
             
             !UnGets ExternalVars
@@ -3346,35 +3349,6 @@ i1:         if (CoordON) then
             endif              
             
         endif
-
-!        !Constructs RunOff
-!        if (Me%Coupled%RunOff) then
-!            call ConstructRunOff        (ModelName          = Me%ModelName,              &                 
-!                                         RunOffID           = Me%ObjRunOff,              &
-!                                         ComputeTimeID      = Me%ObjTime,                &
-!                                         HorizontalGridID   = Me%ObjHorizontalGrid,      &
-!                                         HorizontalMapID    = Me%ObjHorizontalMap,       &
-!                                         GridDataID         = Me%ObjGridData,            &
-!                                         BasinGeometryID    = Me%ObjBasinGeometry,       &
-!                                         DrainageNetworkID  = Me%ObjDrainageNetwork,     &
-!                                         STAT               = STAT_CALL)
-!            if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR05'
-!
-!            !Constructs RunoffProperties 
-!            if (Me%Coupled%RunoffProperties) then
-!                call ConstructRunoffProperties        (ObjRunoffPropertiesID      = Me%ObjRunoffProperties,       &
-!                                                       ComputeTimeID              = Me%ObjTime,                   &
-!                                                       HorizontalGridID           = Me%ObjHorizontalGrid,         &
-!                                                       HorizontalMapID            = Me%ObjHorizontalMap,          &
-!                                                       BasinGeometryID            = Me%ObjBasinGeometry,          &
-!                                                       RunoffID                   = Me%ObjRunoff,                 &
-!                                                       GeometryID                 = Me%ObjGeometryID,             &
-!                                                       STAT                       = STAT_CALL)
-!                if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR07'
-!            endif
-!            
-!        endif
-
         
         !Constructs PorousMedia
         if (Me%Coupled%PorousMedia) then
@@ -4652,7 +4626,7 @@ cd0:    if (Exist) then
 
     !--------------------------------------------------------------------------
 #ifndef _SEWERGEMSENGINECOUPLER_
-    subroutine # (PrecipitationFlux, IrrigationFlux)
+    subroutine DividePrecipitation (PrecipitationFlux, IrrigationFlux)
 
         !Arguments-------------------------------------------------------------
         real, dimension(:, :), pointer                       :: PrecipitationFlux
@@ -6408,7 +6382,8 @@ cd0:    if (Exist) then
         !$OMP END PARALLEL
         
         if (Me%RunOffUsingFVS) then
-            call SetRunOffInfiltration(Me%ObjRunoff, Me%InfiltrationRate, Me%SCSCNRunOffModel%ImpFrac%Field, STAT = STAT_CALL)
+            call SetRunOffInfiltration(Me%ObjRunoff, Me%InfiltrationRate, Me%SCSCNRunOffModel%ImpFrac%Field, &
+                                       Me%CellHasRain, STAT = STAT_CALL)
         else
             
             aux = Me%CurrentDT / 3600000.0
@@ -11324,11 +11299,12 @@ if5 :       if (PropertyX%ID%IDNumber==PropertyXIDNumber) then
 
     !--------------------------------------------------------------------------
 
-    subroutine ReadLockExternalVar(LockToWhichModules, OptionsType)
+    subroutine ReadLockExternalVar(LockToWhichModules, OptionsType)!, GetTimeStep)
         
         !Arguments-------------------------------------------------------------
         character (Len = StringLength)              :: LockToWhichModules
         character (Len = StringLength), optional    :: OptionsType
+        !logical, optional, intent(IN)               :: GetTimeStep
 
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_CALL
@@ -11360,9 +11336,10 @@ if5 :       if (PropertyX%ID%IDNumber==PropertyXIDNumber) then
             call GetComputeCurrentTime  (Me%ObjTime, Me%CurrentTime, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadLockExternalVar - ModuleBasin - ERR040'
 
-            call GetComputeTimeStep     (Me%ObjTime, Me%CurrentDT, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ReadLockExternalVar - ModuleBasin - ERR050'
-
+            !if (GetTimeStep) then
+                call GetComputeTimeStep     (Me%ObjTime, Me%CurrentDT, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'ReadLockExternalVar - ModuleBasin - ERR050'
+            !endif
             !Gets Basin Points
             call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadLockExternalVar - ModuleBasin - ERR060'

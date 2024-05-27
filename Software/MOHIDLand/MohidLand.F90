@@ -207,6 +207,7 @@ program MohidLand
 
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_CALL
+        real                                        :: NewDt
 
         if (ConfigByArgument) then
             call SetInputFullPath (DataFile)
@@ -234,9 +235,12 @@ program MohidLand
         
         !Constructs Basin
         call ConstructBasin   (ObjBasinID = ObjBasin, ObjTime = ObjComputeTime, ModelName = ModelName, &
-                               StopOnBathymetryChange = StopOnBathymetryChange, STAT = STAT_CALL)       
-
-
+                               StopOnBathymetryChange = StopOnBathymetryChange, STAT = STAT_CALL)
+        
+        !Basin updated module time's DT with runoff DT. Now we need to update MohidLand DT
+        call GetComputeTimeStep (ObjComputeTime, DT, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ConstructMohidLand - MohidLand - ERR00'
+        
         ModelConstructed = .true.
 
 

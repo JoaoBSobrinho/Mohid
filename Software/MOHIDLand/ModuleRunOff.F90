@@ -868,6 +868,7 @@ Module ModuleRunOff
         logical                                     :: ChannelHasTwoGridPoints  = .false.
         logical                                     :: LimitToCriticalFlow      = .true.
         integer                                     :: FaceWaterColumn          = WCMaxBottom_
+        integer                                     :: ComputeFriction          = 1
         integer                                     :: OverlandChannelInteractionMethod = null_int
 
         type(T_Converge)                            :: CV !Convergence options
@@ -1425,6 +1426,14 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
         endif
         
+        call GetData(Me%ComputeFriction,                                    &
+                     Me%ObjEnterData, iflag,                                &  
+                     keyword      = 'COMPUTE_FRICTION',                    &
+                     ClientModule = 'ModuleRunOff',                         &
+                     SearchType   = FromFile,                               &
+                     Default      = 1,                           &
+                     STAT         = STAT_CALL)                                  
+        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR171'
         
 
         !Method for computing water column in the face (1 - Using max level and max bottom; 
@@ -5409,7 +5418,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         endif
         
         if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
-            allocate(Me%FVS%element_flux(Me%WorkSize%IUB-Me%WorkSize%ILB, Me%WorkSize%JUB-Me%WorkSize%JLB, 3))
+            allocate(Me%FVS%element_flux(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB, 3))
             Me%FVS%element_flux = 0.0
         endif
         
@@ -7831,12 +7840,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     end subroutine SetRunOffRainFall
     
     !--------------------------------------------------------------------------
-    subroutine SetRunOffInfiltration (ObjRunOffID, InfiltrationRate, ImpFrac, STAT)
+    subroutine SetRunOffInfiltration (ObjRunOffID, InfiltrationRate, ImpFrac, CellHasRain, STAT)
 
         !Arguments-------------------------------------------------------------
         integer, intent(IN)                           :: ObjRunOffID
         real(8), dimension(:,:), pointer, intent(IN)  :: InfiltrationRate
         real, dimension(:,:), pointer, intent(IN)     :: ImpFrac
+        integer, dimension(:,:), pointer, intent(IN)  :: CellHasRain
         integer, intent(OUT), optional                :: STAT
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_, ready_
@@ -7850,6 +7860,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             Me%InfiltrationRate => InfiltrationRate
             Me%ImpFrac          => ImpFrac
+            if (.not. associated(Me%CellHasRain)) Me%CellHasRain => CellHasRain
             
             STAT_ = SUCCESS_
         else               
@@ -7968,7 +7979,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
                     
-                call ComputeStateFVS(Me%ExtVar%DT) 
+                call ComputeStateFVS(Me%ExtVar%DT)
                 
                 !Update discharges
                 if (Me%Discharges) call ModifyWaterDischarges  (Me%ExtVar%DT)
@@ -8287,30 +8298,35 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             do c = 1, size(strideJ,1)
                 !Compute fluxes of east and north cell faces
                 
-                i_North = i + strideJ(c, 1)
-                j_East = j + strideJ(c, 2)
+                j_East = j + strideJ(c, 1)
+                i_North = i + strideJ(c, 2)
                 
                 if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
                     
-                    velU      = Me%VelModFaceU  (i      , j     ) ! velocity at the center of the cell.
-                    velU_NE   = Me%VelModFaceU  (i_North, j_East)
-                    velV      = Me%VelModFaceV  (i      , j     )
-                    velV_NE   = Me%VelModFaceV  (i_North, j_East)
                     depth     = Me%myWaterColumn(i      , j     )
                     depth_NE  = Me%myWaterColumn(i_North, j_East)
 
-                    bottom    = Me%ExtVar%Topography(i      , j     )
-                    bottom_NE = Me%ExtVar%Topography(i_North, j_East)
-
-                    cellArea    = Me%ExtVar%GridCellArea(i      , j     )
-                    cellArea_NE = Me%ExtVar%GridCellArea(i_North, j_East)
-                
-                    lenght_act = Me%ExtVar%DXX(i, j) !TODO : this is not always DXX!
-                    min_area = min(cellArea, cellArea_NE)
-                
-                    distance = min_area / lenght_act
-
                     if (depth + depth_NE >= AlmostZero) then !wet cell
+                        
+                        bottom    = Me%ExtVar%Topography(i      , j     )
+                        bottom_NE = Me%ExtVar%Topography(i_North, j_East)
+                        
+                        waterLevel    = depth    + bottom
+                        waterLevel_NE = depth_NE + bottom_NE
+                        
+                        velU      = Me%VelModFaceU  (i      , j     ) ! velocity at the center of the cell.
+                        velU_NE   = Me%VelModFaceU  (i_North, j_East)
+                        velV      = Me%VelModFaceV  (i      , j     )
+                        velV_NE   = Me%VelModFaceV  (i_North, j_East)
+                        
+                        cellArea    = Me%ExtVar%GridCellArea(i      , j     )
+                        cellArea_NE = Me%ExtVar%GridCellArea(i_North, j_East)
+                
+                        lenght_act = Me%ExtVar%DXX(i, j) !TODO : this is not always DXX!
+                        !lenght_act = 2 ! isosceles triangle with 2m of side -> area = 2
+                        min_area = min(cellArea, cellArea_NE)
+                
+                        distance = min_area / lenght_act
                         
                         !Aproximate variables (Roe, 1981)
                         sqrt_depth = sqrt(depth)
@@ -8389,10 +8405,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         alpha(3) = (depth_NE - depth) / 2 + 1 / (2 * celerity) * (aux1 * nx + aux2 * ny)
 
                         !Wave strengths - bottom terms - Pressure source
-                        !Pag30 Canelas
+                        !Pag34 Canelas
                         dz = bottom_NE - bottom
-                        waterLevel    = depth    + bottom
-                        waterLevel_NE = depth_NE + bottom_NE
 
                         !m3/s2   = m/s2     *    m    +   m            * m
                         bottom1 = -Gravity * ((depth + depth_NE) / 2) * dz !initial trust term
@@ -8406,14 +8420,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                         if ( dz < 0.0 ) then
                             !Same check for the North or East cell
-                            if ( waterLevel_NE < bottom ) dz_bar = -depth_NE      !See Murillo, 2010
+                            if ( waterLevel_NE < bottom ) dz_bar = -depth_NE      !See Murillo, 2010 !CORRIGIDO - ERA : -DEPTH_NE
                         end if
 
                         aux1 = depth_NE
-                        if ( dz >= 0 ) aux1 =  depth !using the highest water depth (at least in theory should be)
+                        if ( dz >= 0 ) aux1 =  depth !Eq3.47 Canelas
 
                         !m3/s2   = m/s2     *    m    +   m            * m
-                        bottom2 = -Gravity * (aux1 - abs(dz_bar) / 2) * dz_bar !alternative trust term
+                        bottom2 = -Gravity * (aux1 - abs(dz_bar) / 2) * dz_bar !alternative trust term !CORRIGIDO - ERA: abs(dz_bar)
                         bottom = bottom2
 
                         if ( (waterLevel_NE - waterLevel) * dz >= 0.0 ) then
@@ -8551,11 +8565,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         end if
 
                         do q=1, 3
-                            Me%FVS%element_flux(i, j, q) = Me%FVS%element_flux(i, j, q) &
-                                                            + flux_left (q) * (- lenght_act / cellArea)
-                        
-                            Me%FVS%element_flux(i_North, j_East, q) = Me%FVS%element_flux(i_North, j_East, q) &
-                                                                        + flux_right(q) * (- lenght_act / cellArea_NE)
+                            if (abs(flux_left(q)) > AlmostZero) then !remove machine error
+                                Me%FVS%element_flux(i, j, q) = Me%FVS%element_flux(i, j, q) &
+                                                                + flux_left (q) * (- lenght_act / cellArea)*0.5
+                            endif
+                            if (abs(flux_right(q)) > AlmostZero) then !remove machine error
+                                Me%FVS%element_flux(i_North, j_East, q) = Me%FVS%element_flux(i_North, j_East, q) &
+                                                                            + flux_right(q) * (- lenght_act / cellArea_NE)*0.5
+                            endif
                         end do
 
                     end if !wet cells
@@ -8565,7 +8582,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     end do
     end do
 
-    Me%CV%NextDT = dt
+    Me%CV%NextDT = dt * Me%CV%MaxCourant
     
     !Time step depends on StormWaterModel (will probably need to do some flux integration to avoid this limitation)
     if (Me%StormWaterModel) then
@@ -8588,9 +8605,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real                    :: waterColumn, waterColumn_new, velocityU, velocityV     !> primitive quantities - water column and velocities
     real                    :: momentumU, momentumV, Friction_Coef, tau_u, tau_v, cellArea     !> primitive quantities - water column and velocities
     integer                 :: ILB, IUB, JLB, JUB        !> Grid cell counts
-    integer                 :: i, j                      !> Iterators
+    integer                 :: i, j, n                      !> Iterators
     real                    :: h_treshold                !> Depth threshold to desingularize velocity computation
-    real                    :: velMod                    !> velocity modulus
+    real                    :: velMod, WaterLevelBoundaryValue       !> velocity modulus
     !Begin----------------------------------------------------------------------------------------------
     h_treshold = Me%MinimumWaterColumn
 
@@ -8620,6 +8637,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 momentumU       = momentumU       + Me%FVS%element_flux(i, j, 2) * Dt
                 momentumV       = momentumV       + Me%FVS%element_flux(i, j, 3) * Dt
 
+                if (waterColumn_new < AllmostZeroNegative) then
+                    write(*,*) "Valor negativo de coluna de agua. I, J, valor = ", i, j, waterColumn, waterColumn_new
+                    stop 'fodeu'
+                endif
+                
                 if (abs(waterColumn_new) > AlmostZero) then !Acceptable flow depth, above machine precision
                     waterColumn = waterColumn_new
                     velocityU = momentumU / waterColumn_new
@@ -8646,28 +8668,28 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
                 !inclui o if abaixo para só calcular a friccao se houver água na célula
                 !if (primitiveVar(1) > 0) then
-            
-                if ( velMod .gt. 1.d-12 )then     !only to valid cells (non-nill velocity and considerable water height)
-                    if (waterColumn .gt. 0.1 * h_treshold) then
-                        ! TODO: Mudar isto para usar o Manning como usualmente.
-                        Friction_Coef = FrictionCoefficient(waterColumn, 1/Me%OverlandCoefficient(i,j))
+                if (Me%ComputeFriction == 1) then
+                    if ( velMod .gt. 1.d-12 )then     !only to valid cells (non-nill velocity and considerable water height)
+                        if (waterColumn .gt. 0.1 * h_treshold) then
+                            ! TODO: Mudar isto para usar o Manning como usualmente.
+                            Friction_Coef = FrictionCoefficient(waterColumn, 1/Me%OverlandCoefficient(i,j))
                     
-                        tau_u = Bed_Shear(velocityU, velMod, Friction_Coef)
-                        tau_v = Bed_Shear(velocityV, velMod, Friction_Coef)
+                            tau_u = Bed_Shear(velocityU, velMod, Friction_Coef)
+                            tau_v = Bed_Shear(velocityV, velMod, Friction_Coef)
                     
-                        !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
-                        velocityU = sign(max(abs(velocityU) - abs((dt/2)*(1/1000.0)*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
-                        velocityV = sign(max(abs(velocityV) - abs((dt/2)*(1/1000.0)*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
+                            !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
+                            velocityU = sign(max(abs(velocityU) - abs((dt/2)*(1/1000.0)*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
+                            velocityV = sign(max(abs(velocityV) - abs((dt/2)*(1/1000.0)*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
+                        end if
                     end if
-                end if
         
-                velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
-                if (velMod .lt. 1.d-12)then !Filtering numerical noise
-                    velocityU = 0.0
-                    velocityV = 0.0
-                    velMod = 0.0
-                end if 
-            
+                    velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
+                    if (velMod .lt. 1.d-12)then !Filtering numerical noise
+                        velocityU = 0.0
+                        velocityV = 0.0
+                        velMod = 0.0
+                    end if 
+                endif
             
                 !Update velocities
                 Me%VelModFaceU(i, j) = velocityU
@@ -8687,22 +8709,28 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !Obstacles and BC velocity corrections
     do j = JLB, JUB
     do i = ILB, IUB
-        if (Me%ExtVar%BasinPoints(i, j) == 1 .and. Me%ExtVar%BasinPoints(i, j+1) == 1) then
-            if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j+1)) then
-                if ( Me%VelModFaceU(i, j) > 0.0) then
-                    Me%VelModFaceU(i, j) = 0.0
-                endif
+        if (abs(Me%VelModFaceU(i, j)) > AlmostZero) then
+            if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j+1) .OR. &
+                Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j-1)) then
+                Me%VelModFaceU(i, j) = 0.0
             endif
+            if (Me%ExtVar%BasinPoints(i, j+1) == 0 .OR. Me%ExtVar%BasinPoints(i, j-1) == 0) then
+                !found boundary and there is a wall that does not allow flow -> nulify velocity
+                Me%VelModFaceU(i, j) = 0.0
+            endif    
         endif
-        if (Me%ExtVar%BasinPoints(i, j) == 1 .and. Me%ExtVar%BasinPoints(i+1, j) == 1) then
-            if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i+1, j)) then
-                if ( Me%VelModFaceV(i, j) > 0.0) then
-                    Me%VelModFaceV(i, j) = 0.0
-                endif
+        if (abs(Me%VelModFaceV(i, j)) > AlmostZero) then    
+            if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i+1, j) .OR. &
+                Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i-1, j)) then
+                Me%VelModFaceV(i, j) = 0.0
+            endif
+            if (Me%ExtVar%BasinPoints(i+1, j) == 0 .OR. Me%ExtVar%BasinPoints(i-1, j) == 0) then
+                !found boundary and there is a wall that does not allow flow -> nulify velocity
+                Me%VelModFaceV(i, j) = 0.0
             endif
         endif
     enddo
-    enddo    
+    enddo          
 
     end subroutine ComputeStateFVS
     
@@ -9344,7 +9372,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
 
                     Me%lFlowDischarge(i, j)     = Me%lFlowDischarge(i, j) + AuxFlowIJ
-
+                    
+                    if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
+                        Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume + Me%lFlowDischarge(i, j) * LocalDT
+                    endif
                     !Updates Water Volume
                     Me%myWaterVolume(i, j)      = Me%myWaterVolume(i, j) + AuxFlowIJ * LocalDT
 
@@ -9479,6 +9510,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO
         endif
         !$OMP END PARALLEL
+        
+        nullify (Me%RainFall)
             
     end subroutine ModifyRainFall
     
@@ -9534,9 +9567,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO
         endif
-        
         !$OMP END PARALLEL
-            
+        
+        !nullify Me%CellHasRain only here and not in modify rain
+        nullify (Me%CellHasRain)
+        nullify (Me%InfiltrationRate)
+        nullify (Me%ImpFrac)
+        
     end subroutine ModifyInfiltration
     
     !--------------------------------------------------------------------------
@@ -10692,11 +10729,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Pressure
                 !m3/s             = s  * m/s2    * m2   * m/m
                 Pressure          = LocalDT * Gravity * Me%AreaU(i, j) * Slope
-                
-                Friction = LocalDT * Gravity * &
-                           Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
-                           (HydraulicRadius ** (4./3.)) 
-                
+                if (Me%ComputeFriction == 1) then
+                    Friction = LocalDT * Gravity * &
+                               Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
+                               (HydraulicRadius ** (4./3.)) 
+                endif
                 !Advection (may be limited to water column height)
                 Advection = 0.0
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
@@ -15560,7 +15597,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             !Updates Water Volume
                             Me%myWaterVolume (i, j) = max(Me%myWaterVolume (i, j) + dVol, 0.0)
 
-                            BoundaryFlowVolume     = BoundaryFlowVolume + dVol
+                            BoundaryFlowVolume     = BoundaryFlowVolume + dVol                            
 
                             if(dVol > 0.0)then
                                 TotalBoundaryInflowVolume    = TotalBoundaryInflowVolume + dVol
@@ -15583,8 +15620,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
         
-        Me%TotalBoundaryInflowVolume = TotalBoundaryInflowVolume
-        Me%TotalBoundaryOutflowVolume = TotalBoundaryOutflowVolume
+        Me%TotalBoundaryInflowVolume = Me%TotalBoundaryInflowVolume + TotalBoundaryInflowVolume
+        Me%TotalBoundaryOutflowVolume = Me%TotalBoundaryOutflowVolume + TotalBoundaryOutflowVolume
         Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + BoundaryFlowVolume
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ImposeBoundaryValue_1D")
@@ -15690,11 +15727,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterLevel (i, j) = max(WaterLevelBoundaryValue, Me%ExtVar%Topography (i, j))
 
                         !Updates Water Column
-                        Me%myWaterColumn(i, j) = Me%myWaterLevel (i, j) - Me%ExtVar%Topography (i, j) 
+                        Me%myWaterColumn(i, j) = Me%myWaterLevel (i, j) - Me%ExtVar%Topography (i, j)
+                        
+                        OldVolume              = Me%myWaterVolume(i, j)
+                        
+                        !m3 = m * m2
+                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
                     
                         !Updates Volume and BoundaryFlowVolume
-                        OldVolume              = Me%myWaterVolume(i, j)
-
                         dVol = Me%myWaterVolume(i, j) - OldVolume
 
                         if(dVol > 0.0)then
@@ -15703,11 +15743,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Me%TotalBoundaryOutflowVolume   = Me%TotalBoundaryOutflowVolume + dVol
                         endif
                     
-                        !m3 = m * m2
-                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-                    
                         !m3 = m3 + (m3 - m3)
-                        Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + (OldVolume - Me%myWaterVolume(i, j))
+                        !Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + (OldVolume - Me%myWaterVolume(i, j))
+                        Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + dVol
                     
                         !m3/s = m3 / s - always negative exiting runoff
                         Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
