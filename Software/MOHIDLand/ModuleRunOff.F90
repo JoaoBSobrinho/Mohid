@@ -8294,7 +8294,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real               :: cellFaceFactor            !>auxiliar
     integer            :: CHUNK                     !>ChunkSize   
     !Begin---------------------------------------------------------------------------------------
-
+    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFluxesFVS_CG")
     ILB = Me%WorkSize%ILB
     IUB = Me%WorkSize%IUB
     JLB = Me%WorkSize%JLB
@@ -8612,7 +8612,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             Me%CV%NextDT = Me%StormWaterModelDT            
         endif
     end if
-
+    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFluxesFVS_CG")
     end subroutine ComputeFluxesFVS_CG
     
     !---------------------------------------------------------------------------
@@ -9083,16 +9083,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         velocityV = sqrt(2.0)*momentumV/sqrt(waterColumn_new**4.0 + max(waterColumn_new**4.0, aux1)) !anyting goes - Kurganov-Petrova
                         !TODO : h_treshold*max(1.0,sqrt(2*cellArea) can be computed at the construct level
                     end if
+                    velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude
+                    if (velMod < AlmostZero)then !Filtering numerical noise
+                        velocityU = 0.0
+                        velocityV = 0.0
+                        velMod = 0.d0
+                    end if
                 else
                     waterColumn = Me%myWaterColumn(i, j) !Otherwize, small increments of rain will be ignored
                     velocityU = 0.0
                     velocityV = 0.0
-                end if
-                velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude
-                if (velMod < AlmostZero)then !Filtering numerical noise
-                    velocityU = 0.0
-                    velocityV = 0.0
-                    velMod = 0.d0
+                    velMod = 0.0
                 end if
 
                 !----------------------------------------------Friction source terms-----------------------------------------
@@ -9108,14 +9109,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
                         velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
                         velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
+                        
+                        velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
+                        if (velMod .lt. AlmostZero)then !Filtering numerical noise
+                            velocityU = 0.0
+                            velocityV = 0.0
+                            velMod = 0.0
+                        end if
                     end if
-                end if
-        
-                velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
-                if (velMod .lt. AlmostZero)then !Filtering numerical noise
-                    velocityU = 0.0
-                    velocityV = 0.0
-                    velMod = 0.0
                 end if
             
                 !Update velocities
@@ -10185,6 +10186,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: i, j
         integer                                     :: CHUNK
         !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyRainFall")
         CHUNK = ChunkJ
         !$OMP PARALLEL PRIVATE(I,J)
         if (Me%GridIsConstant) then
@@ -10243,7 +10245,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         nullify (Me%RainFall)
         if (.not. associated(Me%InfiltrationRate)) nullify (Me%CellHasRain)
         
-            
+       if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall")
     end subroutine ModifyRainFall
     
     !--------------------------------------------------------------------------
@@ -10257,11 +10259,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: CHUNK
-        real                                        :: aux
         !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyInfiltration")
         CHUNK = ChunkJ
-        
-        aux = Me%ExtVar%DT / 3600000.0
         
         !$OMP PARALLEL PRIVATE(i,j)
         if (Me%GridIsConstant) then
@@ -10297,7 +10297,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         nullify (Me%CellHasRain)
         nullify (Me%InfiltrationRate)
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyInfiltration")
     end subroutine ModifyInfiltration
     
     !--------------------------------------------------------------------------
