@@ -54,7 +54,7 @@ Module ModuleBasin
     use ModuleHorizontalGrid, only : ConstructHorizontalGrid, KillHorizontalGrid,        &
                                      WriteHorizontalGrid, GetHorizontalGridSize,         &
                                      GetGridCellArea, UnGetHorizontalGrid,               &
-                                     GetHorizontalGrid, GetXYCellZ
+                                     GetHorizontalGrid, GetXYCellZ, ConstantGridSize
                                      
     use ModuleHorizontalMap,  only : ConstructHorizontalMap, KillHorizontalMap,          &
                                      UpdateComputeFaces2D, GetOpenPoints2D,              &
@@ -608,6 +608,10 @@ Module ModuleBasin
         real, dimension(:), pointer                 :: BWBBuffer         => null() !buffer to be used for Basin Water Balance
         logical                                     :: ConstantCurveNumber = .false.
         integer, dimension(:,:), pointer            :: CellHasRain
+        logical                                     :: GridIsConstant = .false.
+        real                                        :: DX = 0.0 !For constant grids
+        real                                        :: DY = 0.0 !For constant grids
+        real                                        :: GridCellArea = 0.0 !For constant grids
         
         !Basin Water Balance
         type (T_BasinWaterBalance)                  :: BWB
@@ -719,6 +723,8 @@ Module ModuleBasin
         character (Len = StringLength)                  :: LockToWhichModules
         character (Len = StringLength)                  :: UnLockToWhichModules
         character (Len = StringLength)                  :: OptionsType
+        logical                                         :: IsConstant
+        real                                            :: DXX, DYY
 #ifdef _ENABLE_CUDA        
         type (T_Size3D)                                 :: GeometrySize
 #endif _ENABLE_CUDA        
@@ -779,8 +785,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
                                          STAT = STAT_CALL)           
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR04'
-            !Constructs GridData
             
+            !Constructs GridData
             call ConstructGridData      (Me%ObjGridData, Me%ObjHorizontalGrid,           &
                                          FileName = Me%Files%TopographicFile,            &
                                          STAT = STAT_CALL)
@@ -828,8 +834,22 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             !Ungets BasinPoints
             call UngetBasin             (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09d'                     
-
+            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09d'
+            
+            call ConstantGridSize(Me%ObjHorizontalGrid,                    &
+                                  DXX,                                   &
+                                  DYY,                                   &
+                                  IsConstant,                            &
+                                  STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'CheckConstantGridSize - ModuleRunOff - ERR01'
+            
+            if (IsConstant) then
+                Me%GridIsConstant = .true.
+                Me%DX = DXX
+                Me%DY = DYY
+                Me%GridCellArea = DXX * DYY
+            endif
+            
 #ifdef _ENABLE_CUDA            
             ! Construct a ModuleCuda instance.
             call ConstructCuda(Me%ObjCuda, STAT = STAT_CALL)
@@ -3035,6 +3055,7 @@ i1:         if (CoordON) then
         allocate(Me%PotentialInfCol         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%FlowProduction          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%InfiltrationRate        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%Infiltration            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%PrecipRate              (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%CellHasRain             (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ThroughRate             (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -3125,6 +3146,7 @@ i1:         if (CoordON) then
         Me%WaterColumnRemoved       = 0.0
         Me%CanopyDrainage           = 0.0
         Me%InfiltrationRate         = FillValueReal
+        Me%Infiltration             = 0.0
         Me%PrecipRate               = FillValueReal
         Me%CellHasRain              = 0
         Me%ThroughRate              = FillValueReal
@@ -4949,6 +4971,143 @@ cd0:    if (Exist) then
 
         !Arguments-------------------------------------------------------------
         real, dimension(:, :), pointer                       :: PrecipitationFlux
+        !Local-----------------------------------------------------------------     
+        integer                                     :: i, j, STAT_CALL
+        real                                        :: GrossPrecipitation
+        !Begin-----------------------------------------------------------------
+        
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")
+        
+        if (Me%GridIsConstant) then
+            call DividePrecipitation_CG(PrecipitationFlux)
+        else
+            call DividePrecipitation_VG(PrecipitationFlux)
+        endif
+        
+        if (Me%RunOffUsingFVS) then
+            call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
+        else
+            !This actualy should be done in module runoff... changing the water level inside Basin just seems like a really bad idea
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%CellHasRain(i,j) == BasinPoint) then
+                    !Put rain on water column - it will facilitate the structure of the property mixture
+                    Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        endif
+        
+
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation")
+
+    end subroutine DividePrecipitation
+    
+!--------------------------------------------------------------------------------------------------
+    
+    subroutine DividePrecipitation_CG (PrecipitationFlux)
+
+        !Arguments-------------------------------------------------------------
+        real, dimension(:, :), pointer                       :: PrecipitationFlux
+
+        !Local-----------------------------------------------------------------     
+        integer                                     :: i, j, STAT_CALL
+        real                                        :: GrossPrecipitation, CurrentFlux
+        real                                        :: aux1, aux2, aux3
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_CG")
+        
+        if (Me%NumberOftimeSeries > 0) then
+            
+            aux1 = Me%CurrentDT / Me%GridCellArea
+            aux2 = 3600000.0 / Me%GridCellArea
+            aux3 = 3600000.0 / Me%CurrentDT
+        
+            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+
+                    CurrentFlux = PrecipitationFlux(i, j)
+                    Me%CellHasRain(i,j) = 0
+                    if (CurrentFlux > 0.0) then
+                            
+                        !Precipitation Rate for (output only)
+                        !mm/ hour            m3/s                    / m2     * 1000 mm/m * 3600 s/h
+                        !Me%PrecipRate  (i,j) = CurrentFlux / Me%GridCellArea * 3600000.0
+                        Me%PrecipRate  (i,j) = CurrentFlux * aux2
+
+                        !Gross Rain 
+                        !m                 = m3/s        * s / m2
+                        GrossPrecipitation = CurrentFlux * aux1
+                        !Accumulated rainfall
+                        !m
+                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                    
+                        !mm/ hour                   m                       s         1000mm/m   *  3600s/h
+                        !Me%ThroughRate(i, j) = GrossPrecipitation / Me%CurrentDT * 3600000.0
+                        Me%ThroughRate(i, j) = GrossPrecipitation * aux3
+                    
+                        ! For now uncovered rain is total. it will be changed ir there are leafs
+                        Me%ThroughFall(i, j)    = GrossPrecipitation
+                    
+                        Me%CellHasRain(i,j) = 1
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+            
+        else
+            aux1 = Me%CurrentDT / Me%GridCellArea
+            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+
+                    CurrentFlux = PrecipitationFlux(i, j)
+                    Me%CellHasRain(i,j) = 0
+                    if (CurrentFlux > 0.0) then
+
+                        !Gross Rain 
+                        !m                 = m3/s                    * s            /  m2
+                        !GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%GridCellArea
+                        GrossPrecipitation = CurrentFlux * aux1
+                        !Accumulated rainfall
+                        !m
+                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                    
+                        ! For now uncovered rain is total. it will be changed ir there are leafs
+                        Me%ThroughFall(i, j)    = GrossPrecipitation
+                    
+                        Me%CellHasRain(i,j) = 1
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+            
+        endif
+
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_CG")
+
+    end subroutine DividePrecipitation_CG
+    
+    !--------------------------------------------------------------------------------------------------
+    
+    subroutine DividePrecipitation_VG (PrecipitationFlux)
+
+        !Arguments-------------------------------------------------------------
+        real, dimension(:, :), pointer                       :: PrecipitationFlux
 
         !Local-----------------------------------------------------------------     
         integer                                     :: i, j, STAT_CALL
@@ -4956,7 +5115,7 @@ cd0:    if (Exist) then
         real                                        :: CurrentFlux
         
         !Begin-----------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_VG")
         
         if (Me%NumberOftimeSeries > 0) then
             !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
@@ -5024,31 +5183,13 @@ cd0:    if (Exist) then
             !$OMP END DO
             !$OMP END PARALLEL
             
-        endif
-        
-        if (Me%RunOffUsingFVS) then
-            call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
-        else
-            !This actualy should be done in module runoff... changing the water level inside Basin just seems like a really bad idea
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if(Me%CellHasRain(i,j) == BasinPoint) then
-                    !Put rain on water column - it will facilitate the structure of the property mixture
-                    Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        endif
-        
+        endif        
 
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation")
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_VG")
 
-    end subroutine DividePrecipitation
+    end subroutine DividePrecipitation_VG
+    
+    
 #endif _SEWERGEMSENGINECOUPLER_
     !--------------------------------------------------------------------------
 
@@ -6292,7 +6433,7 @@ cd0:    if (Exist) then
         integer                                     :: Chunk
         
         real                                        :: previousInDayRain, rain, qNew, rain_m
-        real                                        :: qInTimeStep, Infiltration, aux
+        real                                        :: qInTimeStep, Infiltration, aux1, aux2, aux3
         
         integer                                     :: STAT_CALL
         
@@ -6333,27 +6474,25 @@ cd0:    if (Exist) then
             !$OMP END PARALLEL            
         endif
         
-        aux = Me%CurrentDT / 3600000.0
+        aux1 = Me%CurrentDT / 3600000.0
+        aux2 = 3600.0 / Me%CurrentDT
+        aux3 = 3600000.0 / Me%CurrentDT
         
-        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, previousInDayRain, qNew, qInTimeStep, Infiltration)
+        !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep)
         !$OMP DO SCHEDULE(DYNAMIC)
         do J = Me%WorkSize%JLB, Me%WorkSize%JUB
         do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
             if (Me%CellHasRain(i,j) == 1) then
-                !       mm        =                mm
-                previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
-                    
+                !mm  =        mm         +                     mm
+                Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
+                                                    + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                
                 rain_m = Me%ThroughFall (i, j)
                     
                 !mm  =              m                  * mm/m
                 rain = rain_m * 1000.0
                 !               mm                 =                 mm                 +  mm
                 Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
-        
-                !mm  =        mm         +                     mm
-                Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
-                                                    + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
-                    
                     
                 if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
                         
@@ -6366,21 +6505,23 @@ cd0:    if (Exist) then
                     Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
                         
                     !Output mm/h = mm/s * 3600 s/hour
-                    Me%InfiltrationRate (i, j) = ((rain - qInTimeStep) / Me%CurrentDT) * 3600.0
+                    !Me%InfiltrationRate (i, j) = ((rain - qInTimeStep) / Me%CurrentDT) * 3600.0
+                    Me%InfiltrationRate (i, j) = (rain - qInTimeStep) * aux2
                         
                 else
                     !Output mm/h = m/s * 3600000 (mm/m * s/hour)
-                    Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
+                    !Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
+                    Me%InfiltrationRate (i, j) = rain_m * aux3
                 endif
                 
-                Infiltration = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux
+                Me%Infiltration(i,j) = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
                 !m - Accumulated Infiltration of the entite area
-                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Infiltration
+                Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
                 
                 if (.not. Me%RunOffUsingFVS) then
                     ! TODO : Need to update runoff code to apply this inside it, instead of doing it here.
                     !m                            = m - mm/hour * s / s/hour / mm/m
-                    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Infiltration
+                    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Me%Infiltration(i,j)
                 endif
             else
                 !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
@@ -6394,8 +6535,7 @@ cd0:    if (Exist) then
         
         if (Me%RunOffUsingFVS) then
             
-            call SetRunOffInfiltration(Me%ObjRunoff, Me%InfiltrationRate, Me%SCSCNRunOffModel%ImpFrac%Field, &
-                                       Me%CellHasRain, STAT = STAT_CALL)
+            call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
         endif
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
@@ -8210,60 +8350,6 @@ cd0:    if (Exist) then
         endif
         
     end subroutine ActualizeWaterColumn
-    
-    !--------------------------------------------------------------------------
-    
-    !subroutine ActualizeWaterColumn ()
-    !
-    !    !Arguments-------------------------------------------------------------
-    !    !character (Len = *), intent(in)             :: WarningString
-    !
-    !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j, CHUNK, STAT_CALL
-    !
-    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !
-    !    if (MonitorPerformance) call StartWatch ("ModuleBasin", "ActualizeWaterColumn")
-    !
-    !    !$OMP PARALLEL PRIVATE(I,J)
-    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-    !
-    !        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-    !            
-    !            Me%ExtUpdate%WatercolumnOld(i,j) = Me%ExtUpdate%Watercolumn(i,j)
-    !            
-    !            Me%ExtUpdate%Watercolumn(i, j) = Me%ExtUpdate%WaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
-    !
-    !            if (Me%ExtUpdate%Watercolumn(i, j) < 0.0) then
-    !                
-    !                !Mass Error
-    !                Me%ExtVar%MassError     (i, j) = Me%ExtVar%MassError (i, j) -        &
-    !                                                 Me%ExtUpdate%Watercolumn(i, j) *    &
-    !                                                 Me%ExtVar%GridCellArea(i, j)
-    !
-    !                Me%ExtUpdate%Watercolumn(i, j) = 0.0
-    !                Me%ExtUpdate%WaterLevel (i, j) = Me%ExtVar%Topography(i, j)
-    !            
-    !            end if
-    !        endif
-    !
-    !    enddo
-    !    enddo
-    !    !$OMP END DO
-    !    !$OMP END PARALLEL
-    !    
-    !    !Send water column to runoff - the beholder of the water column
-    !    call SetBasinColumnToRunoff (ObjRunOffID             = Me%ObjRunoff,                 &
-    !                                 WaterColumnOld          = Me%ExtUpdate%WatercolumnOld,  &
-    !                                 WaterColumn             = Me%ExtUpdate%Watercolumn,     &
-    !                                 STAT                    = STAT_CALL)        
-    !    if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'        
-    !
-    !    if (MonitorPerformance) call StopWatch ("ModuleBasin", "ActualizeWaterColumn")
-    !
-    !end subroutine ActualizeWaterColumn
 
     !--------------------------------------------------------------------------
 
