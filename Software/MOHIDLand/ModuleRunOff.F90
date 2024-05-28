@@ -8292,7 +8292,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real, dimension(3) :: beta                      !>bottom thrust terms wave strengths
     real, dimension(3) :: flux_left, flux_right     !>flux accumulators
     real               :: cellFaceFactor            !>auxiliar
-    integer            :: CHUNK                     !>ChunkSize   
+    integer            :: CHUNK                     !>ChunkSize 
+    !real, dimension(:,:,:), allocatable :: element_flux
+    !real, dimension (:,:,:), pointer  :: element_flux
     !Begin---------------------------------------------------------------------------------------
     if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFluxesFVS_CG")
     ILB = Me%WorkSize%ILB
@@ -8301,7 +8303,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     JUB = Me%WorkSize%JUB
 
     dt = 60.0
-    !allocate(element_flux(IUB-ILB, JUB-JLB, 3))
+    !allocate(element_flux(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB, 3))
+    !element_flux = 0.0
     Me%FVS%element_flux = 0.0
     strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
     
@@ -8319,12 +8322,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:dt)
     do j = JLB, JUB-1
     do i = ILB, IUB-1
-
         if (Me%ExtVar%BasinPoints(i, j) == 1) then
                 
             do c = 1, size(strideJ,1)
                 !Compute fluxes of east and north cell faces
-                
                 j_East = j + strideJ(c, 1)
                 i_North = i + strideJ(c, 2)
                 
@@ -8334,7 +8335,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     depth_NE  = Me%myWaterColumn(i_North, j_East)
 
                     if (depth + depth_NE >= AlmostZero) then !wet cell
-                        
                         bottom    = Me%ExtVar%Topography(i      , j     )
                         bottom_NE = Me%ExtVar%Topography(i_North, j_East)
                         
@@ -8502,7 +8502,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         flux_right = 0.0
                         depth_1s = 0.0
                         depth_NE_3s = 0.0
-
+                        
                         do k=1, 3
                             !if (abs(lambda(k)) > 0.0) dt = min(dt, min_area / (lenght_act * abs(lambda(k))))
                             if (abs(lambda(k)) > AlmostZero) then
@@ -8585,12 +8585,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                         do q=1, 3
                             if (abs(flux_left(q)) > AlmostZero) then !remove machine error
-                                Me%FVS%element_flux(i, j, q) = Me%FVS%element_flux(i, j, q) &
-                                                                + flux_left (q) * cellFaceFactor
+                                !$OMP ATOMIC
+                                Me%FVS%element_flux (i, j, q) = Me%FVS%element_flux (i, j, q) + flux_left (q) * cellFaceFactor
                             endif
                             if (abs(flux_right(q)) > AlmostZero) then !remove machine error
-                                Me%FVS%element_flux(i_North, j_East, q) = Me%FVS%element_flux(i_North, j_East, q) &
-                                                                            + flux_right(q) * cellFaceFactor
+                                !$OMP ATOMIC
+                                Me%FVS%element_flux (i_North, j_East, q) = Me%FVS%element_flux (i_North, j_East, q) + flux_right(q) * cellFaceFactor
                             endif
                         end do
 
@@ -8604,7 +8604,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !$OMP END PARALLEL
     
     Me%CV%NextDT = dt * Me%CV%MaxCourant
-    
+
     !Time step depends on StormWaterModel (will probably need to do some flux integration to avoid this limitation)
     if (Me%StormWaterModel) then
         if (Me%StormWaterModelDT < Me%CV%NextDT) then
@@ -9027,6 +9027,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real                    :: h_treshold, h_treshold_friction   !> Depth threshold to desingularize velocity computation
     real                    :: velMod, aux1, aux2       !> velocity modulus
     integer                 :: CHUNK
+    logical                 :: validCell
     !Begin----------------------------------------------------------------------------------------------
     
     if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeStateFVS_CG")
@@ -9047,7 +9048,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     JUB = Me%WorkSize%JUB
 
     !$OMP PARALLEL PRIVATE(i,j,waterColumn,velocityU,velocityV,waterColumn_new,momentumU,momentumV,velMod,Friction_Coef, &
-    !$OMP tau_u, tau_v)
+    !$OMP tau_u, tau_v, validCell)
     !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
     do j = JLB, JUB
         do i = ILB, IUB
@@ -9073,7 +9074,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !    write(*,*) "Valor negativo de coluna de agua. I, J, valor = ", i, j, waterColumn, waterColumn_new
                 !    stop 'Negative value of WaterColumn found in FVS method.'
                 !endif
-                
+                validCell = .true.
                 if (abs(waterColumn_new) > AlmostZero) then !Acceptable flow depth, above machine precision
                     waterColumn = waterColumn_new
                     velocityU = momentumU / waterColumn_new
@@ -9088,34 +9089,33 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         velocityU = 0.0
                         velocityV = 0.0
                         velMod = 0.d0
+                        validCell = .false.
                     end if
                 else
                     waterColumn = Me%myWaterColumn(i, j) !Otherwize, small increments of rain will be ignored
                     velocityU = 0.0
                     velocityV = 0.0
                     velMod = 0.0
+                    validCell = .false.
                 end if
 
                 !----------------------------------------------Friction source terms-----------------------------------------
                 
-                if ( velMod .gt. AlmostZero )then     !only to valid cells (non-nill velocity and considerable water height)
-                    if (waterColumn .gt. h_treshold_friction) then
-                            
-                        Friction_Coef = Gravity * waterColumn**(1./3.)/(1/Me%OverlandCoefficient(i,j)**(2.0)) !Strickler
+                if (validCell)then     !only to valid cells (non-nill velocity and considerable water height)     
+                    Friction_Coef = Gravity * waterColumn**(1./3.)/(1/Me%OverlandCoefficient(i,j)**(2.0)) !Strickler
                     
-                        tau_u = 1000.0 * Friction_Coef * velocityU * velMod !abs made on update
-                        tau_v = 1000.0 * Friction_Coef * velocityV * velMod !abs made on update
+                    tau_u = 1000.0 * Friction_Coef * velocityU * velMod !abs made on update
+                    tau_v = 1000.0 * Friction_Coef * velocityV * velMod !abs made on update
                     
-                        !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
-                        velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
-                        velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
+                    !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto é só para mobile bed                                                             
+                    velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
+                    velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
                         
-                        velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
-                        if (velMod .lt. AlmostZero)then !Filtering numerical noise
-                            velocityU = 0.0
-                            velocityV = 0.0
-                            velMod = 0.0
-                        end if
+                    velMod = sqrt(velocityU**2.0 + velocityV**2.0) !velocity magnitude           
+                    if (velMod .lt. AlmostZero)then !Filtering numerical noise
+                        velocityU = 0.0
+                        velocityV = 0.0
+                        velMod = 0.0
                     end if
                 end if
             
