@@ -8306,18 +8306,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real, dimension(3) :: flux_left, flux_right     !>flux accumulators
     real               :: cellFaceFactor, depth_diff            !>auxiliar
     integer            :: CHUNK                     !>ChunkSize 
-    real, dimension(:,:,:), allocatable :: teste
-    real(8), dimension (:,:), pointer  :: waterColumn, VelModFaceU, VelModFaceV
-    real, dimension (:,:), pointer  :: Topography
-    integer, dimension (:,:), pointer  :: BasinPoints
     !Begin---------------------------------------------------------------------------------------
     if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFluxesFVS_CG")
     ILB = Me%WorkSize%ILB
     IUB = Me%WorkSize%IUB
     JLB = Me%WorkSize%JLB
     JUB = Me%WorkSize%JUB
-    !allocate(teste(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB, 3))
-    !teste = 0.0
+    
     dt = 60.0
     Me%FVS%element_flux = 0.0
     strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
@@ -8325,46 +8320,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     distance = Me%GridCellArea / Me%DX
     
     cellFaceFactor = (- Me%DX / Me%GridCellArea) * 0.5 !TODO: need to figure out why it has to be * 0.5. for triangles it is 1.
-    !aux_gravity = Gravity
-    !waterColumn => Me%myWaterColumn
-    !BasinPoints => Me%ExtVar%BasinPoints
-    !Topography => Me%ExtVar%Topography
-    !VelModFaceU => Me%VelModFaceU
-    !VelModFaceV => Me%VelModFaceV
     
     CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !!$OMP PARALLEL PRIVATE(i,j,q,j_East,i_North)
-    !!$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:teste)
-    !do j = JLB, JUB-1
-    !do i = ILB, IUB-1
-    !    do c = 1, size(strideJ,1)
-    !        !Compute fluxes of east and north cell faces
-    !        j_East = j + strideJ(c, 1)
-    !        i_North = i + strideJ(c, 2)
-    !        do q = 1, 3
-    !            !print*, 'i, j, q ', i, j, q
-    !            !print*, 'valor', teste (i, j, q)
-    !            teste (i, j, q) = teste (i, j, q) + 1
-    !            teste (i_North, j_East, q) = teste (i_North, j_East, q) + 1
-    !            !print*, 'funcionou', i, j, q
-    !        enddo
-    !    enddo
-    !end do
-    !end do
-    !!$OMP END DO
-    !!$OMP END PARALLEL
-    
-    !write(*,*) "Success"
-    !stop 'yeah'
-    
-    !Iterating trough every cell to compute the approximate Jacobian across each edge
-    !!$OMP PARALLEL &
-    !!$OMP DEFAULT(PRIVATE) &
-    !!$OMP SHARED(JLB, JUB, ILB, IUB, strideJ,BasinPoints, WaterColumn,Topography,VelModFaceU,VelModFaceV,distance,cellFaceFactor,aux_gravity) &
-    !!$OMP REDUCTION(MIN:dt) & 
-    !!$OMP REDUCTION(+:teste)
-    !
-    !!$OMP DO  schedule(dynamic)
+
     !$OMP PARALLEL PRIVATE(i,j,q,c,k,j_East,i_North,depth,depth_NE,bottom,bottom_NE,waterLevel,waterLevel_NE, &
     !$OMP velU,velU_NE,velV,velV_NE,sqrt_depth,sqrt_depth_NE,aux1,aux2,aux3,vel_FaceU,vel_FaceV,celerity,  &
     !$OMP nx,ny,vel_normal,lambda,lambda_aux,lambda_i,lambda_j,eig,alpha,dz,bottom1,dz_bar,bottom2, &

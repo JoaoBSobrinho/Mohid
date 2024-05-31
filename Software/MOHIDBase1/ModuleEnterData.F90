@@ -461,8 +461,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 endif
                 
                 !Counts the number of lines
-                if (MonitorPerformance) call StartWatch ("ModuleEnterData", "ConstructBufferSize_topo")
-                
                 if (GetNumberOfLines) then
                     Me%BufferSize = 0
                     rewind(Me%unit)
@@ -476,8 +474,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
                 endif
                 
-                if (MonitorPerformance) call StopWatch ("ModuleEnterData", "ConstructBufferSize_topo")
-                
                 !Return it so it can be used by other module reading the same file
                 if (present(NLinesInFile) .and. GetNumberOfLines) NLinesInFile = Me%BufferSize 
                 
@@ -489,7 +485,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 end if cd3
 
                 !Copy file to buffer
-                if (MonitorPerformance) call StartWatch ("ModuleEnterData", "Copyfiletobuffer_topo")
                 rewind(Me%unit)
     do3 :       do I = 1, Me%BufferSize
                     read (Me%unit, "(A)") string
@@ -501,7 +496,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
                 call UnitsManager          (Me%unit, CLOSE_FILE, STAT = STAT_CALL)
                 if (STAT_CALL .NE. SUCCESS_) stop 'ModuleEnterData - ConstructEnterData - ERR06' 
-                if (MonitorPerformance) call StopWatch ("ModuleEnterData", "Copyfiletobuffer_topo")
 
                 !Returns ID
                 EnterDataID     = Me%InstanceID

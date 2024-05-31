@@ -367,7 +367,6 @@ Module ModuleGridData
 
             !Reads the GridData part
             if (Me%ReadFile) then
-                if (MonitorPerformance) call StartWatch ("ModuleGridData", "ConstructGridData-ReadGridDataFile")
                 if (present(Topography)) then
                     if (Topography) then
                         if (present(NumberOfLines)) then
@@ -383,7 +382,6 @@ Module ModuleGridData
                     call ReadGridDataFile
                 endif
             
-                if (MonitorPerformance) call StopWatch ("ModuleGridData", "ConstructGridData-ReadGridDataFile")
             else
                 if (Me%Is3D) then
                     allocate(Me%GridData3D(Me%Size%ILB:Me%Size%IUB,                     &
@@ -657,9 +655,7 @@ Module ModuleGridData
 
         if (.not.Me%ConstantInSpace) then
             !Looks for data block
-            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ReadFromBlocks")
             call ReadFromBlocks(ObjEnterData)
-            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ReadFromBlocks")
         endif
             
         call KillEnterData(ObjEnterData, STAT = STAT_CALL)
@@ -696,14 +692,12 @@ Module ModuleGridData
 
         !Looks for data block
         if (.not. Me%Is3D) then
-            if (MonitorPerformance) call StartWatch ("ModuleGridData", "ExtractBlockFromBuffer")
 
             call ExtractBlockFromBuffer(ObjEnterData, ClientNumber,                      &
                                         BeginGridData2D, EndGridData2D, BlockFound,      &
                                         FirstLine = FirstLine, LastLine = LastLine,      &
                                         STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadFromBlocks - ModuleGridData - ERR110'
-            if (MonitorPerformance) call StopWatch ("ModuleGridData", "ExtractBlockFromBuffer")
             if (.not. BlockFound) then
 
                 call SetError (WARNING_, KEYWORD_, 'Block <BeginGridData2D>, <EndGridData2D> not found', OFF)
@@ -743,7 +737,6 @@ BF:     if (BlockFound) then
 Is3D:       if (.not. Me%Is3D) then
 
 
-                if (MonitorPerformance) call StartWatch ("ModuleGridData", "ReadBlocks")
                 line = FirstLine + 1
 
                 allocate  (Aux(3))
@@ -853,7 +846,6 @@ Coln1:          if      (flag == 3) then
                 endif Coln1
 
                 deallocate(Aux)
-                if (MonitorPerformance) call StopWatch ("ModuleGridData", "ReadBlocks")
             else Is3D
 
                 if (Start3DFrom2D) then
