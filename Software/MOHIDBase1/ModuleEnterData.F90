@@ -31,7 +31,8 @@
 Module ModuleEnterData
 
     use ModuleGlobalData
-    use ModuleTime               
+    use ModuleTime
+    use ModuleStopWatch,        only: StartWatch, StopWatch
 
     implicit none
 
@@ -41,6 +42,7 @@ Module ModuleEnterData
 
     !Constructor
     public  ::  ConstructEnterData
+    public  ::  ConstructEnterData_Topography
     private ::      AllocateInstance
 
     !Modifier
@@ -58,6 +60,7 @@ Module ModuleEnterData
     public  :: GetExtractType
     public  :: GetBufferSize
     public  :: GetFullBufferLine
+    public  :: GetFullBufferLines
     public  :: GetBlockSize
     public  :: GetKeywordFromLine
     public  :: ReadFileName
@@ -294,7 +297,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
     100         continue
 
-
+                
                 !Allocates buffer
     cd3 :       if (Me%BufferSize .GT. 0) then
                     allocate(Me%BufferLines(Me%BufferSize))
@@ -338,7 +341,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 call UnitsManager          (Me%unit, CLOSE_FILE, STAT = STAT_CALL)
                 if (STAT_CALL .NE. SUCCESS_) stop 'ModuleEnterData - ConstructEnterData - ERR06' 
 
-
                 !Returns ID
                 EnterDataID     = Me%InstanceID
 
@@ -358,6 +360,168 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         !----------------------------------------------------------------------
 
     end subroutine ConstructEnterData
+    
+    !--------------------------------------------------------------------------
+    
+    subroutine ConstructEnterData_Topography(EnterDataID, FileName, ErrorMessage, FORM, NLinesInFile, STAT)
+
+        !Arguments-------------------------------------------------------------
+        integer                                     :: EnterDataID
+        character(LEN = *), intent(IN )             :: FileName
+        character(LEN = *), optional, intent(IN )   :: ErrorMessage
+        integer, optional,  intent(OUT)             :: STAT    
+        integer, optional,  intent(IN )             :: FORM
+        integer, optional,  intent(INOUT)           :: NLinesInFile
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: ready_     
+        integer                                     :: STAT_CALL    
+        logical                                     :: exists, GetNumberOfLines
+        character(LEN = line_length)                :: string, ErrorMessage_
+        character(LEN = 10000)                      :: auxstring
+        character(LEN = 1)                          :: one_char
+        integer                                     :: STAT_
+        integer                                     :: I, line
+        integer                                     :: FORM_
+        logical                                     :: FoundComment = .false.
+
+        !----------------------------------------------------------------------
+
+        !Assures nullification of the global variable
+        if (.not. ModuleIsRegistered(mEnterData_)) then
+            nullify (FirstEnterData)
+            call RegisterModule (mEnterData_) 
+        endif
+
+        STAT_ = UNKNOWN_
+
+        call Ready(EnterDataID, ready_)
+
+cd0 :   if (ready_ .EQ. OFF_ERR_) then
+
+
+            !Verifies if file exits
+            inquire(FILE = trim(adjustl(FileName)), EXIST = exists)
+            
+            if (present(ErrorMessage)) then
+                ErrorMessage_ = ErrorMessage
+            else
+                ErrorMessage_ = "No error message"
+            endif
+
+            if (.NOT. exists) then
+                write (*,*) trim(ErrorMessage_)
+                write (*,*)'Data File does not exists : ', trim(adjustl(FileName))
+                STAT_ = FILE_NOT_FOUND_ERR_
+            else
+
+                call AllocateInstance         
+
+                Me%FileName = FileName
+
+                call UnitsManager(Me%unit, OPEN_FILE, STAT = STAT_CALL)
+                if (STAT_CALL .NE. SUCCESS_) stop 'ModuleEnterData - ConstructEnterData - ERR01'
+
+
+    cd16 :      if (present(FORM)) then
+                    if      (FORM .EQ. FORMATTED_  ) then
+                        FORM_ = FORMATTED_
+                    else if (FORM .EQ. UNFORMATTED_) then    
+                        FORM_ = UNFORMATTED_
+                    else    
+                        stop 'ModuleEnterData - ConstructEnterData - ERR06' 
+                    end if 
+                else cd16
+                   FORM_ = FORMATTED_
+                end if cd16
+
+    if8 :       if      (FORM_ .EQ. FORMATTED_  ) then
+                    open(UNIT = Me%unit, FILE = trim(adjustl(Me%FileName)), &
+                         FORM = "FORMATTED",   STATUS = "OLD", ACTION = "READ", IOSTAT = STAT_CALL)
+                    if (STAT_CALL .NE. SUCCESS_) call SetError(FATAL_, INTERNAL_, "ModuleEnterData - ConstructEnterData - ERR02")
+
+                    rewind(Me%unit) 
+                                 
+                else if (FORM_ .EQ. UNFORMATTED_) then if8
+
+                    open(UNIT = Me%unit, FILE = trim(adjustl(Me%FileName)), &
+                         FORM = "UNFORMATTED", STATUS = "OLD", ACTION = "READ", IOSTAT = STAT_CALL)
+                    if (STAT_CALL .NE. SUCCESS_) stop 'ModuleEnterData - ConstructEnterData - ERR03' 
+
+                    rewind(Me%unit)              
+                                 
+                end if if8
+
+                GetNumberOfLines = .true.
+                if (present(NLinesInFile)) then
+                    if (NLinesInFile > 0) then
+                        Me%BufferSize = NLinesInFile
+                        GetNumberOfLines = .false.
+                    endif
+                endif
+                
+                !Counts the number of lines
+                if (MonitorPerformance) call StartWatch ("ModuleEnterData", "ConstructBufferSize_topo")
+                
+                if (GetNumberOfLines) then
+                    Me%BufferSize = 0
+                    rewind(Me%unit)
+    do2 :           do 
+                        read (Me%unit, "(A)", iostat=STAT_CALL) auxstring
+                        if (STAT_CALL /= 0) exit
+                        Me%BufferSize = Me%BufferSize + 1
+                    end do do2
+
+    100             continue
+
+                endif
+                
+                if (MonitorPerformance) call StopWatch ("ModuleEnterData", "ConstructBufferSize_topo")
+                
+                !Return it so it can be used by other module reading the same file
+                if (present(NLinesInFile) .and. GetNumberOfLines) NLinesInFile = Me%BufferSize 
+                
+                !Allocates buffer
+    cd3 :       if (Me%BufferSize .GT. 0) then
+                    allocate(Me%BufferLines(Me%BufferSize))
+                else cd3
+                    nullify(Me%BufferLines)
+                end if cd3
+
+                !Copy file to buffer
+                if (MonitorPerformance) call StartWatch ("ModuleEnterData", "Copyfiletobuffer_topo")
+                rewind(Me%unit)
+    do3 :       do I = 1, Me%BufferSize
+                    read (Me%unit, "(A)") string
+                    string = adjustl(string)
+                    
+                    Me%BufferLines(I)%full_line = string
+
+                end do do3
+
+                call UnitsManager          (Me%unit, CLOSE_FILE, STAT = STAT_CALL)
+                if (STAT_CALL .NE. SUCCESS_) stop 'ModuleEnterData - ConstructEnterData - ERR06' 
+                if (MonitorPerformance) call StopWatch ("ModuleEnterData", "Copyfiletobuffer_topo")
+
+                !Returns ID
+                EnterDataID     = Me%InstanceID
+
+                STAT_ = SUCCESS_
+            
+            endif
+
+        else cd0
+
+            stop 'ModuleEnterData - ConstructEnterData - ERR99' 
+
+        end if cd0
+
+
+        if (present(STAT)) STAT = STAT_
+
+        !----------------------------------------------------------------------
+
+    end subroutine ConstructEnterData_Topography
 
     !--------------------------------------------------------------------------
 
@@ -1039,7 +1203,43 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                  &
 
     end subroutine GetFullBufferLine
 
+    !--------------------------------------------------------------------------
 
+    subroutine GetFullBufferLines(EnterDataID, FullBufferLines, STAT)
+        
+
+        !Arguments-------------------------------------------------------------
+        integer                                     :: EnterDataID
+        type (T_Dataline), pointer, intent(OUT)     :: FullBufferLines(:)
+        integer,            intent(OUT), optional   :: STAT
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: ready_          
+        integer                                     :: STAT_
+
+        !----------------------------------------------------------------------
+
+        STAT_ = UNKNOWN_
+
+        call Ready(EnterDataID, ready_)
+        
+cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR.                                  &
+            (ready_ .EQ. READ_LOCK_ERR_)) then
+
+            FullBufferLines => Me%BufferLines
+
+            STAT_ = SUCCESS_
+        else 
+            STAT_ = ready_
+        end if cd1
+
+        if (present(STAT))                                                    &
+            STAT = STAT_
+
+        !----------------------------------------------------------------------
+
+    end subroutine GetFullBufferLines
+    
     !--------------------------------------------------------------------------
 
     subroutine GetBlockSize(EnterDataID, ClientNumber, StartLine, EndLine, SearchType, STAT)
@@ -3468,25 +3668,32 @@ if9 :           if (Me%BlockClientIDnumber .EQ. ClientNumber) then     !Second o
         
 
 cd3 :   if (FoundBegin) then
-do3 :       do I = Me%Block%BeginBlock+1, Me%BufferSize
+            Me%Block%EndBlock = Me%BufferSize !FirstGuess
+            call ScanLineUnsafe(Me%BufferLines(Me%BufferSize))
+            ReadKeyWord = Me%BufferLines(Me%BufferSize)%full_line(1:Me%BufferLines(Me%BufferSize)%delimiter_pos-1)
+            FoundEnd = .TRUE.
+            if (.not. trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_end))) then
+                FoundEnd = .FALSE.
+                !probably not a topographic file (which typically ends with the <endgriddata2D>)
+do3 :           do I = Me%Block%BeginBlock+1, Me%BufferSize
+                    call ScanLineUnsafe(Me%BufferLines(I))
+                    ReadKeyWord = Me%BufferLines(I)%full_line(1:Me%BufferLines(I)%delimiter_pos-1)
 
-                call ScanLineUnsafe(Me%BufferLines(I))
-                ReadKeyWord = Me%BufferLines(I)%full_line(1:Me%BufferLines(I)%delimiter_pos-1)
-
-if8 :           if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) then
-                    FoundEnd = .FALSE.
-                    exit do3
-                end if if8
+if8 :               if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_begin))) then
+                        FoundEnd = .FALSE.
+                        exit do3
+                    end if if8
 
 
 
-cd2 :           if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_end))) then
-                    Me%Block%EndBlock = I
-                    FoundEnd = .TRUE.
-                    exit do3
-                end if cd2
+cd2 :               if (trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_end))) then
+                        Me%Block%EndBlock = I
+                        FoundEnd = .TRUE.
+                        exit do3
+                    end if cd2
 
-            end do do3
+                end do do3
+            endif
         end if cd3
 
 

@@ -640,7 +640,8 @@ Module ModuleFillMatrix
                                      ObjFillMatrix, OverrideValueKeyword, ClientID,     &
                                      PredictDTMethod, MinForDTDecrease,                 &
                                      ValueIsUsedForDTPrediction, CheckDates,            &
-                                     RotateAngleToGrid, SpongeFILE_DT, NewDomain, Skip_Block, STAT)
+                                     RotateAngleToGrid, SpongeFILE_DT, NewDomain, Skip_Block, &
+                                     Topography, STAT)
 
         !Arguments---------------------------------------------------------------
         integer                                         :: EnterDataID
@@ -665,12 +666,14 @@ Module ModuleFillMatrix
         logical,      optional, intent(IN )             :: RotateAngleToGrid
         character(*), optional, intent(IN )             :: SpongeFILE_DT
         logical,      optional, intent(IN )             :: NewDomain
+        logical,      optional, intent(IN )             :: Topography
         logical,      optional, intent(OUT )            :: Skip_Block
 
         !Local-------------------------------------------------------------------
         integer                                         :: ready_, STAT_, STAT_CALL, nUsers, ObjFillMatrix_
         integer                                         :: PredictDTMethod_, Referential
         type (T_PropertyID), pointer                    :: Prop
+        logical                                         :: Topography_
 
         !------------------------------------------------------------------------
 
@@ -714,6 +717,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             !Upscaling - Sobrinho
             if (present(NewDomain))                  Me%NewDomain                  = NewDomain
             if (present(Skip_Block))                 Skip_Block                    = .false.
+            Topography_ = .false.
+            if (present(Topography))                 Topography_                   = Topography
 
             Me%ObjEnterData      = AssociateInstance (mENTERDATA_,      EnterDataID     )
             Me%ObjTime           = AssociateInstance (mTIME_,           TimeID          )
@@ -798,9 +803,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call FillWithDefault (PointsToFill2D = PointsToFill2D)
 
             if (present(ClientID)) then
-                call FillWithUserOption (ExtractType, PointsToFill2D = PointsToFill2D, ClientID = ClientID)
+                call FillWithUserOption (ExtractType, Topography_, PointsToFill2D = PointsToFill2D, ClientID = ClientID)
             else
-                call FillWithUserOption (ExtractType, PointsToFill2D = PointsToFill2D)
+                call FillWithUserOption (ExtractType, Topography_, PointsToFill2D = PointsToFill2D)
             endif
 
             if (.not. Me%Skip_Block)  then
@@ -1034,9 +1039,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call FillWithDefault (PointsToFill2D = PointsToFill2D)
 
             if (present(ClientID)) then
-                call FillWithUserOption (ExtractType, PointsToFill2D = PointsToFill2D, ClientID = ClientID)
+                call FillWithUserOption (ExtractType, .false., PointsToFill2D = PointsToFill2D, ClientID = ClientID)
             else
-                call FillWithUserOption (ExtractType, PointsToFill2D = PointsToFill2D)
+                call FillWithUserOption (ExtractType, .false., PointsToFill2D = PointsToFill2D)
             endif
 
             nUsers = DeassociateInstance(mENTERDATA_, Me%ObjEnterData)
@@ -1264,9 +1269,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call FillWithDefault (PointsToFill3D = PointsToFill3D)
 
             if (present(ClientID)) then
-                call FillWithUserOption (ExtractType, PointsToFill3D = PointsToFill3D, ClientID = ClientID)
+                call FillWithUserOption (ExtractType, .false., PointsToFill3D = PointsToFill3D, ClientID = ClientID)
             else
-                call FillWithUserOption (ExtractType, PointsToFill3D = PointsToFill3D)
+                call FillWithUserOption (ExtractType, .false., PointsToFill3D = PointsToFill3D)
             endif
             
             !Needs to be here because it is updated in FillWithUserOption routine
@@ -1521,9 +1526,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call FillWithDefault (PointsToFill3D = PointsToFill3D)
 
             if (present(ClientID)) then
-                call FillWithUserOption (ExtractType, PointsToFill3D = PointsToFill3D, ClientID = ClientID)
+                call FillWithUserOption (ExtractType, .false., PointsToFill3D = PointsToFill3D, ClientID = ClientID)
             else
-                call FillWithUserOption (ExtractType, PointsToFill3D = PointsToFill3D)
+                call FillWithUserOption (ExtractType, .false., PointsToFill3D = PointsToFill3D)
             endif
                 
             !!Need to rotate input field (Me%Matrix3DX and Me%Matrix3DY) to grid (Me%Matrix3DU and Me%Matrix3DV))
@@ -2652,9 +2657,10 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
     end subroutine FillWithDefault
     !--------------------------------------------------------------------------
 
-    subroutine FillWithUserOption (ExtractType, PointsToFill2D, PointsToFill3D, ClientID)
+    subroutine FillWithUserOption (ExtractType, Topography, PointsToFill2D, PointsToFill3D, ClientID)
         !Arguments-------------------------------------------------------------
         integer                                                     :: ExtractType
+        logical, intent(IN)                                         :: Topography
         integer, dimension(:, :),    pointer, intent(IN), optional  :: PointsToFill2D
         integer, dimension(:, :, :), pointer, intent(IN), optional  :: PointsToFill3D
         integer                             , intent(IN), optional  :: ClientID
@@ -2704,9 +2710,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                         endif                          
                     case(AsciiFile)
                         if (Me%Dim == Dim2D) then
-                            call ConstructSpaceASCIIFile (ExtractType, PointsToFill2D = PointsToFill2D)
+                            call ConstructSpaceASCIIFile (ExtractType, Topography, PointsToFill2D = PointsToFill2D)
                         else
-                            call ConstructSpaceASCIIFile (ExtractType, PointsToFill3D = PointsToFill3D)
+                            call ConstructSpaceASCIIFile (ExtractType, Topography, PointsToFill3D = PointsToFill3D)
                         endif
                     case(Sponge)
                         if (Me%Dim == Dim2D) then
@@ -4851,13 +4857,13 @@ i23:        if (Me%ProfileTimeSerie%CyclicTimeON) then
 
     !--------------------------------------------------------------------------
 
-    subroutine ConstructSpaceASCIIFile (ExtractType, PointsToFill2D, PointsToFill3D)
+    subroutine ConstructSpaceASCIIFile (ExtractType, Topography, PointsToFill2D, PointsToFill3D)
 
         !Arguments-------------------------------------------------------------
         integer                                         :: ExtractType
         integer, dimension(:, :),    pointer, optional  :: PointsToFill2D
         integer, dimension(:, :, :), pointer, optional  :: PointsToFill3D
-
+        logical, intent(IN)                             :: Topography
         !Local----------------------------------------------------------------
         integer                                     :: STAT_CALL, i, j, k
         integer                                     :: iflag, TypeZUV
@@ -4981,13 +4987,22 @@ i23:        if (Me%ProfileTimeSerie%CyclicTimeON) then
 
             if (Me%Dim == Dim2D) then
 
-
-                call ConstructGridData(CurrentASCIIFile%GridDataID, Me%ObjHorizontalGrid,        &
-                                       FileName     = CurrentASCIIFile%FileName,                 &
-                                       DefaultValue = Me%DefaultValue(file),                     &
-                                       STAT = STAT_CALL)
-                if (STAT_CALL .NE. SUCCESS_) stop 'ConstructSpaceASCIIFile - ModuleFillMatrix - ERR03'
-
+                if (Topography) then
+                    call ConstructGridData(CurrentASCIIFile%GridDataID, Me%ObjHorizontalGrid,        &
+                                            FileName     = CurrentASCIIFile%FileName,                 &
+                                            DefaultValue = Me%DefaultValue(file),                     &
+                                            Topography   = Topography,                                &
+                                            STAT = STAT_CALL)
+                    if (STAT_CALL .NE. SUCCESS_) stop 'ConstructSpaceASCIIFile - ModuleFillMatrix - ERR02'
+                else
+                    
+                    call ConstructGridData(CurrentASCIIFile%GridDataID, Me%ObjHorizontalGrid,        &
+                                           FileName     = CurrentASCIIFile%FileName,                 &
+                                           DefaultValue = Me%DefaultValue(file),                     &
+                                           STAT = STAT_CALL)
+                    if (STAT_CALL .NE. SUCCESS_) stop 'ConstructSpaceASCIIFile - ModuleFillMatrix - ERR03'
+                endif
+                
                 call GetGridDataType(CurrentASCIIFile%GridDataID, TypeZUV, STAT = STAT_CALL)
                 if (STAT_CALL .NE. SUCCESS_) stop 'ConstructSpaceASCIIFile - ModuleFillMatrix - ERR04'
 

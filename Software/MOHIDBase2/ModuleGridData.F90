@@ -138,7 +138,11 @@ Module ModuleGridData
     character(LEN = StringLength), parameter :: Char_Bathymetry   = 'Bathymetry'
     
     !Type----------------------------------------------------------------------
-
+    Type       T_Dataline
+        character(LEN = line_length) :: full_line
+        integer                      :: delimiter_pos = null_int
+    end type T_Dataline
+    
     type T_Evolution
 
         type(T_Time)                        :: Now
@@ -235,19 +239,20 @@ Module ModuleGridData
 
     subroutine ConstructGridData(GridDataID, HorizontalGridID, TimeID, FileName,        &
                                  KLB, KUB, DefaultValue, InMatrix3D, InMatrix2D,        &
-                                 SedimentModule, STAT)
+                                 SedimentModule, Topography, NumberOfLines, STAT)
                       
         !Arguments-------------------------------------------------------------
         integer                     , intent(INOUT) :: GridDataID
         integer                     , intent(INOUT) :: HorizontalGridID
-        integer,            optional, intent(IN )   :: TimeID
+        integer,            optional, intent(IN )   :: TimeID, NumberOfLines
         character(LEN = *), optional, intent(IN )   :: FileName
         integer,            optional, intent(IN )   :: KLB, KUB
         real,               optional, intent(IN )   :: DefaultValue
+        logical,            optional, intent(IN)    :: Topography
         real, dimension(:,:),   pointer, optional   :: InMatrix2D
         real, dimension(:,:,:), pointer, optional   :: InMatrix3D
         logical,            optional                :: SedimentModule
-        integer,            optional, intent(OUT)   :: STAT    
+        integer,            optional, intent(OUT)   :: STAT
 
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_CALL
@@ -362,7 +367,23 @@ Module ModuleGridData
 
             !Reads the GridData part
             if (Me%ReadFile) then
-                call ReadGridDataFile
+                if (MonitorPerformance) call StartWatch ("ModuleGridData", "ConstructGridData-ReadGridDataFile")
+                if (present(Topography)) then
+                    if (Topography) then
+                        if (present(NumberOfLines)) then
+                            call ReadGridDataFile(Topography = Topography, NumberOfLines = NumberOfLines)
+                        else
+                            call ReadGridDataFile(Topography = Topography)
+                        endif
+                        
+                    else
+                        call ReadGridDataFile
+                    endif
+                else
+                    call ReadGridDataFile
+                endif
+            
+                if (MonitorPerformance) call StopWatch ("ModuleGridData", "ConstructGridData-ReadGridDataFile")
             else
                 if (Me%Is3D) then
                     allocate(Me%GridData3D(Me%Size%ILB:Me%Size%IUB,                     &
@@ -481,23 +502,44 @@ Module ModuleGridData
 
     !--------------------------------------------------------------------------
 
-    subroutine ReadGridDataFile
+    subroutine ReadGridDataFile(Topography, NumberOfLines)
 
         !Arguments-------------------------------------------------------------                                                    
-                                                                                                     
+        logical, intent(IN), optional               :: Topography                                                 
+        integer, intent(IN), optional               :: NumberOfLines                                                 
         !Local-----------------------------------------------------------------
         real                                        :: DefaultValue
         integer                                     :: ObjEnterData = 0
         integer                                     :: STAT_CALL
-        integer                                     :: flag
+        integer                                     :: flag, NumberOfLines_
         character(len=StringLength)                 :: Char_TypeZUV, Message
 
         !----------------------------------------------------------------------
 
         !Opens File
-        call ConstructEnterData(ObjEnterData, Me%FileName, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_)  stop 'ReadGridDataFile - ModuleGridData - ERR10'
+        if (MonitorPerformance) call StartWatch ("ModuleGridData", "ReadGridDataFile")
+        if (present(Topography)) then
+            if (Topography) then
+                if (present(NumberOfLines)) then
+                    NumberOfLines_ = NumberOfLines
+                    call ConstructEnterData_Topography(ObjEnterData, Me%FileName, NLinesInFile = NumberOfLines_, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_)  stop 'ReadGridDataFile - ModuleGridData - ERR05a'
+                else
+                    call ConstructEnterData_Topography(ObjEnterData, Me%FileName, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_)  stop 'ReadGridDataFile - ModuleGridData - ERR05b'
+                endif
+                
+            else
+                call ConstructEnterData(ObjEnterData, Me%FileName, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_)  stop 'ReadGridDataFile - ModuleGridData - ERR10'
+            endif
+        else
+            call ConstructEnterData(ObjEnterData, Me%FileName, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_)  stop 'ReadGridDataFile - ModuleGridData - ERR10'
+        endif
+        
 
+        if (MonitorPerformance) call StopWatch ("ModuleGridData", "ReadGridDataFile")
        
 
         !Gets FillValue
@@ -615,7 +657,9 @@ Module ModuleGridData
 
         if (.not.Me%ConstantInSpace) then
             !Looks for data block
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ReadFromBlocks")
             call ReadFromBlocks(ObjEnterData)
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ReadFromBlocks")
         endif
             
         call KillEnterData(ObjEnterData, STAT = STAT_CALL)
@@ -638,22 +682,28 @@ Module ModuleGridData
         integer                                     :: STAT_CALL
         integer                                     :: flag
         integer                                     :: line
-        integer                                     :: i, j, k, l, ii, jj
+        integer                                     :: i, j, k, l, ii, jj, auxline, CHUNK
         real, dimension(:), allocatable             :: Aux
-        real                                        :: AuxValue
+        real                                        :: AuxValue, NumberOfCells
         logical                                     :: Start3DFrom2D 
-
+        type (T_Dataline), pointer                  :: BufferLines(:)
+        Type (T_Dataline)                           :: string
+        integer                                     :: STAT_              !Auxiliar local variable
+        integer                                     :: length          
+                                        
+        character (len=line_length)                 :: aux_str = ""
         !----------------------------------------------------------------------
 
         !Looks for data block
         if (.not. Me%Is3D) then
+            if (MonitorPerformance) call StartWatch ("ModuleGridData", "ExtractBlockFromBuffer")
+
             call ExtractBlockFromBuffer(ObjEnterData, ClientNumber,                      &
                                         BeginGridData2D, EndGridData2D, BlockFound,      &
                                         FirstLine = FirstLine, LastLine = LastLine,      &
                                         STAT = STAT_CALL)
-
             if (STAT_CALL /= SUCCESS_) stop 'ReadFromBlocks - ModuleGridData - ERR110'
-
+            if (MonitorPerformance) call StopWatch ("ModuleGridData", "ExtractBlockFromBuffer")
             if (.not. BlockFound) then
 
                 call SetError (WARNING_, KEYWORD_, 'Block <BeginGridData2D>, <EndGridData2D> not found', OFF)
@@ -693,7 +743,7 @@ BF:     if (BlockFound) then
 Is3D:       if (.not. Me%Is3D) then
 
 
-
+                if (MonitorPerformance) call StartWatch ("ModuleGridData", "ReadBlocks")
                 line = FirstLine + 1
 
                 allocate  (Aux(3))
@@ -746,56 +796,64 @@ Coln1:          if      (flag == 3) then
                 else if (flag == 1) then Coln1
 
                     line = FirstLine
-
-                    do i = Me%GlobalWorkSize%ILB, Me%GlobalWorkSize%IUB
-                    do j = Me%GlobalWorkSize%JLB, Me%GlobalWorkSize%JUB
-                        line = line+1
-                
-                        !Reached last line before end?
-                        if (line .EQ. LastLine) then
-                            write(*,*) 'Error in File=', trim(Me%FileName)
-                            write(*,*) 'Error in Line=', line
-                            write(*,*) 'Error reading GridData2D'
-                            stop       'ReadFromBlocks - ModuleGridData - ERR170'
-                        end if
-
-                        call GetData(AuxValue, ObjEnterData,  flag,                     &
-                                     Buffer_Line  = Line,                               &
-                                     STAT         = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'ReadFromBlocks - ModuleGridData - ERR180'
+                    
+                    !Reached last line before end?
+                    NumberOfCells = Me%GlobalWorkSize%IUB * Me%GlobalWorkSize%JUB
+                    if (NumberOfCells > (LastLine - 1 - FirstLine)) then
+                        write(*,*) 'Error in File=', trim(Me%FileName)
+                        write(*,*) 'Error reading GridData2D - reached end of griddata block before complete fill of grid'
+                        stop       'ReadFromBlocks - ModuleGridData - ERR170'
+                    end if
+                    
+                    if (Me%DDecomp%MasterOrSlave) then
                         
+                        do i = Me%GlobalWorkSize%ILB, Me%GlobalWorkSize%IUB
+                        do j = Me%GlobalWorkSize%JLB, Me%GlobalWorkSize%JUB
+                            line = line+1
 
-                        if (Me%DDecomp%MasterOrSlave) then
+                            call GetData(AuxValue, ObjEnterData,  flag,                     &
+                                         Buffer_Line  = Line,                               &
+                                         STAT         = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'ReadFromBlocks - ModuleGridData - ERR180'
+                        
                             if (i>= Me%DDecomp%HaloMap%ILB .and. &
                                 i<= Me%DDecomp%HaloMap%IUB+1) then
                                 ii = i + 1 - Me%DDecomp%HaloMap%ILB
                             else
                                 cycle
-                            endif                                
-                        else
-                            ii = i
-                        endif    
+                            endif                                    
                                 
-                        if (Me%DDecomp%MasterOrSlave) then
                             if (j>= Me%DDecomp%HaloMap%JLB .and. &
                                 j<= Me%DDecomp%HaloMap%JUB+1) then
                                 jj = j + 1 - Me%DDecomp%HaloMap%JLB
                             else
                                 cycle
-                            endif                                
-                        else
-                            jj = j
-                        endif                            
+                            endif                         
 
-                        Me%GridData2D(ii,jj) = AuxValue
+                            Me%GridData2D(ii,jj) = AuxValue
 
-                    enddo
-                    enddo
+                        enddo
+                        enddo 
+                    else
+                    
+                        do i = Me%GlobalWorkSize%ILB, Me%GlobalWorkSize%IUB
+                        do j = Me%GlobalWorkSize%JLB, Me%GlobalWorkSize%JUB
+                            line = line + 1
+
+                            call GetData(AuxValue, ObjEnterData,  flag,                     &
+                                         Buffer_Line  = line,                               &
+                                         STAT         = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'ReadFromBlocks - ModuleGridData - ERR180'
+
+                            Me%GridData2D(i,j) = AuxValue
+                        enddo
+                        enddo
+                    endif
 
                 endif Coln1
 
                 deallocate(Aux)
-
+                if (MonitorPerformance) call StopWatch ("ModuleGridData", "ReadBlocks")
             else Is3D
 
                 if (Start3DFrom2D) then

@@ -680,7 +680,7 @@ Module ModuleHorizontalGrid
     !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     subroutine ConstructHorizontalGridV1(HorizontalGridID, DataFile,                    &
-                                         MPI_ID, MasterID, LastSlaveID, ModelPath, STAT)
+                                         MPI_ID, MasterID, LastSlaveID, ModelPath, Topography, NLinesInFile, STAT)
 
         !Arguments-------------------------------------------------------------
         integer                                 :: HorizontalGridID
@@ -689,11 +689,13 @@ Module ModuleHorizontalGrid
         integer, optional,  intent(IN)          :: MasterID
         integer, optional,  intent(IN)          :: LastSlaveID
         character(len=*), optional,  intent(IN) :: ModelPath
+        logical, optional,  intent(IN)          :: Topography
+        integer, optional,  intent(OUT)         :: NLinesInFile
         integer, optional,  intent(OUT)         :: STAT
 
         !Local-----------------------------------------------------------------
         integer                                 :: STAT_, ready_
-        integer                                 :: STAT_CALL
+        integer                                 :: STAT_CALL, NLinesInFile_
 
         !----------------------------------------------------------------------
 
@@ -748,10 +750,19 @@ cd2 :   if (ready_ .EQ. OFF_ERR_) then
                     endif
                 endif
             endif
-
-
+            
             !Construct the variable common to all module
-            call ConstructGlobalVariables
+            if (present(Topography)) then
+                if (present(NLinesInFile)) then
+                    call ConstructGlobalVariables(Topography, NLinesInFile)
+                else
+                    call ConstructGlobalVariables(Topography)
+                    NLinesInFile = 0 !0 will serve as flag
+                endif
+                
+            else
+                call ConstructGlobalVariables 
+            endif
 
             call GenerateGrid
 
@@ -3105,12 +3116,13 @@ cd1 :       if (NewFatherGrid%GridID == GridID) then
 
     !--------------------------------------------------------------------------
 
-    subroutine ConstructGlobalVariables
+    subroutine ConstructGlobalVariables(Topography, NLinesInFile)
 
         !Arguments-------------------------------------------------------------
-
+        logical, intent(IN), optional       :: Topography
+        integer, intent(OUT), optional      :: NLinesInFile
         !Local-----------------------------------------------------------------
-        integer                             :: STAT_CALL, ZoneLong
+        integer                             :: STAT_CALL, ZoneLong, NLinesInFile_
         integer, dimension(2)               :: AuxInt
         real,    dimension(2)               :: AuxReal
         real                                :: Aux, XY_Aux
@@ -3155,9 +3167,21 @@ cd1 :       if (NewFatherGrid%GridID == GridID) then
         nullify (Me%LongitudeConn)
 
         !Opens Data File
-        call ConstructEnterData(Me%ObjEnterData, Me%FileName, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'ConstructGlobalVariables - HorizontalGrid - ERR10'
-
+        if (present(Topography))then
+            if (Topography) then
+                NLinesInFile_ = 0
+                call ConstructEnterData_Topography(Me%ObjEnterData, Me%FileName, NLinesInFile = NLinesInFile_, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'ConstructGlobalVariables - HorizontalGrid - ERR10'
+                NLinesInFile = NLinesInFile_
+            else
+                call ConstructEnterData(Me%ObjEnterData, Me%FileName, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'ConstructGlobalVariables - HorizontalGrid - ERR10'
+            endif
+        else
+            
+            call ConstructEnterData(Me%ObjEnterData, Me%FileName, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ConstructGlobalVariables - HorizontalGrid - ERR10'
+        endif
         !Reads ILB_IUB
         call GetData(AuxInt,Me%ObjEnterData, flag,                                      &
                      keyword      = 'ILB_IUB',                                          &

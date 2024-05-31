@@ -390,7 +390,6 @@ Module ModuleRunOff
     
     type T_FVFluxVectorSplitting
         real, dimension(:,:,:), allocatable         :: element_flux
-        logical                                     :: ComputeNextState = .false.
     end type
     
     !TODO: Use inheritance to make these types less code management and repititions
@@ -1199,7 +1198,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         integer                                     :: iflag, ClientNumber
         logical                                     :: BlockFound
         integer                                     :: i, j, n
-        logical                                     :: DynamicAdjustManning
+        logical                                     :: DynamicAdjustManning, Topography
         real                                        :: dummy
         character(len = 1)                          :: Char_n
         !Reads the name of the data file from nomfich
@@ -1807,7 +1806,19 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             Me%OverLandCoefficientDelta  = null_real
             Me%OverLandCoefficientX      = null_real
             Me%OverLandCoefficientY      = null_real
-            
+#ifdef _SEWERGEMSENGINECOUPLER_
+            call ConstructFillMatrix  ( PropertyID       = Me%OverLandCoefficientID,     &
+                                        EnterDataID      = Me%ObjEnterData,              &
+                                        TimeID           = Me%ObjTime,                   &
+                                        HorizontalGridID = Me%ObjHorizontalGrid,         &
+                                        ExtractType      = FromBlock,                    &
+                                        PointsToFill2D   = Me%ExtVar%BasinPoints,        &
+                                        Matrix2D         = Me%OverLandCoefficient,       &
+                                        TypeZUV          = TypeZ_,                       &
+                                        Topography       = .true.,                       &
+                                        STAT             = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0490'
+#else
             call ConstructFillMatrix  ( PropertyID       = Me%OverLandCoefficientID,     &
                                         EnterDataID      = Me%ObjEnterData,              &
                                         TimeID           = Me%ObjTime,                   &
@@ -1818,6 +1829,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                         TypeZUV          = TypeZ_,                       &
                                         STAT             = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0490'
+#endif _SEWERGEMSENGINECOUPLER_
+
 
             call KillFillMatrix(Me%OverLandCoefficientID%ObjFillMatrix, STAT = STAT_CALL)
             if (STAT_CALL  /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0500'
@@ -8291,35 +8304,73 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real, dimension(3) :: alpha                     !>homogenous terms wave strengths
     real, dimension(3) :: beta                      !>bottom thrust terms wave strengths
     real, dimension(3) :: flux_left, flux_right     !>flux accumulators
-    real               :: cellFaceFactor            !>auxiliar
+    real               :: cellFaceFactor, depth_diff            !>auxiliar
     integer            :: CHUNK                     !>ChunkSize 
-    !real, dimension(:,:,:), allocatable :: element_flux
-    !real, dimension (:,:,:), pointer  :: element_flux
+    real, dimension(:,:,:), allocatable :: teste
+    real(8), dimension (:,:), pointer  :: waterColumn, VelModFaceU, VelModFaceV
+    real, dimension (:,:), pointer  :: Topography
+    integer, dimension (:,:), pointer  :: BasinPoints
     !Begin---------------------------------------------------------------------------------------
     if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFluxesFVS_CG")
     ILB = Me%WorkSize%ILB
     IUB = Me%WorkSize%IUB
     JLB = Me%WorkSize%JLB
     JUB = Me%WorkSize%JUB
-
+    !allocate(teste(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB, 3))
+    !teste = 0.0
     dt = 60.0
-    !allocate(element_flux(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB, 3))
-    !element_flux = 0.0
     Me%FVS%element_flux = 0.0
     strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
     
     distance = Me%GridCellArea / Me%DX
     
     cellFaceFactor = (- Me%DX / Me%GridCellArea) * 0.5 !TODO: need to figure out why it has to be * 0.5. for triangles it is 1.
+    !aux_gravity = Gravity
+    !waterColumn => Me%myWaterColumn
+    !BasinPoints => Me%ExtVar%BasinPoints
+    !Topography => Me%ExtVar%Topography
+    !VelModFaceU => Me%VelModFaceU
+    !VelModFaceV => Me%VelModFaceV
     
     CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !!$OMP PARALLEL PRIVATE(i,j,q,j_East,i_North)
+    !!$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:teste)
+    !do j = JLB, JUB-1
+    !do i = ILB, IUB-1
+    !    do c = 1, size(strideJ,1)
+    !        !Compute fluxes of east and north cell faces
+    !        j_East = j + strideJ(c, 1)
+    !        i_North = i + strideJ(c, 2)
+    !        do q = 1, 3
+    !            !print*, 'i, j, q ', i, j, q
+    !            !print*, 'valor', teste (i, j, q)
+    !            teste (i, j, q) = teste (i, j, q) + 1
+    !            teste (i_North, j_East, q) = teste (i_North, j_East, q) + 1
+    !            !print*, 'funcionou', i, j, q
+    !        enddo
+    !    enddo
+    !end do
+    !end do
+    !!$OMP END DO
+    !!$OMP END PARALLEL
+    
+    !write(*,*) "Success"
+    !stop 'yeah'
     
     !Iterating trough every cell to compute the approximate Jacobian across each edge
+    !!$OMP PARALLEL &
+    !!$OMP DEFAULT(PRIVATE) &
+    !!$OMP SHARED(JLB, JUB, ILB, IUB, strideJ,BasinPoints, WaterColumn,Topography,VelModFaceU,VelModFaceV,distance,cellFaceFactor,aux_gravity) &
+    !!$OMP REDUCTION(MIN:dt) & 
+    !!$OMP REDUCTION(+:teste)
+    !
+    !!$OMP DO  schedule(dynamic)
     !$OMP PARALLEL PRIVATE(i,j,q,c,k,j_East,i_North,depth,depth_NE,bottom,bottom_NE,waterLevel,waterLevel_NE, &
     !$OMP velU,velU_NE,velV,velV_NE,sqrt_depth,sqrt_depth_NE,aux1,aux2,aux3,vel_FaceU,vel_FaceV,celerity,  &
     !$OMP nx,ny,vel_normal,lambda,lambda_aux,lambda_i,lambda_j,eig,alpha,dz,bottom1,dz_bar,bottom2, &
-    !$OMP beta,depth_1s,depth_NE_3s,dt2,dt3,dt4,flux_left,flux_right,wettingDrying)
-    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:dt)
+    !$OMP beta,depth_1s,depth_NE_3s,dt2,dt3,dt4,flux_left,flux_right,wettingDrying,depth_diff)
+    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:dt) 
+    
     do j = JLB, JUB-1
     do i = ILB, IUB-1
         if (Me%ExtVar%BasinPoints(i, j) == 1) then
@@ -8368,11 +8419,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         lambda_aux(1) = 0
                         lambda_aux(2) = 0
                         lambda_aux(3) = 0
-
-                        lambda_i(1) = velU * nx + velV * ny - sqrt(Gravity * depth)
-                        lambda_i(3) = velU * nx + velV * ny + sqrt(Gravity * depth)        !lambda(U*)
-                        lambda_j(1) = velU_NE * nx + velV_NE * ny - sqrt(Gravity * depth_NE)
-                        lambda_j(3) = velU_NE * nx + velV_NE * ny + sqrt(Gravity * depth_NE)
+                        
+                        aux1 = sqrt(Gravity * depth)
+                        aux2 = sqrt(Gravity * depth_NE)
+                        lambda_i(1) = velU * nx + velV * ny - aux1
+                        lambda_i(3) = velU * nx + velV * ny + aux1        !lambda(U*)
+                        lambda_j(1) = velU_NE * nx + velV_NE * ny - aux2
+                        lambda_j(3) = velU_NE * nx + velV_NE * ny + aux2
 
                         if ( lambda_i(1) < 0.0 ) then
                             !Velocity (i,j) is smaller that wave celerity
@@ -8414,13 +8467,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         !Wave strengths - homogenous terms
                         !<uh> - u*<h> - pag 29 Canelas
                         !m2/s
-                        aux1 = (velU_NE * depth_NE - velU * depth) - vel_FaceU * (depth_NE - depth)
-                        aux2 = (velV_NE * depth_NE - velV * depth) - vel_FaceV * (depth_NE - depth)
+                        depth_diff = depth_NE - depth
+                        aux1 = (velU_NE * depth_NE - velU * depth) - vel_FaceU * depth_diff
+                        aux2 = (velV_NE * depth_NE - velV * depth) - vel_FaceV * depth_diff
 
                         !m
-                        alpha(1) = (depth_NE - depth) / 2 - 1 / (2 * celerity) * (aux1 * nx + aux2 * ny)
+                        alpha(1) = depth_diff / 2 - 1 / (2 * celerity) * (aux1 * nx + aux2 * ny)
                         alpha(2) = (1 / celerity) * (-aux1 * ny + aux2 * nx)
-                        alpha(3) = (depth_NE - depth) / 2 + 1 / (2 * celerity) * (aux1 * nx + aux2 * ny)
+                        alpha(3) = depth_diff / 2 + 1 / (2 * celerity) * (aux1 * nx + aux2 * ny)
 
                         !Wave strengths - bottom terms - Pressure source
                         !Pag34 Canelas
@@ -8430,19 +8484,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         bottom1 = -Gravity * ((depth + depth_NE) / 2) * dz !initial trust term
                         dz_bar = dz
 
+                        aux1 = depth_NE
                         if ( dz >= 0.0 ) then
                             !North or East cell have higher topography
                             if ( waterLevel < bottom_NE ) dz_bar = depth
                             ! And water level at current cell is lower than North or East cell's topography. In this case dz = water column
-                        end if
-
-                        if ( dz < 0.0 ) then
+                            aux1 =  depth !Eq3.47 Canelas
+                        else
                             !Same check for the North or East cell
                             if ( waterLevel_NE < bottom ) dz_bar = -depth_NE      !See Murillo, 2010 !CORRIGIDO - ERA : -DEPTH_NE
                         end if
-
-                        aux1 = depth_NE
-                        if ( dz >= 0 ) aux1 =  depth !Eq3.47 Canelas
 
                         !m3/s2   = m/s2     *    m    +   m            * m
                         bottom2 = -Gravity * (aux1 - abs(dz_bar) / 2) * dz_bar !alternative trust term !CORRIGIDO - ERA: abs(dz_bar)
@@ -8505,8 +8556,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         
                         do k=1, 3
                             !if (abs(lambda(k)) > 0.0) dt = min(dt, min_area / (lenght_act * abs(lambda(k))))
-                            if (abs(lambda(k)) > AlmostZero) then
-                                dt = min(dt, distance / abs(lambda(k)))
+                            aux1 = abs(lambda(k))
+                            if (aux1 > AlmostZero) then
+                                dt = min(dt, distance / aux1)
                             endif
                             !only "entering" caracteristics contribute to the stability region. Velocity > 0 and > celerity
                         end do
@@ -8604,7 +8656,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !$OMP END PARALLEL
     
     Me%CV%NextDT = dt * Me%CV%MaxCourant
-
+    
+    !Me%FVS%element_flux = teste
     !Time step depends on StormWaterModel (will probably need to do some flux integration to avoid this limitation)
     if (Me%StormWaterModel) then
         if (Me%StormWaterModelDT < Me%CV%NextDT) then
@@ -8612,6 +8665,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             Me%CV%NextDT = Me%StormWaterModelDT            
         endif
     end if
+    
     if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFluxesFVS_CG")
     end subroutine ComputeFluxesFVS_CG
     
@@ -9004,7 +9058,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     
     !nullify normal velocity for obstacles
     !Obstacles and BC velocity corrections
-    call NullifyVelocitesAtObstacles
+    !call NullifyVelocitesAtObstacles
     
     if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeStateFVS")
     
@@ -9092,7 +9146,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         validCell = .false.
                     end if
                 else
-                    waterColumn = Me%myWaterColumn(i, j) !Otherwize, small increments of rain will be ignored
+                    !waterColumn = Me%myWaterColumn(i, j) !Otherwize, small increments of rain will be ignored
+                    waterColumn = 0.0
                     velocityU = 0.0
                     velocityV = 0.0
                     velMod = 0.0
@@ -9126,6 +9181,20 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !Update water column and water level
                 Me%myWaterColumn(i, j) = waterColumn
                 Me%myWaterLevel(i, j)  = waterColumn + Me%ExtVar%Topography(i, j)
+                
+                !Using abs(topo) eliminates the need to check for basinpoints on all faces, meaning faster code
+                if (abs(velocityU) > AlmostZero) then
+                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j+1)) .OR. &
+                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j-1))) then
+                        Me%VelModFaceU(i, j) = 0.0
+                    endif   
+                endif
+                if (abs(velocityV) > AlmostZero) then    
+                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i+1, j)) .OR. &
+                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i-1, j))) then
+                        Me%VelModFaceV(i, j) = 0.0
+                    endif
+                endif
             
                 !Update water volume
                 Me%myWaterVolume(i, j) = waterColumn * Me%GridCellArea
@@ -9249,62 +9318,31 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !Update water column and water level
                 Me%myWaterColumn(i, j) = waterColumn
                 Me%myWaterLevel(i, j)  = waterColumn + Me%ExtVar%Topography(i, j)
-            
+                
+                !Using abs(topo) eliminates the need to check for basinpoints on all faces, meaning faster code
+                if (abs(velocityU) > AlmostZero) then
+                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j+1)) .OR. &
+                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j-1))) then
+                        Me%VelModFaceU(i, j) = 0.0
+                    endif   
+                endif
+                if (abs(velocityV) > AlmostZero) then    
+                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i+1, j)) .OR. &
+                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i-1, j))) then
+                        Me%VelModFaceV(i, j) = 0.0
+                    endif
+                endif
                 !Update water volume
                 Me%myWaterVolume(i, j) = waterColumn * cellArea
             endif
         end do
     end do
     
-    !nullify normal velocity for obstacles
-    !Obstacles and BC velocity corrections
-    call NullifyVelocitesAtObstacles
-    
     if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeStateFVS_VG")
     
     end subroutine ComputeStateFVS_VG
     
 	!____________________________________________________________________________________
-    
-    !> @author Joao Sobrinho - Bentley Systems
-    !> @brief
-    !> Nullifies normal velocity at obstacles
-    !---------------------------------------------------------------------------
-    subroutine NullifyVelocitesAtObstacles
-    !Arguments-------------------------------------------------------------
-
-    !Local-----------------------------------------------------------------
-    integer                 :: CHUNK, i, j
-    !Begin----------------------------------------------------------------------------------------------
-    
-    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "NullifyVelocitesAtObstacles")
-    
-    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    
-    !$OMP PARALLEL PRIVATE(I, J)
-    !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-        !Using abs(topo) eliminates the need to check for basinpoints on all faces, meaning faster code
-        if (abs(Me%VelModFaceU(i, j)) > AlmostZero) then
-            if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j+1)) .OR. &
-                Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j-1))) then
-                Me%VelModFaceU(i, j) = 0.0
-            endif   
-        endif
-        if (abs(Me%VelModFaceV(i, j)) > AlmostZero) then    
-            if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i+1, j)) .OR. &
-                Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i-1, j))) then
-                Me%VelModFaceV(i, j) = 0.0
-            endif
-        endif
-    enddo
-    enddo          
-    !$OMP END DO 
-    !$OMP END PARALLEL
-    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "NullifyVelocitesAtObstacles")
-        
-    end subroutine NullifyVelocitesAtObstacles
     
     !---------------------------------------------------------------------------
     !> @author Joao Sobrinho - Bentley Systems

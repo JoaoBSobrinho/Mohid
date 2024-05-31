@@ -725,6 +725,7 @@ Module ModuleBasin
         character (Len = StringLength)                  :: OptionsType
         logical                                         :: IsConstant
         real                                            :: DXX, DYY
+        integer                                         :: NumberOfLines
 #ifdef _ENABLE_CUDA        
         type (T_Size3D)                                 :: GeometrySize
 #endif _ENABLE_CUDA        
@@ -781,6 +782,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             !Simulation time in seconds
             Me%SimulationTime = Me%EndTime - Me%BeginTime
             call ReadFileNames        
+            
+#ifndef _SEWERGEMSENGINECOUPLER_
+
             !Constructs Horizontal Grid
             call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
                                          STAT = STAT_CALL)           
@@ -791,7 +795,22 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                          FileName = Me%Files%TopographicFile,            &
                                          STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR05'
-
+#else
+            !Constructs Horizontal Grid
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalGrid")
+            call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
+                                         Topography = .true., NLinesInFile = NumberOfLines, STAT = STAT_CALL)           
+            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR04'
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructHorizontalGrid")
+            !Constructs GridData
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructGridData")
+            call ConstructGridData      (Me%ObjGridData, Me%ObjHorizontalGrid,           &
+                                         FileName = Me%Files%TopographicFile,            &
+                                         Topography = .true., NumberOfLines = NumberOfLines, &
+                                         STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR05'
+#endif _SEWERGEMSENGINECOUPLER_ 
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructGridData")
             !Constructs BasinGeometry
             call ConstructBasinGeometry (Me%ObjBasinGeometry, Me%ObjGridData,            &
                                          Me%ObjHorizontalGrid, STAT = STAT_CALL)
@@ -802,35 +821,37 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR07'
 
             !Constructs Mapping
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalMap")
             call ConstructHorizontalMap (Me%ObjHorizontalMap, Me%ObjGridData,            &
                                         Me%ObjHorizontalGrid, Me%CurrentTime,            &
                                         Me%ExtVar%BasinPoints, 2, STAT = STAT_CALL)  
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR08'
-            
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructHorizontalMap")
             
             !Gets the size of the grid
             call GetHorizontalGridSize (Me%ObjHorizontalGrid,                            &
                                         Size     = Me%Size,                              &
                                         WorkSize = Me%WorkSize,                          &
                                         STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09a'              
-
-            call GetGridCellArea(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09b'            
+            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09a'                        
             
-            Me%BWB%BasinArea     = 0.0
-            Me%BWB%NumberOfCells = 0
-            do j = Me%Size%JLB, Me%Size%JUB
-            do i = Me%Size%ILB, Me%Size%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == 1) then
-                    Me%BWB%BasinArea     = Me%BWB%BasinArea + Me%ExtVar%GridCellArea(i, j)
-                    Me%BWB%NumberOfCells = Me%BWB%NumberOfCells + 1
-                endif
-            enddo
-            enddo 
-            
-            call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09c'
+            if (Me%ComputeBasinWaterBalance) then
+                call GetGridCellArea(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09b'
+                
+                Me%BWB%BasinArea     = 0.0
+                Me%BWB%NumberOfCells = 0
+                do j = Me%Size%JLB, Me%Size%JUB
+                do i = Me%Size%ILB, Me%Size%IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                        Me%BWB%BasinArea     = Me%BWB%BasinArea + Me%ExtVar%GridCellArea(i, j)
+                        Me%BWB%NumberOfCells = Me%BWB%NumberOfCells + 1
+                    endif
+                enddo
+                enddo
+                call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR09c'
+            endif
             
             !Ungets BasinPoints
             call UngetBasin             (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
@@ -892,7 +913,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 #ifdef _ENABLE_CUDA
             call ConstructCoupledModules(Me%ObjCuda)
 #else
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructCoupledModules")
             call ConstructCoupledModules()
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructCoupledModules")
 #endif _ENABLE_CUDA                        
 
             !Checks property related options
@@ -2268,7 +2291,19 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         !Construct property ID
         NewProperty%ID%Name = PropertyName
         !call ConstructPropertyID        (NewProperty%ID, Me%ObjEnterData, FromBlock)
-
+#ifdef _SEWERGEMSENGINECOUPLER_
+        call ConstructFillMatrix(PropertyID         = NewProperty%ID,                    &
+                                 EnterDataID        = Me%ObjEnterData,                   &
+                                 TimeID             = Me%ObjTime,                        &
+                                 HorizontalGridID   = Me%ObjHorizontalGrid,              &
+                                 ExtractType        = FromBlock,                         &
+                                 PointsToFill2D     = Me%ExtVar%BasinPoints,             &
+                                 Matrix2D           = NewProperty%Field,                 &
+                                 TypeZUV            = TypeZ_,                            &
+                                 Topography         = .true.,                            &
+                                 STAT               = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ConstructOneProperty - ModuleBasin - ERR04'
+#else
         call ConstructFillMatrix(PropertyID         = NewProperty%ID,                    &
                                  EnterDataID        = Me%ObjEnterData,                   &
                                  TimeID             = Me%ObjTime,                        &
@@ -2279,7 +2314,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                  TypeZUV            = TypeZ_,                            &
                                  STAT               = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ConstructOneProperty - ModuleBasin - ERR04'
-
+#endif _SEWERGEMSENGINECOUPLER_ 
         if (.not. NewProperty%ID%SolutionFromFile) then
             call KillFillMatrix (NewProperty%ID%ObjFillMatrix, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructOneProperty - ModuleBasin - ERR05'
@@ -3465,6 +3500,7 @@ i1:         if (CoordON) then
 
         !Constructs RunOff
         if (Me%Coupled%RunOff) then
+            if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructRunOff")
             call ConstructRunOff        (ModelName          = Me%ModelName,              &                 
                                          RunOffID           = Me%ObjRunOff,              &
                                          ComputeTimeID      = Me%ObjTime,                &
@@ -3482,7 +3518,7 @@ i1:         if (CoordON) then
             if (STAT_CALL /= SUCCESS_) stop 'ConstructCoupledModules - ModuleBasin - ERR071'
             
             if (Flag) Me%RunOffUsingFVS = .true.
-           
+            if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructRunOff")
             !Constructs RunoffProperties 
             if (Me%Coupled%RunoffProperties) then
                 call ConstructRunoffProperties        (ObjRunoffPropertiesID      = Me%ObjRunoffProperties,       &
