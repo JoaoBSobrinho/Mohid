@@ -7963,7 +7963,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_, ready_
         integer                                     :: STAT_CALL
-        real                                        :: SumDT
+        real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
         integer                                     :: Niter, iter
         integer                                     :: n_restart
@@ -8026,7 +8026,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
                 call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ExtVar%BasinPoints)            
           
-            
+                if (Me%Discharges) TotalDischargeFlowVolume_entry = Me%TotalDischargeFlowVolume
+                
                 !Set 1D River level in river boundary cells
                 !From External model or DN
                 if (Me%Use1D2DInteractionMapping) then
@@ -8049,7 +8050,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     !Calculates local Watercolumn
                     call ReadLockExternalVar   (StaticOnly = .true.)
                     call LocalWaterColumn      (Me%myWaterColumnOld)
-
+                    
+                    !Important when restart happens more than once at the same iteration of modifyRunOff.
+                    Me%TotalDischargeFlowVolume = TotalDischargeFlowVolume_entry
+                    
                     SumDT        = 0.0
                     Restart      = .false.                                 
                     iter         = 1
