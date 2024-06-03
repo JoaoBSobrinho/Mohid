@@ -7989,8 +7989,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
                 
-                write(*,*) "Me%TotalDischargeFlowVolume antes do computeState = ", Me%TotalDischargeFlowVolume
-                write(*,*) "Me%TotalStoredVolume antes do computeState = ", Me%TotalStoredVolume
                 call ComputeStateFVS
                 
                 !Update discharges
@@ -8014,8 +8012,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call UpdateFVSOutputVariables ! similar to centerValues, but integrating both would be painfully inefficient
                 
                 call Outputs !Write to hdf, time serie, etc
-                write(*,*) "Me%TotalDischargeFlowVolume depois dos outputs = ", Me%TotalDischargeFlowVolume
-                write(*,*) "Me%TotalStoredVolume depois dos outputs = ", Me%TotalStoredVolume
                 
                 call ComputeFluxesFVS !returns new maximum time step
                 
@@ -8056,7 +8052,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call LocalWaterColumn      (Me%myWaterColumnOld)
                     
                     !Important when restart happens more than once at the same iteration of modifyRunOff.
-                    Me%TotalDischargeFlowVolume = TotalDischargeFlowVolume_entry
+                    if (Me%Discharges) Me%TotalDischargeFlowVolume = TotalDischargeFlowVolume_entry
                     
                     SumDT        = 0.0
                     Restart      = .false.                                 
