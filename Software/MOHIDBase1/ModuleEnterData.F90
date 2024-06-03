@@ -32,7 +32,6 @@ Module ModuleEnterData
 
     use ModuleGlobalData
     use ModuleTime
-    use ModuleStopWatch,        only: StartWatch, StopWatch
 
     implicit none
 
