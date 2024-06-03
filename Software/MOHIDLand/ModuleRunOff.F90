@@ -7988,12 +7988,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             call ReadLockExternalVar   (StaticOnly = .true.)
             
             if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
-                    
+                
+                write(*,*) "Me%TotalDischargeFlowVolume antes do computeState = ", Me%TotalDischargeFlowVolume
+                write(*,*) "Me%TotalStoredVolume antes do computeState = ", Me%TotalStoredVolume
                 call ComputeStateFVS
                 
                 !Update discharges
                 if (Me%Discharges) call ModifyWaterDischarges  (Me%ExtVar%DT)
-                    
+                
                 !Apply rain. Needs to be done here so that all source and sinks are added at the same instant in time
                 if (associated(Me%RainFall)) then
                     call ModifyRainFall
@@ -8012,7 +8014,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call UpdateFVSOutputVariables ! similar to centerValues, but integrating both would be painfully inefficient
                 
                 call Outputs !Write to hdf, time serie, etc
-                    
+                write(*,*) "Me%TotalDischargeFlowVolume depois dos outputs = ", Me%TotalDischargeFlowVolume
+                write(*,*) "Me%TotalStoredVolume depois dos outputs = ", Me%TotalStoredVolume
+                
                 call ComputeFluxesFVS !returns new maximum time step
                 
                 call ReadUnLockExternalVar (StaticOnly = .true.)
@@ -9073,18 +9077,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 !Primitive variables
                 waterColumn = Me%myWaterColumn(i, j)
-                velocityU = Me%VelModFaceU(i, j)! Velocity at the center of the cell
-                velocityV = Me%VelModFaceV(i, j)
-
+                
                 !Conserved variables
-                waterColumn_new = waterColumn
-                momentumU = velocityU * waterColumn
-                momentumV = velocityV * waterColumn
-
                 !updating independant conserved quantities
-                waterColumn_new = waterColumn_new + Me%FVS%element_flux(i, j, 1) * Dt
-                momentumU       = momentumU       + Me%FVS%element_flux(i, j, 2) * Dt
-                momentumV       = momentumV       + Me%FVS%element_flux(i, j, 3) * Dt
+                waterColumn_new = waterColumn + Me%FVS%element_flux(i, j, 1) * Dt
 
                 !if (waterColumn_new < AllmostZeroNegative) then
                 !    write(*,*) "Valor negativo de coluna de agua. I, J, valor = ", i, j, waterColumn, waterColumn_new
@@ -9092,6 +9088,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !endif
                 validCell = .true.
                 if (abs(waterColumn_new) > AlmostZero) then !Acceptable flow depth, above machine precision
+                    !Primitive variables
+                    velocityU = Me%VelModFaceU(i, j)! Velocity at the center of the cell
+                    velocityV = Me%VelModFaceV(i, j)
+                
+                    !updating independant conserved quantities
+                    momentumU       = velocityU * waterColumn + Me%FVS%element_flux(i, j, 2) * Dt
+                    momentumV       = velocityV * waterColumn + Me%FVS%element_flux(i, j, 3) * Dt
+                    
                     waterColumn = waterColumn_new
                     velocityU = momentumU / waterColumn_new
                     velocityV = momentumV / waterColumn_new
@@ -9144,16 +9148,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 Me%myWaterColumn(i, j) = waterColumn
                 Me%myWaterLevel(i, j)  = waterColumn + Me%ExtVar%Topography(i, j)
                 
-                !Using abs(topo) eliminates the need to check for basinpoints on all faces, meaning faster code
-                if (abs(velocityU) > AlmostZero) then
-                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j+1)) .OR. &
-                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j-1))) then
+                if (velocityU /= 0.0) then
+                    if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j+1) .OR. &
+                        Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j-1) .OR. &
+                        (Me%ExtVar%BasinPoints(i, j+1) + Me%ExtVar%BasinPoints(i, j-1)) < 2) then
                         Me%VelModFaceU(i, j) = 0.0
                     endif   
                 endif
-                if (abs(velocityV) > AlmostZero) then    
-                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i+1, j)) .OR. &
-                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i-1, j))) then
+                if (velocityV /= 0.0) then    
+                    if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i+1, j) .OR. &
+                        Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i-1, j) .OR. &
+                        (Me%ExtVar%BasinPoints(i+1, j) + Me%ExtVar%BasinPoints(i-1, j)) < 2) then
                         Me%VelModFaceV(i, j) = 0.0
                     endif
                 endif
@@ -9282,15 +9287,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 Me%myWaterLevel(i, j)  = waterColumn + Me%ExtVar%Topography(i, j)
                 
                 !Using abs(topo) eliminates the need to check for basinpoints on all faces, meaning faster code
-                if (abs(velocityU) > AlmostZero) then
-                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j+1)) .OR. &
-                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i, j-1))) then
+                if (velocityU /= 0.0) then
+                    if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j+1) .OR. &
+                        Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i, j-1) .OR. &
+                        (Me%ExtVar%BasinPoints(i, j+1) + Me%ExtVar%BasinPoints(i, j-1)) < 2) then
                         Me%VelModFaceU(i, j) = 0.0
                     endif   
                 endif
-                if (abs(velocityV) > AlmostZero) then    
-                    if (Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i+1, j)) .OR. &
-                        Me%myWaterLevel(i, j) < abs(Me%ExtVar%Topography(i-1, j))) then
+                if (velocityV /= 0.0) then    
+                    if (Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i+1, j) .OR. &
+                        Me%myWaterLevel(i, j) < Me%ExtVar%Topography(i-1, j) .OR. &
+                        (Me%ExtVar%BasinPoints(i+1, j) + Me%ExtVar%BasinPoints(i-1, j)) < 2) then
                         Me%VelModFaceV(i, j) = 0.0
                     endif
                 endif
@@ -9335,11 +9342,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK
         real(4)                                     :: WaterColumn, RotationX, RotationY
+        real                                        :: Sum
+        
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG")
         
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-       
+        Sum = 0.0
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
         JLB = Me%WorkSize%JLB
@@ -9351,10 +9360,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I, J, WaterColumn)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i, j) * Me%GridCellArea
+                        
                         WaterColumn = Me%myWaterColumn(i, j)
                         if (WaterColumn > Me%MinimumWaterColumn) then
                             Me%CenterVelocityX_R4 (i, j) = Me%VelModFaceU(i, j) * Me%GridCosAngleX + Me%VelModFaceV(i, j) * Me%GridCosAngleY
@@ -9375,10 +9387,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !$OMP END PARALLEL
             else
                 !$OMP PARALLEL PRIVATE(I,J, WaterColumn)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i, j) * Me%GridCellArea
+                        
                         WaterColumn = Me%myWaterColumn(i, j)
                         if (WaterColumn > Me%MinimumWaterColumn) then
                             Me%CenterVelocityX_R4 (i, j) = Me%VelModFaceU(i, j)
@@ -9403,10 +9418,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
         else
             !$OMP PARALLEL PRIVATE(I, J, RotationX, RotationY, WaterColumn)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
             do j = JLB, JUB
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !m3 = m3  +      m      *     m2
+                    Sum = Sum + Me%myWaterColumn(i, j) * Me%GridCellArea
+                    
                     WaterColumn = Me%myWaterColumn (i,j)
                     if (WaterColumn > Me%MinimumWaterColumn) then
                         RotationX = Me%ExtVar%RotationX(i, j)
@@ -9423,13 +9441,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         Me%CenterVelocityX_R4(i, j) = 0.0
                         Me%CenterVelocityY_R4(i, j) = 0.0
                     endif
-                    
                 endif
             enddo
             enddo
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         endif
+        
+        Me%TotalStoredVolume        = Sum
+        Me%VolumeStoredInSurface    = Sum
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - Modulus_R4")
 
@@ -9493,11 +9513,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK
         real(4)                                     :: WaterColumn, RotationX, RotationY
+        real                                        :: Sum
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG")
         
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-       
+        Sum = 0.0
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
         JLB = Me%WorkSize%JLB
@@ -9509,12 +9530,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I, J, WaterColumn)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                        
                         WaterColumn = Me%myWaterColumn(i, j)
-                        if (WaterColumn > Me%MinimumWaterColumn) then
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                             Me%CenterVelocityX_R4 (i, j) = Me%VelModFaceU(i, j) * Me%GridCosAngleX + Me%VelModFaceV(i, j) * Me%GridCosAngleY
                             Me%CenterVelocityY_R4 (i, j) = Me%VelModFaceU(i, j) * Me%GridSinAngleX + Me%VelModFaceV(i, j) * Me%GridSinAngleY
 
@@ -9533,10 +9557,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !$OMP END PARALLEL
             else
                 !$OMP PARALLEL PRIVATE(I,J, WaterColumn)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                        
                         WaterColumn = Me%myWaterColumn(i, j)
                         if (WaterColumn > Me%MinimumWaterColumn) then
                             Me%CenterVelocityX_R4 (i, j) = Me%VelModFaceU(i, j)
@@ -9550,6 +9577,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             Me%CenterVelocityX_R4(i, j) = 0.0
                             Me%CenterVelocityY_R4(i, j) = 0.0
                         endif
+
                     endif
                 enddo
                 enddo
@@ -9561,10 +9589,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
         else
             !$OMP PARALLEL PRIVATE(I, J, RotationX, RotationY, WaterColumn)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
             do j = JLB, JUB
             do i = ILB, IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !m3 = m3  +      m      *     m2
+                    Sum = Sum + Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
                     WaterColumn = Me%myWaterColumn (i,j)
                     if (WaterColumn > Me%MinimumWaterColumn) then
                         RotationX = Me%ExtVar%RotationX(i, j)
@@ -9581,13 +9611,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         Me%CenterVelocityX_R4(i, j) = 0.0
                         Me%CenterVelocityY_R4(i, j) = 0.0
                     endif
-                    
                 endif
             enddo
             enddo
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         endif
+        
+        Me%TotalStoredVolume        = Sum
+        Me%VolumeStoredInSurface    = Sum
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - Modulus_R4")
 
@@ -18471,29 +18503,32 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Begin-----------------------------------------------------------------
 
-        CHUNK = ChunkJ
+        if (Me%HydrodynamicApproximation /= FVFluxVectorSplitting_) then
+            !FVS computes it in UpdateFVSOutputVariables
+            CHUNK = ChunkJ
 
-        Sum = 0.0
+            Sum = 0.0
 
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     
-            if (Me%ExtVar%BasinPoints(i, j) == 1) then
-                !m3 = m3  + m3
-                Sum = Sum + Me%MyWaterVolume(i, j)
+                if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                    !m3 = m3  + m3
+                    Sum = Sum + Me%MyWaterVolume(i, j)
 
-            endif
+                endif
 
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-        !$OMP END PARALLEL
+            enddo
+            enddo
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL
 
-        Me%TotalStoredVolume        = Sum
-        Me%VolumeStoredInSurface    = Sum
-
+            Me%TotalStoredVolume        = Sum
+            Me%VolumeStoredInSurface    = Sum
+        endif
+        
         if(Me%TotalStoredVolume > Me%MaxTotal2DVolume)then
             Me%MaxTotal2DVolume       = Me%TotalStoredVolume
             Me%TimeOfMaxTotal2DVolume = Me%ExtVar%Now - Me%BeginTime
