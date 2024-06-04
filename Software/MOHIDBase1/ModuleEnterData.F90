@@ -138,7 +138,9 @@ Module ModuleEnterData
 
     integer, parameter :: FORMATTED_     = 1
     integer, parameter :: UNFORMATTED_   = 2
-
+    
+    character(LEN = StringLength), parameter :: EndGridData2D     = '<EndGridData2D>'
+    character(LEN = StringLength), parameter :: BeginGridData2D   = '<BeginGridData2D>'
     !Type----------------------------------------------------------------------
     Type       T_Dataline
         character(LEN = line_length) :: full_line
@@ -3661,10 +3663,12 @@ if9 :           if (Me%BlockClientIDnumber .EQ. ClientNumber) then     !Second o
         
 
 cd3 :   if (FoundBegin) then
-            Me%Block%EndBlock = Me%BufferSize !FirstGuess
-            call ScanLineUnsafe(Me%BufferLines(Me%BufferSize))
-            ReadKeyWord = Me%BufferLines(Me%BufferSize)%full_line(1:Me%BufferLines(Me%BufferSize)%delimiter_pos-1)
-            FoundEnd = .TRUE.
+            if (block_begin == BeginGridData2D) then
+                Me%Block%EndBlock = Me%BufferSize !FirstGuess
+                call ScanLineUnsafe(Me%BufferLines(Me%BufferSize))
+                ReadKeyWord = Me%BufferLines(Me%BufferSize)%full_line(1:Me%BufferLines(Me%BufferSize)%delimiter_pos-1)
+                FoundEnd = .TRUE.
+            endif
             if (.not. trim(adjustl(ReadKeyWord)) .EQ. trim(adjustl(block_end))) then
                 FoundEnd = .FALSE.
                 !probably not a topographic file (which typically ends with the <endgriddata2D>)

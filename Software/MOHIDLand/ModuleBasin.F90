@@ -10552,7 +10552,6 @@ cd0:    if (Exist) then
         
             NewDT = RunOffDT
             ID_DT = 2
-            
         endif
         
 
@@ -10675,7 +10674,7 @@ cd0:    if (Exist) then
         call ExtractDate (NextTime, year, month, day, hour, minute, second)
                
         write(AuxString, fmt=10)min(DNetDT, MaxDT), min(RunOffDT, MaxDT), min(PorousMediaDT, MaxDT), &
-                                min(AtmosphereDT, MaxDT), DTForNextEvent, time_string                                
+                                min(AtmosphereDT, MaxDT), DTForNextEvent, time_string       
         
         10 format(f12.4, 1x, f12.4, 1x, f12.4, 1x, f12.4, 1x, e20.12e3, 1x, A26)
 
