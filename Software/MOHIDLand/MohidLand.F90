@@ -527,7 +527,12 @@ program MohidLand
                     !divide it by 2
                     else if ((NextSyncTime - CurrentTime + DT) < DT) then
                         DT = (NextSyncTime - CurrentTime) / 2.0
-                    endif   
+                        
+                    elseif ((NextSyncTime - CurrentTime) < 2.0 * DT) then
+                        
+                        DT = (NextSyncTime - CurrentTime) / 2.0
+                        
+                    endif
                 endif
                 
                 

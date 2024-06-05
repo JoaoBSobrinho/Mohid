@@ -645,9 +645,9 @@ Module ModuleHorizontalGrid
         type (T_BorderLimits)                   :: BorderLimits
         
         logical                                 :: ConstantSpacingX = .false.
-        real(8)                                 :: DX               = null_real
+        real                                    :: DX               = null_real
         logical                                 :: ConstantSpacingY = .false.
-        real(8)                                 :: DY               = null_real
+        real                                    :: DY               = null_real
 
         !Instances
         integer                                 :: ObjHDF5       = 0
@@ -4638,17 +4638,19 @@ end do do1
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
 
-                !Rotation of the points
-                !$OMP PARALLEL PRIVATE(I,J)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-do3 :           do j = JLB, JUB + 1
-do4 :           do i = ILB, IUB + 1
-                    call RODAXY(Me%Xorig, Me%Yorig,            &
-                                Me%Grid_Angle, XX_IE(i, j), YY_IE(i, j))
-                end do do4
-end do do3
-                !$OMP END DO NOWAIT
-                !$OMP END PARALLEL
+                if (Me%Grid_Angle /= 0.0) then
+                    !Rotation of the points
+                    !$OMP PARALLEL PRIVATE(I,J)
+                    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+                    do j = JLB, JUB + 1
+                    do i = ILB, IUB + 1
+                        call RODAXY(Me%Xorig, Me%Yorig,            &
+                                    Me%Grid_Angle, XX_IE(i, j), YY_IE(i, j))
+                    end do
+                    end do
+                    !$OMP END DO NOWAIT
+                    !$OMP END PARALLEL
+                endif
 
 ifM:            if (Me%DDecomp%Master) then
                         
@@ -6116,28 +6118,33 @@ cd1:    if (Me%Grid_Angle /= 0. .or. Me%CoordType == CIRCULAR_ .or. Me%CornersXY
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
-        else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
+else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
 
-            !DXX
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = JLB, JUB
-            do i = ILB, IUB + 1
-                Me%DXX(i, j) = Me%XX_IE(i  , j+1) -    &
-                                              Me%XX_IE(i  , j  )
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
-            !DYY
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = JLB, JUB + 1
-            do i = ILB, IUB
-                Me%DYY(i, j) = Me%YY_IE(i+1, j  ) -    &
-                                              Me%YY_IE(i  , j  )
-            enddo
-            enddo
-            !$OMP END DO
-            
+            if (Me%ConstantSpacingX .and. Me%ConstantSpacingY) Then
+                Me%DXX(:,:) = Me%DX
+                Me%DYY(:,:) = Me%DY
+            else
+                
+            !DXX
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+                do j = JLB, JUB
+                do i = ILB, IUB + 1
+                    Me%DXX(i, j) = Me%XX_IE(i  , j+1) -    &
+                                                  Me%XX_IE(i  , j  )
+                enddo
+                enddo
+                !$OMP END DO NOWAIT
+                !DYY
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+                do j = JLB, JUB + 1
+                do i = ILB, IUB
+                    Me%DYY(i, j) = Me%YY_IE(i+1, j  ) -    &
+                                                  Me%YY_IE(i  , j  )
+                enddo
+                enddo
+                !$OMP END DO
+            endif
             !DUX, DVY
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = JLB, JUB
