@@ -4638,19 +4638,17 @@ end do do1
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
 
-                if (Me%Grid_Angle /= 0.0) then
-                    !Rotation of the points
-                    !$OMP PARALLEL PRIVATE(I,J)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-                    do j = JLB, JUB + 1
-                    do i = ILB, IUB + 1
-                        call RODAXY(Me%Xorig, Me%Yorig,            &
-                                    Me%Grid_Angle, XX_IE(i, j), YY_IE(i, j))
-                    end do
-                    end do
-                    !$OMP END DO NOWAIT
-                    !$OMP END PARALLEL
-                endif
+                !Rotation of the points
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+                do j = JLB, JUB + 1
+                do i = ILB, IUB + 1
+                    call RODAXY(Me%Xorig, Me%Yorig,            &
+                                Me%Grid_Angle, XX_IE(i, j), YY_IE(i, j))
+                end do
+                end do
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
 
 ifM:            if (Me%DDecomp%Master) then
                         

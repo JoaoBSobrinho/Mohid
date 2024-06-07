@@ -1107,6 +1107,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             !Output Results
             if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
                 call UpdateFVSOutputVariables
+                Me%InitialTotalVolume = Me%TotalStoredVolume
             else
                 if (Me%OutPut%Yes .or. Me%OutPut%TimeSeries) then
                     if (Me%HasRunoffProperties) then
@@ -9201,14 +9202,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !$OMP END PARALLEL
     
     
-    !$OMP PARALLEL PRIVATE(i,j,waterlevel)
+    !$OMP PARALLEL PRIVATE(i,j)
     !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
     do j = JLB, JUB
         do i = ILB, IUB
             if (Me%CellHasVelocity(i,j)) then
-                !U velocity
-                waterlevel = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                
+                !U velocity                
                 if (Me%myWaterColumn(i, j+1) == 0.0) then
                     if (waterlevel < Me%ExtVar%Topography(i, j+1)) then
                         Me%VelModFaceU(i, j) = 0.0
