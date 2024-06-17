@@ -232,10 +232,15 @@ program MohidLand
         
         if(VariableDT .and. SyncDT) NextSyncTime = BeginTime + SyncDTInterval
         
-        !Constructs Basin
-        call ConstructBasin   (ObjBasinID = ObjBasin, ObjTime = ObjComputeTime, ModelName = ModelName, &
-                               StopOnBathymetryChange = StopOnBathymetryChange, STAT = STAT_CALL)
+        if (SyncDT) then
+            !Constructs Basin
+            call ConstructBasin   (ObjBasinID = ObjBasin, ObjTime = ObjComputeTime, ModelName = ModelName, &
+                                   StopOnBathymetryChange = StopOnBathymetryChange, SyncDT = SyncDTInterval, STAT = STAT_CALL)
         
+        else!Constructs Basin
+            call ConstructBasin   (ObjBasinID = ObjBasin, ObjTime = ObjComputeTime, ModelName = ModelName, &
+                                   StopOnBathymetryChange = StopOnBathymetryChange, STAT = STAT_CALL)
+        endif
         !Basin updated module time's DT with runoff DT. Now we need to update MohidLand DT
         call GetComputeTimeStep (ObjComputeTime, DT, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ConstructMohidLand - MohidLand - ERR00'

@@ -705,13 +705,14 @@ Module ModuleBasin
     !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-    subroutine ConstructBasin(ObjBasinID, ObjTime, ModelName, StopOnBathymetryChange, STAT)
+    subroutine ConstructBasin(ObjBasinID, ObjTime, ModelName, StopOnBathymetryChange, SyncDT, STAT)
 
         !Arguments---------------------------------------------------------------
         integer                                         :: ObjBasinID 
         integer                                         :: ObjTime
         character(len=*)                                :: ModelName
         logical                                         :: StopOnBathymetryChange
+        real, optional, intent(IN)                      :: SyncDT
         integer, optional, intent(OUT)                  :: STAT     
 
         !Local-------------------------------------------------------------------
@@ -953,9 +954,12 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 call HDF5OutPut       
             endif
             
-            if (VariableDT) then 
-                call ComputeNextDT(Me%CurrentDT)
-                
+            if (VariableDT) then
+                if (present(SyncDT)) then
+                    call ComputeNextDT(Me%CurrentDT, SyncDT)
+                else
+                    call ComputeNextDT(Me%CurrentDT)
+                endif
                 call ActualizeDT(TimeID = Me%ObjTime, DT = Me%CurrentDT, STAT = STAT_CALL)     
                 if (STAT_CALL /= SUCCESS_) stop 'ModuleBasin - ConstructBasin - ERR100'
             endif
@@ -10472,11 +10476,11 @@ cd0:    if (Exist) then
 
     !--------------------------------------------------------------------------
 
-    subroutine ComputeNextDT (NewDT)
+    subroutine ComputeNextDT (NewDT, SyncDT)
 
         !Arguments---------------------------------------------------------------
         real                                        :: NewDT
-
+        real, optional, intent(IN)                  :: SyncDT
         !Local-------------------------------------------------------------------
         integer                                     :: STAT_CALL     
         real                                        :: AtmosphereDT, DTForNextEvent
@@ -10666,6 +10670,11 @@ cd0:    if (Exist) then
             NewDT = Me%InternalDT%NextDT
             ID_DT = 9
         endif
+        
+        if (present(SyncDT)) then
+            NewDT = min(NewDT, SyncDT)
+        endif
+        
                 
         !synchronize so that output can occur at multiples of MaxDT and not some minutes, seconds or milisseconds after        
         NextTime = Me%CurrentTime + NewDT
