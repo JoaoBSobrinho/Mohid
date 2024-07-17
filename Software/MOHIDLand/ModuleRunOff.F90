@@ -17612,14 +17612,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: Niter        
         
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, STAT_CALL, CHUNK
-        integer                                     :: ILB, IUB, JLB, JUB
+        integer                                     :: i, j, STAT_CALL, CHUNK, c, nx, ny
+        integer                                     :: ILB, IUB, JLB, JUB, j_East, i_North
         real                                        :: nextDTCourant, aux
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
-        real                                        :: CurrentDT, highest_dh, Distance_Courant, dh_bottom, dh_left
+        real                                        :: CurrentDT, Distance_Courant, totalVel
+        real                                        :: velface, celerity, waterColumn, waterColumn_NE
         real, dimension(4)                          :: dh
-    
+        integer, dimension(2,2)                     :: strideJ
         !----------------------------------------------------------------------
     
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
@@ -17634,6 +17635,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         nextDTCourant   = -null_real
         nextDTVariation = -null_real
         
+        strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
+        
         if (VariableDT) then
     
             CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
@@ -17646,69 +17649,71 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%CV%LimitDTCourant) then
                 if (Me%GridIsConstant) then
                     Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-                    highest_dh = 0.0
-                    dh_left = 0.0
-                    dh_bottom = 0.0
-                    !$OMP PARALLEL PRIVATE(I,J)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:dh_left, dh_bottom)
-                    do j = JLB, JUB
-                    do i = ILB, IUB
-                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                            dh_left = max(dh_left, Me%AreaU(i,j) /  Me%DY)
-                        
-                            dh_bottom = max(dh_bottom, Me%AreaV(i,j) /  Me%DX)
+                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, &
+                                           waterColumn, waterColumn_NE, totalVel)
+                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:nextDTCourant)
+                    do j = JLB+1, JUB
+                    do i = ILB+1, IUB
+                        if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                            do c = 1, size(strideJ,1)
+                                !Compute fluxes of east and north cell faces
+                                j_East = j - strideJ(c, 1)
+                                i_North = i - strideJ(c, 2)
                             
+                                if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+                                    waterColumn = Me%myWaterColumn (i,j)
+                                    waterColumn_NE = Me%myWaterColumn (i_North,j_East)
+                                
+                                    if (waterColumn + waterColumn_NE > Me%MinimumWaterColumn) then
+                                        
+                                        nx = strideJ(c, 1)
+                                        ny = strideJ(c, 2)
+                                        aux = (waterColumn + waterColumn_NE) / 2
+                                        if (nx == 1) then
+                                            velFace = Me%iFlowX(i, j) / (aux * Me%DY)
+                                        else
+                                            velFace = Me%iFlowY(i, j) / (aux * Me%DX)
+                                        endif
+                                        !VelFace + celerity
+                                        celerity = sqrt(Gravity * aux)
+                                        totalVel = max(velFace + celerity,velFace - celerity)
+                                        if (abs(totalVel) > AlmostZero) then
+                                            aux = Distance_Courant / totalVel
+                        
+                                            nextDTCourant = min(nextDTCourant, aux)
+                                        endif
+                                    endif
+                                endif
+                            enddo
                         endif
                     enddo
                     enddo
                     !$OMP END DO NOWAIT 
                     !$OMP END PARALLEL
                     
-                    !m
-                    highest_dh = max(dh_left, dh_bottom)
-                    
-                    if (highest_dh > 0.0) then
-                        aux = Distance_Courant / sqrt(Gravity * highest_dh)
-                        
-                        nextDTCourant = min(nextDTCourant, aux)
-                    endif
-                    
                 else
-                    highest_dh = 0.0
-                    !$OMP PARALLEL PRIVATE(I,J,aux, dh, highest_dh)
+                    !$OMP PARALLEL PRIVATE(I,J,aux)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
                     do j = JLB, JUB
                     do i = ILB, IUB
-                    
-                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         
-                            if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                                dh = 0.0
-                                if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
-                                    dh(1) = max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j)
-                                endif
-                            
-                                if (Me%ExtVar%BasinPoints(i,j+1) == BasinPoint) then
-                                    dh(2) = max(Me%myWaterLevel(i, j+1), Me%myWaterLevel(i, j))  - Me%Bottom_X(i,j+1)
-                                endif
-                            
-                                if (Me%ExtVar%BasinPoints(i-1,j) == BasinPoint) then
-                                    dh(3) = max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j)
-                                endif
+                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
     
-                                if (Me%ExtVar%BasinPoints(i+1,j) == BasinPoint) then
-                                    dh(4) = max(Me%myWaterLevel(i+1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i+1,j)
-                                endif
+                            !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
+                            !
+                            !if (vel .gt. 0.0) then
+                            !
+                            !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
+                            !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
+                                aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
+                                       Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
+                        
+                                nextDTCourant = min(nextDTCourant, aux)
                             
-                                highest_dh = maxval(dh)
-                                if (highest_dh > 0.0) then
-                                    aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
-                                            Me%CV%MaxCourant / sqrt(Gravity * highest_dh)
-                                    
-                                    nextDTCourant = min(nextDTCourant, aux)
-                                endif
-                            endif
+                            !endif
+                            
                         endif
+    
                     enddo
                     enddo
                     !$OMP END DO NOWAIT 
