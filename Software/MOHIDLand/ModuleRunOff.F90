@@ -18009,6 +18009,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Begin---------------------------------------------------------------
     
         if (Me%OutPut%Yes) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%myWaterColumn(i, j) .gt. Me%MinimumWaterColumn) then
+                    Me%OpenPoints(i,j) = 1
+                else
+                    Me%OpenPoints(i,j) = 0
+                endif
+            enddo
+            enddo    
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL
+            
             if (Me%HasRunoffProperties) then
                 call RunOffOutput
             else
