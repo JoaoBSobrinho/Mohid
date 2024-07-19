@@ -4033,7 +4033,7 @@ do4:            do di = -1, 1
             endif
         enddo do2
         enddo do1
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !$OMP END PARALLEL
 
         if (Me%StormWaterModel) then
@@ -15508,9 +15508,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
-        integer                                     :: ILB, IUB, JLB, JUB
+        integer                                     :: ILB, IUB, JLB, JUB, CHUNK
         real                                        :: InletInflow, FlowEnteringCell
-        real                                        :: AverageCellLength, y0, dH1, dH2
+        real                                        :: AverageCellLength, y0, dH1, dH2, SqrtGravity, ConstantCellLength
         integer                                     :: n, iStage
 
 
@@ -15520,7 +15520,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         IUB = Me%WorkSize%IUB
         JLB = Me%WorkSize%JLB
         JUB = Me%WorkSize%JUB
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        SqrtGravity = sqrt(Gravity)
+        ConstantCellLength = 0.0
+        if (Me%GridIsConstant) ConstantCellLength = (Me%DY + Me%DX) / 2
         
+        !$OMP PARALLEL PRIVATE(n, i, j, FlowEnteringCell, AverageCellLength, InletInflow, y0, iStage, dH1, dH2)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do n = 1, Me%NumberOfInlets
                 
             i = Me%Inlets(n)%I
@@ -15537,9 +15543,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                     
             if(Me%Inlets(n)%TypeOf == Weir_)then
-                    
-                AverageCellLength  = (Me%ExtVar%DUX (i, j) + Me%ExtVar%DVY (i, j)) / 2.0
-                    
+                if (Me%GridIsConstant) then
+                    AverageCellLength = ConstantCellLength
+                else
+                    AverageCellLength  = (Me%ExtVar%DUX (i, j) + Me%ExtVar%DVY (i, j)) / 2.0 
+                endif
+                
                 !Considering an average side slope of 5% (1/0.05 = 20) of the street
                 y0 = sqrt(2.0*Me%myWaterColumn(i, j)*AverageCellLength / 20.0)
                     
@@ -15552,7 +15561,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !L  = inlet width = 0.5
                 !K  = Coef = 0.2
                 !y0 = downstream level
-                InletInflow = Me%Inlets(n)%Width * 0.2 * y0**1.5 * sqrt(Gravity)       
+                InletInflow = Me%Inlets(n)%Width * 0.2 * y0**1.5 * SqrtGravity       
                     
             elseif(Me%Inlets(n)%TypeOf == FlowCapture_)then
                     
@@ -15624,6 +15633,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
 
         enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine ComputeInletsPotentialFlow
         
