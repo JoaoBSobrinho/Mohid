@@ -7834,34 +7834,69 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             call GetGridCellArea  (Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea,STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR020'
         
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%GridIsConstant) then
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
 
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
-                    Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)                
+                        Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
 
-                    if (Me%myWaterColumn(i, j) < 0.0) then
+                        if (Me%myWaterColumn(i, j) < 0.0) then
                     
-                        !Mass Error
-                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                            !Mass Error
+                            Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
 
-                        Me%myWaterColumn(i, j) = 0.0
-                        Me%myWaterLevel (i, j) = Me%ExtVar%Topography(i, j)
-                    else
-                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                        !Here the water column is the uniformly distributed one. Inside 
-                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-                    end if
+                            Me%myWaterColumn(i, j) = 0.0
+                            Me%myWaterLevel (i, j) = Me%ExtVar%Topography(i, j)
+                            Me%myWaterVolume(i, j) = 0.0
+                        else
+                            !Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                            !Here the water column is the uniformly distributed one. Inside 
+                            Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
+                        end if
                     
-                    Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
+                        Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            
+            else
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                
+                        Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
+
+                        if (Me%myWaterColumn(i, j) < 0.0) then
+                    
+                            !Mass Error
+                            Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+
+                            Me%myWaterColumn(i, j) = 0.0
+                            Me%myWaterLevel (i, j) = Me%ExtVar%Topography(i, j)
+                            Me%myWaterVolume(i, j) = 0.0
+                        else
+                            !Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                            !Here the water column is the uniformly distributed one. Inside 
+                            Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+                        end if
+                    
+                        Me%myWaterColumnOld(i,j) = Me%myWaterColumn(i,j)
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            endif
+            
         
             call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR030'
