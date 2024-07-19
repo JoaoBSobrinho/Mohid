@@ -9893,6 +9893,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         IUB = Me%WorkSize%IUB
         JLB = Me%WorkSize%JLB
         JUB = Me%WorkSize%JUB
+        Sum = 0.0
         if(.not. Me%ExtVar%Distortion) then
 
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - CenterVelocity_R4")
@@ -17619,7 +17620,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         logical                                     :: VariableDT
         real                                        :: CurrentDT, Distance_Courant, totalVel
         real                                        :: velface, celerity, waterColumn, waterColumn_NE
-        real, dimension(4)                          :: dh
         integer, dimension(2,2)                     :: strideJ
         !----------------------------------------------------------------------
     
@@ -17649,8 +17649,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%CV%LimitDTCourant) then
                 if (Me%GridIsConstant) then
                     Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, &
-                                           waterColumn, waterColumn_NE, totalVel)
+                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, totalVel)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:nextDTCourant)
                     do j = JLB+1, JUB
                     do i = ILB+1, IUB
