@@ -10901,7 +10901,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: WCA, Bottom
+        real                                        :: WCA, Bottom, Aux
         integer                                     :: CHUNK
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
@@ -10946,13 +10946,41 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO NOWAIT
         
         else
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    if (Me%ExtVar%BasinPoints(i, j-1) == BasinPoint) then
+            if (Me%GridIsConstant) then
+                Aux = AlmostZero_Double * Me%DY
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) + Me%ExtVar%BasinPoints(i, j-1) == 2) then
                         
-                        if (Me%myWaterColumn(i, j-1) > 0 .or. Me%myWaterColumn(i, j) > 0) then
+                        if (Me%myWaterColumn(i, j) + Me%myWaterColumn(i, j-1) > 0) then
+
+                            WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
+                
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaU(i, j) = WCA * Me%DY
+                
+                            if (WCA > Me%MinimumWaterColumn) then
+                                Me%ComputeFaceU(i, j) = 1
+                            else
+                                Me%ComputeFaceU(i, j) = 0
+                            endif
+                        else
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaU(i, j) = Aux
+                            Me%ComputeFaceU(i, j) = 0
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT
+            else
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) + Me%ExtVar%BasinPoints(i, j-1) == 2) then
+                        
+                        if (Me%myWaterColumn(i, j) + Me%myWaterColumn(i, j-1) > 0) then
 
                             WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
                 
@@ -10969,12 +10997,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
                             Me%ComputeFaceU(i, j) = 0
                         endif
-                        
                     endif
-                endif
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
+                enddo
+                enddo
+                !$OMP END DO NOWAIT
+            endif
+            
+
         endif
             
         !$OMP END PARALLEL
@@ -10993,7 +11022,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: WCA, Bottom
+        real                                        :: WCA, Bottom, Aux
         integer                                     :: CHUNK
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
@@ -11038,32 +11067,63 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO NOWAIT
         
         else
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
-                if (Me%ExtVar%BasinPoints(i-1, j) == BasinPoint .and. Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+            if (Me%GridIsConstant) then
+                Aux = AlmostZero_Double * Me%DX
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) == 2) then
                     
-                    if (Me%myWaterColumn(i-1, j) > 0 .or. Me%myWaterColumn(i, j) > 0) then
+                        if (Me%myWaterColumn(i-1, j) + Me%myWaterColumn(i, j) > 0) then
                     
-                        WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
+                            WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
                 
-                        !Area  = Water Column * Side lenght of cell
-                        Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaV(i, j) = WCA * Me%DX
                 
-                        if (WCA > Me%MinimumWaterColumn) then
-                            Me%ComputeFaceV(i, j) = 1
+                            if (WCA > Me%MinimumWaterColumn) then
+                                Me%ComputeFaceV(i, j) = 1
+                            else
+                                Me%ComputeFaceV(i, j) = 0
+                            endif
                         else
+                            Me%AreaV(i, j) = Aux
                             Me%ComputeFaceV(i, j) = 0
                         endif
-                    else
-                        Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
-                        Me%ComputeFaceV(i, j) = 0
-                    endif
                     
-                endif
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+            else
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) == 2) then
+                    
+                        if (Me%myWaterColumn(i-1, j) + Me%myWaterColumn(i, j) > 0) then
+                    
+                            WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
+                
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                            if (WCA > Me%MinimumWaterColumn) then
+                                Me%ComputeFaceV(i, j) = 1
+                            else
+                                Me%ComputeFaceV(i, j) = 0
+                            endif
+                        else
+                            Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
+                            Me%ComputeFaceV(i, j) = 0
+                        endif
+                    
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+            endif
+            
         endif
         !$OMP END PARALLEL
         
@@ -14708,40 +14768,52 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeStormWaterModel")
 
         !Compute inlet potential flow
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeInletsPotentialFlow")
         call ComputeInletsPotentialFlow
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeInletsPotentialFlow")
         
         !Sets Inlet Potential Flow and Node Surcharge Depth (MOHIDLand WaterColumn) in SWMM model
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setInlets_SewerGems")
         call setInlets_SewerGems
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setInlets_SewerGems")
         !Sets Manholes Node Surcharge Depth (MOHIDLand WaterColumn) in SWMM model
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setManholes_SewerGems")
         call setManholes_SewerGems
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setManholes_SewerGems")
         !Sets Outfalls Water level (MOHIDLand WaterLevel) in SWMM model
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setOutFalls_SewerGems")
         call setOutFalls_SewerGems
-
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setOutFalls_SewerGems")
         !Sets HeadWalls Water level (MOHIDLand WaterLevel) in SWMM model and updates FlowEnteringCell
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setHeadWalls_SewerGems")
         call setHeadWalls_SewerGems
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setHeadWalls_SewerGems")
 
         !------------------Run SewerGEMS SWMM engine time step-----------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SewerGEMSEngine_step_imposed_dt")
         STAT_CALL = SewerGEMSEngine_step_imposed_dt(elapsedTime, Me%ExtVar%DT)
         if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR60'
         !------------------Run SewerGEMS SWMM engine time step-----------------------------------------
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SewerGEMSEngine_step_imposed_dt")
         !Gets outflow coming from SWMM manhole and adds it to the MOHIDLand Cell
         !Updates WaterLevel, WaterColumn and volumes
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromManholes")
         call FlowFromManholes
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromManholes")
         !Gets flow from or to SWMM inlets
         !Computes Effective flow and updates WaterLevel, WaterColumn and volumes. Writes results to inlets output file
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromToInlets")
         call FlowFromToInlets
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromToInlets")
         !Gets flow to or from outfalls and updates volumes
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromToOutfalls")
         call FlowFromToOutfalls
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromToOutfalls")
         !Gets flow from or to SWMM HeadWalls
         !Computes Effective flow and updates WaterLevel, WaterColumn and volumes. Writes results to headwall output file
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromHeadWalls")
         call FlowFromHeadWalls
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromHeadWalls")
         !set the flow at each cross section node to zero before computing open channel links
         !each open channel link will contribute with flow for its main node link (a cross-section)
         do xn = 1, Me%NumberOfCrossSections
@@ -14754,6 +14826,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             Me%Ponds(xn)%Flow = 0.0
         enddo
         
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ChannelLinks")
 
         do n = 1, Me%NumberOfOpenChannelLinks
 
@@ -14934,7 +15007,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
             
         enddo
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ChannelLinks")
 
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "NumberOfCrossSections")
         do n = 1, Me%NumberOfCrossSections
             
             Me%TotalStormWaterVolume = Me%TotalStormWaterVolume  - Me%CrossSections(n)%Flow * Me%ExtVar%DT
@@ -14945,7 +15020,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR160'
                 
         enddo
-
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "NumberOfCrossSections")
+        
         do n = 1, Me%NumberOfPonds
                 
             Me%TotalStormWaterVolume = Me%TotalStormWaterVolume - Me%Ponds(n)%Flow * Me%ExtVar%DT
