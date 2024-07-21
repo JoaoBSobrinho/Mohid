@@ -296,7 +296,7 @@ Module ModuleRunOff
     public  ::  SetBasinColumnToRunoff
     public  ::  SetRunOffRainFall
     public  ::  SetRunOffInfiltration
-    public  ::  ActualizeWaterColumn_RunOff
+    public  ::  UpdateWaterColumn_RunOff
     public  ::  UnGetRunOff
     
 
@@ -7806,7 +7806,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                                   
     !--------------------------------------------------------------------------
                                                   
-    subroutine ActualizeWaterColumn_RunOff (ObjRunOffID, STAT)
+    subroutine UpdateWaterColumn_RunOff (ObjRunOffID, STAT)
 
         !Arguments-------------------------------------------------------------
         integer, intent(OUT), optional                  :: STAT
@@ -7822,17 +7822,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             (ready_ .EQ. READ_LOCK_ERR_)) then
 
-            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ActualizeWaterColumn_RunOff")
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterColumn_RunOff")
         
             call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR01'
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn_RunOff - ModuleRunOff - ERR01'
 
             !Gets a pointer to Topography
             call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR10'
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn_RunOff - ModuleRunOff - ERR10'
         
             call GetGridCellArea  (Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea,STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR020'
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn_RunOff - ModuleRunOff - ERR020'
         
             if (Me%GridIsConstant) then
                 !$OMP PARALLEL PRIVATE(I,J)
@@ -7899,16 +7899,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
         
             call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR030'
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn_RunOff - ModuleRunOff - ERR030'
 
             !Ungets the Topography
             call UngetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR40'
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn_RunOff - ModuleRunOff - ERR40'
 
             call UnGetHorizontalGrid(Me%ObjHorizontalGrid, Me%ExtVar%GridCellArea, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn_RunOff - ModuleRunOff - ERR050'
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn_RunOff - ModuleRunOff - ERR050'
 
-            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ActualizeWaterColumn_RunOff")
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterColumn_RunOff")
             
             STAT_ = SUCCESS_
             
@@ -7920,7 +7920,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
         if (present(STAT)) STAT = STAT_
         
-    end subroutine ActualizeWaterColumn_RunOff
+    end subroutine UpdateWaterColumn_RunOff
     
     !--------------------------------------------------------------------------
     
@@ -8121,8 +8121,19 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
             else !other models, no changes
                 
+                !Apply rain
+                if (associated(Me%RainFall)) then
+                    call ModifyRainFall
+                endif
+                
+                !Apply infiltration
+                if (associated(Me%InfiltrationRate)) then
+                    call ModifyInfiltration
+                endif
+                
                 !Stores initial values = from basin
-                if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
+                !if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
+                call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
                 !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
                 call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
@@ -10873,18 +10884,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: CHUNK
+        real                                        :: aux
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyInfiltration")
         CHUNK = ChunkJ
         
-        !$OMP PARALLEL PRIVATE(i,j)
+        !$OMP PARALLEL PRIVATE(i,j, aux)
         if (Me%GridIsConstant) then
             !$OMP DO SCHEDULE(DYNAMIC)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%CellHasRain(i, j) == BasinPoint) then
                     !m
-                    Me%myWaterColumn(i, j) = max(Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j), 0.0)
+                    aux = Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j)
+                    if (aux >= 0) then
+                        Me%myWaterColumn(i, j) = aux
+                    else
+                        !Mass Error
+                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                        Me%myWaterColumn(i, j) = 0.0
+                    endif
+                    
                     ! to avoid negative values when very small negative values
                     Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                     Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
@@ -10898,7 +10918,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%CellHasRain(i, j) == BasinPoint) then
                     !m
-                    Me%myWaterColumn(i, j) = max(Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j), 0.0)
+                    aux = Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j)
+                    if (aux >= 0) then
+                        Me%myWaterColumn(i, j) = aux
+                    else
+                        !Mass Error
+                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                        Me%myWaterColumn(i, j) = 0.0
+                    endif
                     
                     Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                     Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
@@ -10994,7 +11021,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) + Me%ExtVar%BasinPoints(i, j-1) == 2) then
-                        if (Me%ActivePoints(i-1,j) + Me%ActivePoints(i,j) > 0) then
+                        if (Me%ActivePoints(i,j-1) + Me%ActivePoints(i,j) > 0) then
 
                             WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
                             

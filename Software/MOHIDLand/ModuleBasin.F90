@@ -82,7 +82,7 @@ Module ModuleBasin
                                      GetRunoffTotalStoredVolume, GetMassError,           &
                                      GetRunOffStoredVolumes, GetRunOffBoundaryFlowVolume,& 
                                      GetRunOffTotalDischargeFlowVolume,                  &
-                                     SetBasinStatsToRunoff, ActualizeWaterColumn_RunOff, &
+                                     SetBasinStatsToRunoff, UpdateWaterColumn_RunOff, &
                                      GetFVSHydroApprox, SetRunOffRainFall, SetRunOffInfiltration
                                      
                                      
@@ -4342,7 +4342,7 @@ cd0:    if (Exist) then
                 if ((Me%Coupled%SCSCNRunOffModel .or. Me%Coupled%SimpleInfiltration ) .and. (.not. Me%Coupled%PorousMedia)) then
                     !Do nothing
                 else
-                    call ActualizeWaterColumn
+                    call UpdateWaterColumn
                 endif
                 
                 if (Me%Coupled%RunoffProperties) then
@@ -4360,7 +4360,7 @@ cd0:    if (Exist) then
             if (Me%Coupled%Snow) then
                 call SnowProcesses
                 
-                call ActualizeWaterColumn
+                call UpdateWaterColumn
                 
                 if (Me%Coupled%PorousMediaProperties .or. Me%Coupled%RunoffProperties) then
                     WarningString = 'SnowProcesses'
@@ -4376,7 +4376,7 @@ cd0:    if (Exist) then
                 !and it will be updated after porous media runs
                 if (.not. Me%Coupled%PorousMedia) then
                     !Actualizes the WaterColumn
-                    call ActualizeWaterColumn  
+                    call UpdateWaterColumn  
                 endif
                 
                 !if porous media this will be updated later with porous media processes
@@ -4391,10 +4391,10 @@ cd0:    if (Exist) then
 
                 !only update if not going to use infiltration flux in porous media
                 !and it will be updated after porous media runs
-                if (.not. Me%Coupled%PorousMedia) then                
-                    !Actualizes the WaterColumn
-                    call ActualizeWaterColumn  
-                endif
+                !if (.not. Me%Coupled%PorousMedia) then                
+                !    !Actualizes the WaterColumn
+                !    call UpdateWaterColumn  
+                !endif
                 
                 if (.not. Me%Coupled%PorousMedia .and. Me%Coupled%RunoffProperties) then
                     WarningString = 'SimpleInfiltration'
@@ -4408,7 +4408,7 @@ cd0:    if (Exist) then
                 call PorousMediaProcesses
 
                 !Actualizes the WaterColumn
-                call ActualizeWaterColumn
+                call UpdateWaterColumn
                 
                 if (Me%Coupled%PorousMediaProperties) then
 
@@ -5024,25 +5024,27 @@ cd0:    if (Exist) then
             call DividePrecipitation_VG(PrecipitationFlux)
         endif
         
-        if (Me%RunOffUsingFVS) then
-            call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
-        else
-            !This actualy should be done in module runoff... changing the water level inside Basin just seems like a really bad idea
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if(Me%CellHasRain(i,j) == BasinPoint) then
-                    !Put rain on water column - it will facilitate the structure of the property mixture
-                    Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        endif
+        !if (Me%RunOffUsingFVS) then
+        !    call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
+        !    if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
+        !else
+        !    !This actualy should be done in module runoff... changing the water level inside Basin just seems like a really bad idea
+        !    !$OMP PARALLEL PRIVATE(I,J)
+        !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+        !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        !        if(Me%CellHasRain(i,j) == BasinPoint) then
+        !            !Put rain on water column - it will facilitate the structure of the property mixture
+        !            Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
+        !        endif
+        !    enddo
+        !    enddo
+        !    !$OMP END DO
+        !    !$OMP END PARALLEL
+        !endif
         
+        call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
 
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation")
 
@@ -6558,11 +6560,11 @@ cd0:    if (Exist) then
                 !m - Accumulated Infiltration of the entite area
                 Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
                 
-                if (.not. Me%RunOffUsingFVS) then
-                    ! TODO : Need to update runoff code to apply this inside it, instead of doing it here.
-                    !m                            = m - mm/hour * s / s/hour / mm/m
-                    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Me%Infiltration(i,j)
-                endif
+                !if (.not. Me%RunOffUsingFVS) then
+                !    ! TODO : Need to update runoff code to apply this inside it, instead of doing it here.
+                !    !m                            = m - mm/hour * s / s/hour / mm/m
+                !    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Me%Infiltration(i,j)
+                !endif
             else
                 !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
                 Me%InfiltrationRate (i, j)    =  0.0
@@ -6572,11 +6574,13 @@ cd0:    if (Exist) then
         enddo
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
-        
-        if (Me%RunOffUsingFVS) then
             
-            call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
-        endif
+        call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
+        
+        !if (Me%RunOffUsingFVS) then
+        !    
+        !    call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
+        !endif
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
     end subroutine SCSCNRunOffModel
@@ -8376,7 +8380,7 @@ cd0:    if (Exist) then
 
     !--------------------------------------------------------------------------
 
-    subroutine ActualizeWaterColumn ()
+    subroutine UpdateWaterColumn ()
 
         !Arguments-------------------------------------------------------------
 
@@ -8384,12 +8388,12 @@ cd0:    if (Exist) then
         integer                                     :: STAT_CALL
         
         !Update Runoff WaterColumns and level
-        if (.not. Me%RunOffUsingFVS) then
-            call ActualizeWaterColumn_RunOff (ObjRunOffID = Me%ObjRunoff, STAT = STAT_CALL)        
-            if (STAT_CALL /= SUCCESS_) stop 'ActualizeWaterColumn - ModuleBasin - ERR30'
-        endif
+        !if (.not. Me%RunOffUsingFVS) then
+            call UpdateWaterColumn_RunOff (ObjRunOffID = Me%ObjRunoff, STAT = STAT_CALL)        
+            if (STAT_CALL /= SUCCESS_) stop 'UpdateWaterColumn - ModuleBasin - ERR30'
+        !endif
         
-    end subroutine ActualizeWaterColumn
+    end subroutine UpdateWaterColumn
 
     !--------------------------------------------------------------------------
 
