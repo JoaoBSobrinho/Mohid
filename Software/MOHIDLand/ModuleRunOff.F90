@@ -7839,7 +7839,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-
+                    
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                         Me%myWaterColumn(i, j) = Me%myWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
@@ -8151,8 +8151,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
                     !Calculates local Watercolumn
                     call ReadLockExternalVar   (StaticOnly = .true.)
-                    call LocalWaterColumn      (Me%myWaterColumnOld)
-                    
+                    if (.not. firstRestart) then
+                        call LocalWaterColumn      (Me%myWaterColumnOld)
+                    endif
                     !Important when restart happens more than once at the same iteration of modifyRunOff.
                     if (Me%Discharges) Me%TotalDischargeFlowVolume = TotalDischargeFlowVolume_entry
                     
@@ -16778,6 +16779,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK
 
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "LocalWaterColumn")
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
         ILB = Me%WorkSize%ILB
@@ -16801,7 +16803,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL        
-        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "LocalWaterColumn")
     end subroutine LocalWaterColumn            
 
     !--------------------------------------------------------------------------
