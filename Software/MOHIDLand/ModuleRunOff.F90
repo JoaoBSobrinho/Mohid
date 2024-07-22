@@ -8233,9 +8233,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                 call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                 call DynamicWaveYY    (Me%CV%CurrentDT)
                         end select
-
-                        !Updates waterlevels, based on fluxes
-                        call UpdateWaterLevels(Me%CV%CurrentDT)
                     
                         !Interaction with channels
                         if (.not. Me%Use1D2DInteractionMapping .and. Me%ObjDrainageNetwork /= 0 .and. .not. Me%SimpleChannelInteraction) then
@@ -8251,8 +8248,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         if (Me%Discharges) then
                             call ModifyWaterDischarges  (Me%CV%CurrentDT)                
                         endif
-
-                        call CheckStability(Restart) 
+                        
+                        !Updates waterlevels, based on fluxes
+                        call UpdateWaterLevels(Restart)
+                        
+                        call CheckStability(Restart)
                         
                         !call ReadUnLockExternalVar (StaticOnly = .false.)
                     
@@ -8355,43 +8355,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ComputeCenterValues_R4
                 endif
             
-                call ComputeNextDT (Niter)      
-                
-                !Output Results
-                !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                !    if (Me%ExtVar%BasinPoints(2,j) == 1) then
-                !
-                !        !if (abs(Me%myWaterColumn(2,j) - Me%myWaterColumn(1,j)) > Almostzero .or. abs(Me%myWaterColumn(2,j) - Me%myWaterColumn(1,j)) > Almostzero) then
-                !        if (Me%myWaterColumn(2,j) /= Me%myWaterColumn(1,j) .or. Me%myWaterColumn(2,j) /= Me%myWaterColumn(3,j)) then
-                !            write(*,*) "Found difference at cell after dynamicwave"
-                !            write(*,*) "Found difference at cell j = ", j
-                !            write(*,*) "watercolumn middle = ", Me%myWaterColumn(2,j)
-                !            write(*,*) "watercolumn bottom = ", Me%myWaterColumn(1,j)
-                !            write(*,*) "watercolumn Top = ", Me%myWaterColumn(3,j)
-                !            time_string = ConvertTimeToString (Me%ExtVar%Now)
-                !            write(*,*) "Time = ", time_string
-                !            stop
-                !        endif
-                !    endif
-                !
-                !enddo
-                
-                !write(*,*) "watercolumn bottom = ", Me%myWaterColumn(1,2), Me%myWaterColumn(1,3)
-                !write(*,*) "watercolumn middle = ", Me%myWaterColumn(2,2), Me%myWaterColumn(2,3)
-                !write(*,*) "watercolumn top    = ", Me%myWaterColumn(3,2), Me%myWaterColumn(3,3)
-                !time_string = ConvertTimeToString (Me%ExtVar%Now)
-                !write(*,*) "Time = ", time_string
-            
-                !TotalVolume = 0.0
-                !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                !do j = Me%WorkSize%JLB, 74
-                !    if (Me%ExtVar%BasinPoints(i,j) == 1) then
-                !        TotalVolume = TotalVolume + Me%myWaterVolume(i, j)
-                !    endif
-                !enddo
-                !enddo
-                !
-                !write(*,*)" TotalVolume out = ", TotalVolume
+                call ComputeNextDT (Niter)
                 
                 call Outputs
 
@@ -10726,11 +10690,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     !Updates Water Volume
                     Me%myWaterVolume(i, j)      = Me%myWaterVolume(i, j) + AuxFlowIJ * LocalDT
 
-                    !Updates Water Column
-                    Me%myWaterColumn  (i, j)    = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-
-                    !Updates Water Level
-                    Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
+                    Me%ActivePoints(i,j)   = 1
+                    !!Updates Water Column
+                    !Me%myWaterColumn  (i, j)    = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
+                    !
+                    !!Updates Water Level
+                    !Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
                     
                     if (ByPassON) then
 
@@ -10739,11 +10704,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !Updates Water Volume
                         Me%myWaterVolume(ib, jb)      = Me%myWaterVolume(ib, jb) - AuxFlowIJ * LocalDT
 
-                        !Updates Water Column
-                        Me%myWaterColumn  (ib, jb)    = Me%myWaterVolume (ib, jb) / Me%ExtVar%GridCellArea(ib, jb)
-
-                        !Updates Water Level
-                        Me%myWaterLevel (ib, jb)      = Me%myWaterColumn (ib, jb) + Me%ExtVar%Topography(ib, jb)
+                        Me%ActivePoints(ib,jb)   = 1
+                        !!Updates Water Column
+                        !Me%myWaterColumn  (ib, jb)    = Me%myWaterVolume (ib, jb) / Me%ExtVar%GridCellArea(ib, jb)
+                        !
+                        !!Updates Water Level
+                        !Me%myWaterLevel (ib, jb)      = Me%myWaterColumn (ib, jb) + Me%ExtVar%Topography(ib, jb)
                     endif
 
                     !if (Me%CheckMass) Me%TotalInputVolume = Me%TotalInputVolume + Me%DischargesFlow(iDis) * LocalDT                    
@@ -10834,6 +10800,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterColumn(i, j) = Me%myWaterColumn(i, j) + Me%RainFall(i, j)
                         Me%myWaterLevel (i, j)  = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                         Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
+                        Me%ActivePoints(i,j) = 1
                     endif
                 enddo
                 enddo
@@ -10859,6 +10826,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterColumn(i, j) = Me%myWaterColumn(i, j) + Me%RainFall(i, j)
                         Me%myWaterLevel (i, j)  = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                         Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+                        Me%ActivePoints(i,j) = 1
                     endif
                 enddo
                 enddo
@@ -10908,6 +10876,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     ! to avoid negative values when very small negative values
                     Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                     Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
+                    Me%ActivePoints(i,j) = 1
                 endif
             enddo
             enddo
@@ -10929,6 +10898,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
                     Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
+                    Me%ActivePoints(i,j) = 1
                 endif
             enddo
             enddo
@@ -10970,7 +10940,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: WCA, Bottom, Aux, topography, topographyLeft, waterColumn, waterColumnLeft
+        real                                        :: WCA, Bottom, Aux
         integer                                     :: CHUNK
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
@@ -11681,14 +11651,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: HydraulicRadius
         real                                        :: Friction
         real                                        :: Pressure
-        !real                                        :: upAdv, downAdv, 
-        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
+        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, DZX, DYY
         real                                        :: Advection, Qf, WetPerimeter
+        real                                        :: Topography, Topography_left
         real(8)                                     :: CriticalFlow
         real                                        :: Margin1, Margin2
         integer                                     :: CHUNK, dj
-        real                                        :: MaxBottom, WaterDepth
-        !character(len=StringLength)                 :: Direction
+        real                                        :: MaxBottom, WaterDepth, dVol, AreaU
 
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX")
@@ -11703,39 +11672,47 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter)
+        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter, DZX, Topography, Topography_left, &
+        !$OMP AreaU, dVol, DYY)
 
         !X
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
         do i = ILB, IUB
-            
+            Me%lFlowX(i, j) = 0.0
             if (Me%ComputeFaceU(i, j) == Compute) then
             
                 level_left  = Me%myWaterLevel(i, j-1)
                 level_right = Me%myWaterLevel(i, j)
-                    
+                
+                Topography = Me%ExtVar%Topography(i, j)
+                Topography_left = Me%ExtVar%Topography(i, j-1)
+                
+                if (Me%GridIsConstant) then
+                    DYY = Me%DY
+                    DZX = Me%DX
+                else
+                    DYY = Me%ExtVar%DYY(i, j)
+                    DZX = Me%ExtVar%DZX(i, j-1)
+                endif
+                
+                AreaU = Me%AreaU(i,j)
+                
                 !!Slope
                 if (Me%AdjustSlope) then
-                    Slope           = AdjustSlope((level_left - level_right) / Me%ExtVar%DZX(i, j-1))
+                    Slope           = AdjustSlope((level_left - level_right) / DZX)
                 else
-                    Slope           = (level_left - level_right) / Me%ExtVar%DZX(i, j-1)
+                    Slope           = (level_left - level_right) / DZX
                 endif
                  
-                !!Hydraulic Radius
-!                Direction = "X"
-!                !This function produced an overhead in openmp and the simulation took 
-!                !double the time so it was abandoned
-!                HydraulicRadius = HydraulicRadius(i,j,Direction,level_left,level_right)
-                !wet perimeter, first is bottom
-                WetPerimeter = Me%ExtVar%DYY(i, j)
+                WetPerimeter = DYY
+                MaxBottom = max(Topography, Topography_left)
                 
                 !only compute margins if water column method is MaxBottom (topography discretization by "stairs")
                 if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
                     !Then, is checked if "margins" occur on the cell of the highest water level
                     !water depth consistent with AreaU computed (only water above max bottom)
-                    WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
-                    MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+                    WaterDepth = AreaU / DYY
                     
                     !to check which cell to use since areaU depends on higher water level
                     if (level_left .gt. level_right) then
@@ -11757,7 +11734,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
                 endif
                 
-                HydraulicRadius = Me%AreaU(i, j) / WetPerimeter
+                HydraulicRadius = AreaU / WetPerimeter
        
                 !
                 !Sant Venant
@@ -11765,18 +11742,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 !Pressure
                 !m3/s             = s  * m/s2    * m2   * m/m
-                Pressure          = LocalDT * Gravity * Me%AreaU(i, j) * Slope
-
-
-
-                !FRICTION - semi-implicit -----------------------------------------------
-                !   -    =  (s * m.s-2  * m3.s-1 * (s.m(-1/3))^2) / (m2 * m(4/3)) = m(10/3) / m(10/3)
-                !Friction = LocalDT * Gravity * abs(Me%FlowXOld(i, j)) * Me%OverlandCoefficientX(i,j)** 2. &
-                !     / ( Me%AreaU(i, j) * HydraulicRadius ** (4./3.) ) 
-                
-                !Friction = LocalDT * Gravity * &
-                !           sqrt(Me%FlowXOld(i, j)**2. + Me%FlowYOld(i, j)**2.) * Me%OverlandCoefficientX(i,j)** 2. / &
-                !           ( Me%AreaU(i, j) * HydraulicRadius ** (4./3.) ) 
+                Pressure          = LocalDT * Gravity * AreaU * Slope
                 
                 Friction = LocalDT * Gravity * &
                            Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
@@ -11786,28 +11752,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
                     (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
                     
-                    
                     !Face XU(i,j+1). Z U Faces have to be open
                     if ((Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i, j+1) == 2)) then 
-
-                        !OLD Version
-                        !Theold formulation had a problem when flows in adjacent reaches
-                        !had opposite directions. Flow was the average and velocity would be
-                        !in opposite  direction of average flow.
-                       
-                        !New Version 
-                        !The new formulation, in case of opposite directions, in adjacent reaches does not compute
-                        !advection. In case of same direction, is hard-upwind meaning that it will use flow and 
-                        !velocity from the upwind reach. This option may be more stable than soft-upwind 
-                        !(average flow and velocity from upwind reach) or central differences (average flow 
-                        !and average velocity).
-                        !if flows in same direction, advection is computed                        
+                  
                         if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)).ge. 0.0) then
                             
                             Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
 
                             if (Qf > 0.0) then
-                                XRightAdv = Me%FlowXOld(i, j)   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+                                XRightAdv = Me%FlowXOld(i, j)   * Me%FlowXOld(i, j) / AreaU
                             else
                                 XRightAdv = Me%FlowXOld(i, j+1) * Me%FlowXOld(i, j+1) / Me%AreaU(i, j+1)
                             endif
@@ -11830,7 +11783,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             if (Qf > 0.0) then
                                 XLeftAdv = Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j-1) / Me%AreaU(i, j-1)
                             else
-                                XLeftAdv = Me%FlowXOld(i, j) * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+                                XLeftAdv = Me%FlowXOld(i, j) * Me%FlowXOld(i, j) / AreaU
                             endif
                         else
                             XLeftAdv = 0.0
@@ -11849,14 +11802,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Qf = (Me%FlowYOld(i+1, j-1) + Me%FlowYOld(i+1, j)) / 2.0
                             
                             if (Qf > 0.0) then
-                                YTopAdv = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+                                YTopAdv = Qf   * Me%FlowXOld(i, j) / AreaU
                             elseif (Qf < 0.0) then
                                 if(Me%ComputeFaceU(i+1,j) == Compute) then
                                     YTopAdv = Qf * Me%FlowXOld(i+1, j) / Me%AreaU(i+1, j)
-                                    !YTopAdv =  (Me%FlowYOld(i+1, j-1) * (Me%FlowXOld(i+1, j-1) / Me%AreaU(i+1, j-1)        + &
-                                    !                                    Me%FlowXOld(i+1,   j) / Me%AreaU(i+1,   j)) / 2.0 + & 
-                                    !           Me%FlowYOld(i+1,   j) * (Me%FlowXOld(i+1,   j) / Me%AreaU(i+1,   j)        + &
-                                    !                                    Me%FlowXOld(i+1, j+1) / Me%AreaU(i+1, j+1)) / 2.0) / 2.0
                                 else
                                     if(Me%ComputeFaceU(i+1, j-1)== Compute)then
                                         YTopAdv = Qf * Me%FlowXOld(i+1, j-1) / Me%AreaU(i+1, j-1) 
@@ -11889,18 +11838,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 if(Me%ComputeFaceU(i-1,j) == Compute) then
                                     YBottomAdv =  Qf   * Me%FlowXOld(i-1, j) / Me%AreaU(i-1, j)
                                     
-                                    !YBottomAdv =  (Me%FlowYOld(i, j-1) * (Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1)       + &
-                                    !                                     Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)) / 2.0 + & 
-                                    !              Me%FlowYOld(i,   j) * (Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)        + &
-                                    !                                     Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)) / 2.0) / 2.0
-                                    !
-                                    !YBottomAdv =  (Me%FlowYOld(i, j-1) * (Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1)       + &
-                                    !                                     Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)) / 2.0 + & 
-                                    !              Me%FlowYOld(i,   j) * (Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)        + &
-                                    !                                     Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)) / 2.0) / 2.0
-                                    
-                                    
-                                    
                                 else
                                     if(Me%ComputeFaceU(i-1, j-1) == Compute)then
                                         YBottomAdv =  Qf * Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1) 
@@ -11912,7 +11849,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                     
                                 endif
                             elseif ((Qf < 0.0)) then
-                                YBottomAdv = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+                                YBottomAdv = Qf   * Me%FlowXOld(i, j) / AreaU
                             else
                                 YBottomAdv = 0.0
                             endif
@@ -11925,8 +11862,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif       
                     
                     
-                    Advection = (XLeftAdv - XRightAdv) * LocalDT / Me%ExtVar%DZX(i, j-1) + &
-                                (YBottomAdv - YTopAdv) * LocalDT / Me%ExtVar%DYY(i, j)
+                    Advection = (XLeftAdv - XRightAdv) * LocalDT / DZX + &
+                                (YBottomAdv - YTopAdv) * LocalDT / DYY
                                 
                 else
                 
@@ -11936,27 +11873,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 Me%lFlowX(i, j) = (Me%FlowXOld(i, j) + Pressure + Advection) / (1.0 + Friction)
 
-                if (Me%LimitToCriticalFlow) then
+                if (abs(Me%lFlowX(i, j)) > Almostzero) then
+                    if (Me%LimitToCriticalFlow) then
 
-                    !Limit to critical flow. Using the critical flow limitation in all cells assumes "slow" flow or
-                    !subcritical that is consistent with the formulation used (flow depends on downstream height)
-                    !because in supercritical flow it is only dependent on upstream and descritization to describe it would have
-                    !to change. Supercritical flow usually exists on hydraulic infraestructures (high drops) and a 
-                    !hydraulic jump exists between fast flow and slow flow.
-                    
-                    !Test Limitation only if free drop exists
-!                    if ((level_left .lt. Me%ExtVar%Topography(i,j)) .or. (level_right .lt. Me%ExtVar%Topography(i,j-1))) then
-
-                        !Waterdepth at the center of the face - depending on flow direction since flow
-                        !can be in opposite direction of height gradient (AreaU uses the higher water level)              
-                        !WaterDepth = Me%AreaU(i,j)/Me%ExtVar%DYY(i,j)
-                        if (Me%FaceWaterColumn == WCMaxBottom_) then
-                            MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))     
+                        if (Me%FaceWaterColumn == WCMaxBottom_) then 
                                                             
                             if (Me%lFlowX(i, j) .gt. 0.0) then           
-                                WaterDepth = max(Me%MyWaterLevel(i,j-1) - MaxBottom, 0.0)
+                                WaterDepth = max(level_left - MaxBottom, 0.0)
                             else
-                                WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
+                                WaterDepth = max(level_right - MaxBottom, 0.0)
                             endif
                         elseif (Me%FaceWaterColumn == WCAverageBottom_) then
                             if (Me%lFlowX(i, j) .gt. 0.0) then           
@@ -11966,10 +11891,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif                        
                         endif
                         
-                        !Critical Flow
                         !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
                         !m3/s = m * m * m/s
-                        CriticalFlow = WaterDepth * Me%ExtVar%DYY(i,j) * sqrt(Gravity * WaterDepth)
+                        CriticalFlow = WaterDepth * DYY * sqrt(Gravity * WaterDepth)
                         
                         !only limit if flow higher
                         if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
@@ -11979,41 +11903,395 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 Me%lFlowX(i, j) = -1.0 * CriticalFlow
                             endif
                         endif
- !                   endif
+                
+                    else
+                        !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
+                        if (Me%lFlowX(i, j) .lt. 0.0) then
+                            if (abs(Me%lFlowX(i, j))* LocalDT .gt. Me%myWaterVolumePred(i,j)) then
+                                Me%lFlowX(i, j) = - Me%myWaterVolumePred(i,j) / LocalDT
+                            endif
+                        elseif (Me%lFlowX(i, j) .gt. 0.0) then
+                            if (Me%lFlowX(i, j)* LocalDT .gt. Me%myWaterVolumePred(i,j-1)) then
+                                Me%lFlowX(i, j) =  Me%myWaterVolumePred(i,j-1) / LocalDT
+                            endif
+                        endif 
+                    
+                        !m3 = m3 + (-m3/s * s)
+                        Me%myWaterVolumePred(i,j  ) = Me%myWaterVolumePred(i,j  ) + (Me%lFlowX(i, j) * LocalDT)
+                        Me%myWaterVolumePred(i,j-1) = Me%myWaterVolumePred(i,j-1) - (Me%lFlowX(i, j) * LocalDT) 
+                                   
+                    endif
+                
+                    !Update water volumes
+                    dVol = Me%lFlowX(i, j) * LocalDT
+                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
+                    Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
+                
+                    Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
+                    Me%ActivePoints(i,j-1) = 1 !For use in modifygeometryAndMapping and updatewaterlevels
                 
                 else
-                    !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
-                    if (Me%lFlowX(i, j) .lt. 0.0) then
-                        if (abs(Me%lFlowX(i, j))* LocalDT .gt. Me%myWaterVolumePred(i,j)) then
-                            Me%lFlowX(i, j) = - Me%myWaterVolumePred(i,j) / LocalDT
-                        endif
-                    elseif (Me%lFlowX(i, j) .gt. 0.0) then
-                        if (Me%lFlowX(i, j)* LocalDT .gt. Me%myWaterVolumePred(i,j-1)) then
-                            Me%lFlowX(i, j) =  Me%myWaterVolumePred(i,j-1) / LocalDT
-                        endif
-                    endif 
-                    
-                    !m3 = m3 + (-m3/s * s)
-                    Me%myWaterVolumePred(i,j  ) = Me%myWaterVolumePred(i,j  ) + (Me%lFlowX(i, j) * LocalDT)
-                    Me%myWaterVolumePred(i,j-1) = Me%myWaterVolumePred(i,j-1) - (Me%lFlowX(i, j) * LocalDT) 
-                                   
+                    Me%lFlowX(i, j) = 0.0
                 endif
-                
-            else
-            
-                Me%lFlowX(i, j) = 0.0
-
             endif
 
         enddo
         enddo        
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !$OMP END PARALLEL
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX")
         
         
     end subroutine DynamicWaveXX
+    
+    
+!    subroutine DynamicWaveXX (LocalDT)
+!    
+!        !Arguments-------------------------------------------------------------
+!        real                                        :: LocalDT
+!        
+!        !Local-----------------------------------------------------------------
+!        integer                                     :: i, j
+!        integer                                     :: ILB, IUB, JLB, JUB
+!        real                                        :: Slope
+!        real                                        :: level_left, level_right
+!        real                                        :: HydraulicRadius
+!        real                                        :: Friction
+!        real                                        :: Pressure
+!        !real                                        :: upAdv, downAdv, 
+!        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
+!        real                                        :: Advection, Qf, WetPerimeter
+!        real(8)                                     :: CriticalFlow
+!        real                                        :: Margin1, Margin2
+!        integer                                     :: CHUNK, dj
+!        real                                        :: MaxBottom, WaterDepth
+!        !character(len=StringLength)                 :: Direction
+!
+!
+!        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX")
+!
+!
+!        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+!
+!        ILB = Me%WorkSize%ILB
+!        IUB = Me%WorkSize%IUB
+!        JLB = Me%WorkSize%JLB
+!        JUB = Me%WorkSize%JUB
+!
+!        !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
+!        !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
+!        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter)
+!
+!        !X
+!        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+!        do j = JLB, JUB
+!        do i = ILB, IUB
+!            
+!            if (Me%ComputeFaceU(i, j) == Compute) then
+!            
+!                level_left  = Me%myWaterLevel(i, j-1)
+!                level_right = Me%myWaterLevel(i, j)
+!                    
+!                !!Slope
+!                if (Me%AdjustSlope) then
+!                    Slope           = AdjustSlope((level_left - level_right) / Me%ExtVar%DZX(i, j-1))
+!                else
+!                    Slope           = (level_left - level_right) / Me%ExtVar%DZX(i, j-1)
+!                endif
+!                 
+!                !!Hydraulic Radius
+!!                Direction = "X"
+!!                !This function produced an overhead in openmp and the simulation took 
+!!                !double the time so it was abandoned
+!!                HydraulicRadius = HydraulicRadius(i,j,Direction,level_left,level_right)
+!                !wet perimeter, first is bottom
+!                WetPerimeter = Me%ExtVar%DYY(i, j)
+!                
+!                !only compute margins if water column method is MaxBottom (topography discretization by "stairs")
+!                if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
+!                    !Then, is checked if "margins" occur on the cell of the highest water level
+!                    !water depth consistent with AreaU computed (only water above max bottom)
+!                    WaterDepth = Me%AreaU(i,j) / Me%ExtVar%DYY(i, j)
+!                    MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+!                    
+!                    !to check which cell to use since areaU depends on higher water level
+!                    if (level_left .gt. level_right) then
+!                        dj = -1
+!                    else
+!                        dj = 0
+!                    endif
+!                    
+!                    !bottom Difference to adjacent cells (to check existence of “margins” on the side)
+!                    Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
+!                    Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
+!
+!                    !if positive, than there is a “margin” on the side and friction occurs at wet length
+!                    if (Margin1 .gt. 0.0) then
+!                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
+!                    endif
+!                    if (Margin2 .gt. 0.0) then
+!                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin2)
+!                    endif
+!                endif
+!                
+!                HydraulicRadius = Me%AreaU(i, j) / WetPerimeter
+!       
+!                !
+!                !Sant Venant
+!                !
+!
+!                !Pressure
+!                !m3/s             = s  * m/s2    * m2   * m/m
+!                Pressure          = LocalDT * Gravity * Me%AreaU(i, j) * Slope
+!
+!
+!
+!                !FRICTION - semi-implicit -----------------------------------------------
+!                !   -    =  (s * m.s-2  * m3.s-1 * (s.m(-1/3))^2) / (m2 * m(4/3)) = m(10/3) / m(10/3)
+!                !Friction = LocalDT * Gravity * abs(Me%FlowXOld(i, j)) * Me%OverlandCoefficientX(i,j)** 2. &
+!                !     / ( Me%AreaU(i, j) * HydraulicRadius ** (4./3.) ) 
+!                
+!                !Friction = LocalDT * Gravity * &
+!                !           sqrt(Me%FlowXOld(i, j)**2. + Me%FlowYOld(i, j)**2.) * Me%OverlandCoefficientX(i,j)** 2. / &
+!                !           ( Me%AreaU(i, j) * HydraulicRadius ** (4./3.) ) 
+!                
+!                Friction = LocalDT * Gravity * &
+!                           Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
+!                           (HydraulicRadius ** (4./3.)) 
+!                
+!                !Advection (may be limited to water column height)
+!                if ((Me%ComputeAdvectionU(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  .and.   &
+!                    (Me%myWaterColumn(i,j-1) .gt. Me%MinimumWaterColumnAdvection)) then
+!                    
+!                    
+!                    !Face XU(i,j+1). Z U Faces have to be open
+!                    if ((Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i, j+1) == 2)) then 
+!
+!                        !OLD Version
+!                        !Theold formulation had a problem when flows in adjacent reaches
+!                        !had opposite directions. Flow was the average and velocity would be
+!                        !in opposite  direction of average flow.
+!                       
+!                        !New Version 
+!                        !The new formulation, in case of opposite directions, in adjacent reaches does not compute
+!                        !advection. In case of same direction, is hard-upwind meaning that it will use flow and 
+!                        !velocity from the upwind reach. This option may be more stable than soft-upwind 
+!                        !(average flow and velocity from upwind reach) or central differences (average flow 
+!                        !and average velocity).
+!                        !if flows in same direction, advection is computed                        
+!                        if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)).ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
+!
+!                            if (Qf > 0.0) then
+!                                XRightAdv = Me%FlowXOld(i, j)   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+!                            else
+!                                XRightAdv = Me%FlowXOld(i, j+1) * Me%FlowXOld(i, j+1) / Me%AreaU(i, j+1)
+!                            endif
+!                        else
+!                            XRightAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        XRightAdv = 0.0
+!                    endif       
+!                    
+!                    !Face XU(i,j). Z U Faces have to be open
+!                    if ((Me%ComputeFaceU(i, j-1) + Me%ComputeFaceU(i, j) == 2)) then  
+!                        
+!                        !New Version
+!                        if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) .ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowXOld(i, j-1) + Me%FlowXOld(i, j)) / 2.0
+!
+!                            if (Qf > 0.0) then
+!                                XLeftAdv = Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j-1) / Me%AreaU(i, j-1)
+!                            else
+!                                XLeftAdv = Me%FlowXOld(i, j) * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+!                            endif
+!                        else
+!                            XLeftAdv = 0.0
+!                        endif
+!                        
+!                        
+!                    else
+!                        XLeftAdv = 0.0
+!                    endif       
+!                    
+!                    if (Me%ComputeFaceV(i+1, j-1) +  Me%ComputeFaceV(i+1, j) .gt. 0) then
+!
+!                        !if flows in same direction, advection is computed                        
+!                        if ((Me%FlowYOld(i+1, j-1) * Me%FlowYOld(i+1, j)).ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowYOld(i+1, j-1) + Me%FlowYOld(i+1, j)) / 2.0
+!                            
+!                            if (Qf > 0.0) then
+!                                YTopAdv = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+!                            elseif (Qf < 0.0) then
+!                                if(Me%ComputeFaceU(i+1,j) == Compute) then
+!                                    YTopAdv = Qf * Me%FlowXOld(i+1, j) / Me%AreaU(i+1, j)
+!                                    !YTopAdv =  (Me%FlowYOld(i+1, j-1) * (Me%FlowXOld(i+1, j-1) / Me%AreaU(i+1, j-1)        + &
+!                                    !                                    Me%FlowXOld(i+1,   j) / Me%AreaU(i+1,   j)) / 2.0 + & 
+!                                    !           Me%FlowYOld(i+1,   j) * (Me%FlowXOld(i+1,   j) / Me%AreaU(i+1,   j)        + &
+!                                    !                                    Me%FlowXOld(i+1, j+1) / Me%AreaU(i+1, j+1)) / 2.0) / 2.0
+!                                else
+!                                    if(Me%ComputeFaceU(i+1, j-1)== Compute)then
+!                                        YTopAdv = Qf * Me%FlowXOld(i+1, j-1) / Me%AreaU(i+1, j-1) 
+!                                    elseif(Me%ComputeFaceU(i+1, j+1) == Compute)then
+!                                        YTopAdv = Qf * Me%FlowXOld(i+1, j+1) / Me%AreaU(i+1, j+1)
+!                                    else
+!                                        YTopAdv = 0.0
+!                                    endif
+!                                endif
+!                            else
+!                                YTopAdv = 0.0
+!                            endif
+!                        else
+!                            YTopAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        YTopAdv = 0.0
+!                    endif       
+!                    
+!
+!                    if (Me%ComputeFaceV(i, j-1) +  Me%ComputeFaceV(i, j) .gt. 0) then
+!
+!                        !if flows in same direction, advection is computed                        
+!                        if ((Me%FlowYOld(i, j-1) * Me%FlowYOld(i, j)).ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowYOld(i, j-1) + Me%FlowYOld(i, j)) / 2.0
+!                            
+!                            if (Qf > 0.0)then
+!                                if(Me%ComputeFaceU(i-1,j) == Compute) then
+!                                    YBottomAdv =  Qf   * Me%FlowXOld(i-1, j) / Me%AreaU(i-1, j)
+!                                    
+!                                    !YBottomAdv =  (Me%FlowYOld(i, j-1) * (Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1)       + &
+!                                    !                                     Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)) / 2.0 + & 
+!                                    !              Me%FlowYOld(i,   j) * (Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)        + &
+!                                    !                                     Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)) / 2.0) / 2.0
+!                                    !
+!                                    !YBottomAdv =  (Me%FlowYOld(i, j-1) * (Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1)       + &
+!                                    !                                     Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)) / 2.0 + & 
+!                                    !              Me%FlowYOld(i,   j) * (Me%FlowXOld(i-1,   j) / Me%AreaU(i-1,   j)        + &
+!                                    !                                     Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)) / 2.0) / 2.0
+!                                    
+!                                    
+!                                    
+!                                else
+!                                    if(Me%ComputeFaceU(i-1, j-1) == Compute)then
+!                                        YBottomAdv =  Qf * Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1) 
+!                                    elseif(Me%ComputeFaceU(i-1, j+1) == Compute)then
+!                                        YBottomAdv =  Qf * Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)
+!                                    else
+!                                        YBottomAdv =  0.0
+!                                    endif
+!                                    
+!                                endif
+!                            elseif ((Qf < 0.0)) then
+!                                YBottomAdv = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
+!                            else
+!                                YBottomAdv = 0.0
+!                            endif
+!                        else
+!                            YBottomAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        YBottomAdv = 0.0
+!                    endif       
+!                    
+!                    
+!                    Advection = (XLeftAdv - XRightAdv) * LocalDT / Me%ExtVar%DZX(i, j-1) + &
+!                                (YBottomAdv - YTopAdv) * LocalDT / Me%ExtVar%DYY(i, j)
+!                                
+!                else
+!                
+!                    Advection = 0.0
+!                    
+!                endif
+!
+!                Me%lFlowX(i, j) = (Me%FlowXOld(i, j) + Pressure + Advection) / (1.0 + Friction)
+!
+!                if (Me%LimitToCriticalFlow) then
+!
+!                    !Limit to critical flow. Using the critical flow limitation in all cells assumes "slow" flow or
+!                    !subcritical that is consistent with the formulation used (flow depends on downstream height)
+!                    !because in supercritical flow it is only dependent on upstream and descritization to describe it would have
+!                    !to change. Supercritical flow usually exists on hydraulic infraestructures (high drops) and a 
+!                    !hydraulic jump exists between fast flow and slow flow.
+!                    
+!                    !Test Limitation only if free drop exists
+!!                    if ((level_left .lt. Me%ExtVar%Topography(i,j)) .or. (level_right .lt. Me%ExtVar%Topography(i,j-1))) then
+!
+!                        !Waterdepth at the center of the face - depending on flow direction since flow
+!                        !can be in opposite direction of height gradient (AreaU uses the higher water level)              
+!                        !WaterDepth = Me%AreaU(i,j)/Me%ExtVar%DYY(i,j)
+!                        if (Me%FaceWaterColumn == WCMaxBottom_) then
+!                            MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))     
+!                                                            
+!                            if (Me%lFlowX(i, j) .gt. 0.0) then           
+!                                WaterDepth = max(Me%MyWaterLevel(i,j-1) - MaxBottom, 0.0)
+!                            else
+!                                WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
+!                            endif
+!                        elseif (Me%FaceWaterColumn == WCAverageBottom_) then
+!                            if (Me%lFlowX(i, j) .gt. 0.0) then           
+!                                WaterDepth = Me%MyWaterColumn(i,j-1)
+!                            else
+!                                WaterDepth = Me%MyWaterColumn(i,j)
+!                            endif                        
+!                        endif
+!                        
+!                        !Critical Flow
+!                        !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
+!                        !m3/s = m * m * m/s
+!                        CriticalFlow = WaterDepth * Me%ExtVar%DYY(i,j) * sqrt(Gravity * WaterDepth)
+!                        
+!                        !only limit if flow higher
+!                        if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
+!                            if (Me%lFlowX(i, j) > 0) then
+!                                Me%lFlowX(i, j) = CriticalFlow
+!                            else
+!                                Me%lFlowX(i, j) = -1.0 * CriticalFlow
+!                            endif
+!                        endif
+! !                   endif
+!                
+!                else
+!                    !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
+!                    if (Me%lFlowX(i, j) .lt. 0.0) then
+!                        if (abs(Me%lFlowX(i, j))* LocalDT .gt. Me%myWaterVolumePred(i,j)) then
+!                            Me%lFlowX(i, j) = - Me%myWaterVolumePred(i,j) / LocalDT
+!                        endif
+!                    elseif (Me%lFlowX(i, j) .gt. 0.0) then
+!                        if (Me%lFlowX(i, j)* LocalDT .gt. Me%myWaterVolumePred(i,j-1)) then
+!                            Me%lFlowX(i, j) =  Me%myWaterVolumePred(i,j-1) / LocalDT
+!                        endif
+!                    endif 
+!                    
+!                    !m3 = m3 + (-m3/s * s)
+!                    Me%myWaterVolumePred(i,j  ) = Me%myWaterVolumePred(i,j  ) + (Me%lFlowX(i, j) * LocalDT)
+!                    Me%myWaterVolumePred(i,j-1) = Me%myWaterVolumePred(i,j-1) - (Me%lFlowX(i, j) * LocalDT) 
+!                                   
+!                endif
+!                
+!            else
+!            
+!                Me%lFlowX(i, j) = 0.0
+!
+!            endif
+!
+!        enddo
+!        enddo        
+!        !$OMP END DO NOWAIT
+!        !$OMP END PARALLEL
+!        
+!        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX")
+!        
+!        
+!    end subroutine DynamicWaveXX
     
     !-------------------------------------------------------------------------
     
@@ -14050,14 +14328,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: HydraulicRadius
         real                                        :: Friction
         real                                        :: Pressure
-        !real                                        :: upAdv, downAdv, 
-        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
+        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, DZY, DXX
         real                                        :: Advection, Qf, WetPerimeter
+        real                                        :: Topography, Topography_bottom
         real(8)                                     :: CriticalFlow
         real                                        :: Margin1, Margin2
         integer                                     :: CHUNK, di
-        real                                        :: MaxBottom, WaterDepth
-        !character(len=StringLength)                 :: Direction
+        real                                        :: MaxBottom, WaterDepth, dVol, AreaV
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveYY")
 
@@ -14071,7 +14348,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_bottom, level_top, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, di, WetPerimeter)
+        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, di, WetPerimeter, DZY, Topography, Topography_bottom, &
+        !$OMP AreaV, dVol, DXX)
 
         !Y
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
@@ -14083,25 +14361,33 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 level_bottom = Me%myWaterLevel(i-1, j)
                 level_top    = Me%myWaterLevel(i, j)
                 
-                !!Slope
-                if (Me%AdjustSlope) then
-                    Slope           = AdjustSlope((level_bottom - level_top) / Me%ExtVar%DZY(i-1, j))
+                Topography = Me%ExtVar%Topography(i, j)
+                Topography_bottom = Me%ExtVar%Topography(i, j-1)
+
+                if (Me%GridIsConstant) then
+                    DXX = Me%DX
+                    DZY = Me%DY
                 else
-                    Slope           = (level_bottom - level_top) / Me%ExtVar%DZY(i-1, j)
+                    DXX = Me%ExtVar%DXX(i, j)
+                    DZY = Me%ExtVar%DZY(i, j-1)
                 endif
                 
-                !!Hydraulic Radius
-!                Direction = "Y"
-!                !This function produced an overhead with openmp so it was abandoned
-!                HydraulicRadius = HydraulicRadius(i,j,Direction,level_bottom,level_top)
+                AreaV = Me%AreaV(i,j)
+                
+                !!Slope
+                if (Me%AdjustSlope) then
+                    Slope           = AdjustSlope((level_bottom - level_top) / DZY)
+                else
+                    Slope           = (level_bottom - level_top) / DZY
+                endif
                 
                 !wet perimeter, first is bottom
-                WetPerimeter = Me%ExtVar%DXX(i, j)
+                WetPerimeter = DXX
+                MaxBottom = max(Topography, Topography_bottom)
                 
                 if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
                     !water Depth consistent with AreaV computed (only water above max bottom)
-                    WaterDepth = Me%AreaV(i,j) / Me%ExtVar%DXX(i, j)
-                    MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i-1, j))
+                    WaterDepth = Me%AreaV(i,j) / DXX
 
                     !to check wich cell to use since areaV depends on higher water level
                     if (level_bottom .gt. level_top) then
@@ -14135,12 +14421,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 !FRICTION - semi-implicit -----------------------------------------------
                 !   -    =  (s * m.s-2  * m3.s-1 * (s.m(-1/3))^2) / (m2 * m(4/3)) = m(10/3) / m(10/3)
-                !Friction = LocalDT * Gravity * abs(Me%FlowYOld(i, j)) * Me%OverlandCoefficientY(i,j) ** 2. &
-                !         / ( Me%AreaV(i, j) * HydraulicRadius ** (4./3.) ) 
-                
-                !Friction = LocalDT * Gravity * &
-                !           sqrt(Me%FlowXOld(i, j)**2. + Me%FlowYOld(i, j)**2.) * Me%OverlandCoefficientY(i,j)** 2. / &
-                !           ( Me%AreaV(i, j) * HydraulicRadius ** (4./3.) ) 
                 if (Me%ComputeFriction) then
                     Friction = LocalDT * Gravity * &
                                Me%VelModFaceV(i,j) * Me%OverlandCoefficientY(i,j)** 2. / &
@@ -14208,10 +14488,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 
                                 if(Me%ComputeFaceV(i,j+1) == Compute) then
                                     XRightAdv = Qf   * Me%FlowYOld(i, j+1) / Me%AreaV(i, j+1)
-                                    !XRightAdv =  (Me%FlowXOld(i,   j) * (Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)        + &
-                                    !                                    Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)) / 2.0 + & 
-                                    !             Me%FlowXOld(i-1, j) * (Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)        + &
-                                    !                                    Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)) / 2.0)/2.0
                                 else
                                     if(Me%ComputeFaceV(i-1, j+1) == Compute)then
                                         XRightAdv = Qf   *  Me%FlowYOld(i-1, j+1) / Me%AreaV(i-1, j+1)
@@ -14244,11 +14520,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 if(Me%ComputeFaceV(i,j-1) == Compute) then
                                     XLeftAdv = Qf   * Me%FlowYOld(i, j-1) / Me%AreaV(i, j-1)
                                     
-                                    !XLeftAdv =  (Me%FlowXOld(i,   j) * (Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)        + &
-                                    !                                   Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)) / 2.0 + & 
-                                    !            Me%FlowXOld(i-1, j) * (Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)        + &
-                                    !                                   Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)) / 2.0)/2.0
-                                    
                                 else
                                     
                                     if(Me%ComputeFaceV(i+1, j-1) == Compute)then
@@ -14273,9 +14544,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         XLeftAdv = 0.0
                     endif       
                            
-                    !Advection = (upAdv - downAdv) * LocalDT / Me%ExtVar%DVY(i, j)
-                    Advection = (YBottomAdv - YTopAdv) * LocalDT / Me%ExtVar%DZY(i-1, j)     &
-                                + (XLeftAdv - XRightAdv) * LocalDT / Me%ExtVar%DXX(i, j)
+                    Advection = (YBottomAdv - YTopAdv) * LocalDT / DZY     &
+                                + (XLeftAdv - XRightAdv) * LocalDT / DXX
                     
                 else
                 
@@ -14289,41 +14559,33 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                     if (Me%LimitToCriticalFlow) then
                     
-    !                    if ((level_bottom .lt. Me%ExtVar%Topography(i,j)) .or. (level_top .lt. Me%ExtVar%Topography(i-1,j))) then
-                    
-                            !Waterdepth at the center of the face - depending on flow direction since flow
-                            !can be in opposite direction of height gradient (AreaU uses the higher)
-                            !WaterDepth = Me%AreaV(i,j)/Me%ExtVar%DXX(i,j)
-                            if (Me%FaceWaterColumn == WCMaxBottom_) then
-                                MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i-1, j))
+                        if (Me%FaceWaterColumn == WCMaxBottom_) then
                                                             
-                                if (Me%lFlowY(i, j) .gt. 0.0) then           
-                                    WaterDepth = max(Me%MyWaterLevel(i-1,j) - MaxBottom, 0.0)
-                                else
-                                    WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
-                                endif                
-                            elseif (Me%FaceWaterColumn == WCAverageBottom_) then
-                                if (Me%lFlowY(i, j) .gt. 0.0) then           
-                                    WaterDepth = Me%MyWaterColumn(i-1,j)
-                                else
-                                    WaterDepth = Me%MyWaterColumn(i,j)
-                                endif                                        
-                            endif
+                            if (Me%lFlowY(i, j) .gt. 0.0) then           
+                                WaterDepth = max(level_bottom - MaxBottom, 0.0)
+                            else
+                                WaterDepth = max(level_top - MaxBottom, 0.0)
+                            endif                
+                        elseif (Me%FaceWaterColumn == WCAverageBottom_) then
+                            if (Me%lFlowY(i, j) .gt. 0.0) then           
+                                WaterDepth = Me%MyWaterColumn(i-1,j)
+                            else
+                                WaterDepth = Me%MyWaterColumn(i,j)
+                            endif                                        
+                        endif
                         
-                            !Critical Flow
-                            !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
-                            !m3/s = m * m * m/s
-                            CriticalFlow = WaterDepth * Me%ExtVar%DXX(i,j) * sqrt(Gravity * WaterDepth)
+                        !Critical Flow
+                        !m3/s = m * m * m/s
+                        CriticalFlow = WaterDepth * DXX * sqrt(Gravity * WaterDepth)
                         
-                            !only limit if flow higher
-                            if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
-                                if (Me%lFlowY(i, j) > 0) then
-                                    Me%lFlowY(i, j) = CriticalFlow
-                                else
-                                    Me%lFlowY(i, j) = -1.0 * CriticalFlow
-                                endif
+                        !only limit if flow higher
+                        if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
+                            if (Me%lFlowY(i, j) > 0) then
+                                Me%lFlowY(i, j) = CriticalFlow
+                            else
+                                Me%lFlowY(i, j) = -1.0 * CriticalFlow
                             endif
-     !                   endif
+                        endif
                 
                     else
                         if (Me%lFlowY(i, j) .lt. 0.0) then
@@ -14340,6 +14602,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterVolumePred(i-1,j) = Me%myWaterVolumePred(i-1,j) - (Me%lFlowY(i, j) * LocalDT) 
                     
                     endif
+                    
+                    !Update water volumes
+                    dVol = Me%lFlowY(i, j) * LocalDT
+                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
+                    Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
+                
+                    Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
+                    Me%ActivePoints(i,j-1) = 1 !For use in modifygeometryAndMapping and updatewaterlevels
+                    
                 else
                     Me%lFlowY(i, j) = 0.0
                 endif
@@ -14356,18 +14627,335 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine DynamicWaveYY
     
     
+!    subroutine DynamicWaveYY (LocalDT)
+!    
+!        !Arguments-------------------------------------------------------------
+!        real                                        :: LocalDT
+!        
+!        !Local-----------------------------------------------------------------
+!        integer                                     :: i, j
+!        integer                                     :: ILB, IUB, JLB, JUB
+!        real                                        :: Slope
+!        real                                        :: level_bottom, level_top
+!        real                                        :: HydraulicRadius
+!        real                                        :: Friction
+!        real                                        :: Pressure
+!        !real                                        :: upAdv, downAdv, 
+!        real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
+!        real                                        :: Advection, Qf, WetPerimeter
+!        real(8)                                     :: CriticalFlow
+!        real                                        :: Margin1, Margin2
+!        integer                                     :: CHUNK, di
+!        real                                        :: MaxBottom, WaterDepth
+!        !character(len=StringLength)                 :: Direction
+!
+!        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveYY")
+!
+!
+!        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+!
+!        ILB = Me%WorkSize%ILB
+!        IUB = Me%WorkSize%IUB
+!        JLB = Me%WorkSize%JLB
+!        JUB = Me%WorkSize%JUB
+!
+!        !$OMP PARALLEL PRIVATE(I,J, Slope, level_bottom, level_top, &
+!        !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
+!        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, di, WetPerimeter)
+!
+!        !Y
+!        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+!        do j = JLB, JUB
+!        do i = ILB, IUB
+!            Me%lFlowY(i, j) = 0.0
+!            if (Me%ComputeFaceV(i, j) == Compute) then
+!            
+!                level_bottom = Me%myWaterLevel(i-1, j)
+!                level_top    = Me%myWaterLevel(i, j)
+!                
+!                !!Slope
+!                if (Me%AdjustSlope) then
+!                    Slope           = AdjustSlope((level_bottom - level_top) / Me%ExtVar%DZY(i-1, j))
+!                else
+!                    Slope           = (level_bottom - level_top) / Me%ExtVar%DZY(i-1, j)
+!                endif
+!                
+!                !!Hydraulic Radius
+!!                Direction = "Y"
+!!                !This function produced an overhead with openmp so it was abandoned
+!!                HydraulicRadius = HydraulicRadius(i,j,Direction,level_bottom,level_top)
+!                
+!                !wet perimeter, first is bottom
+!                WetPerimeter = Me%ExtVar%DXX(i, j)
+!                
+!                if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
+!                    !water Depth consistent with AreaV computed (only water above max bottom)
+!                    WaterDepth = Me%AreaV(i,j) / Me%ExtVar%DXX(i, j)
+!                    MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i-1, j))
+!
+!                    !to check wich cell to use since areaV depends on higher water level
+!                    if (level_bottom .gt. level_top) then
+!                        di = -1
+!                    else
+!                        di = 0
+!                    endif
+!
+!                    !bottom Difference to adjacent cells (to check existence of “margins” on the side)
+!                    Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
+!                    Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
+!
+!                    !if positive than there is a “margin” on the side and friction occurs at wet length
+!                    if (Margin1 .gt. 0.0) then
+!                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
+!                    endif
+!                    if (Margin2 .gt. 0.0) then
+!                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin2)
+!                    endif
+!                endif
+!                
+!                !m = m2 / m
+!                HydraulicRadius = Me%AreaV(i, j) / WetPerimeter
+!               
+!                !
+!                !Sant Venant
+!                !
+!
+!                !m3/s             = s  * m/s2    * m2   * m/m
+!                Pressure          = LocalDT * Gravity * Me%AreaV(i, j) * Slope
+!
+!                !FRICTION - semi-implicit -----------------------------------------------
+!                !   -    =  (s * m.s-2  * m3.s-1 * (s.m(-1/3))^2) / (m2 * m(4/3)) = m(10/3) / m(10/3)
+!                !Friction = LocalDT * Gravity * abs(Me%FlowYOld(i, j)) * Me%OverlandCoefficientY(i,j) ** 2. &
+!                !         / ( Me%AreaV(i, j) * HydraulicRadius ** (4./3.) ) 
+!                
+!                !Friction = LocalDT * Gravity * &
+!                !           sqrt(Me%FlowXOld(i, j)**2. + Me%FlowYOld(i, j)**2.) * Me%OverlandCoefficientY(i,j)** 2. / &
+!                !           ( Me%AreaV(i, j) * HydraulicRadius ** (4./3.) ) 
+!                if (Me%ComputeFriction) then
+!                    Friction = LocalDT * Gravity * &
+!                               Me%VelModFaceV(i,j) * Me%OverlandCoefficientY(i,j)** 2. / &
+!                               (HydraulicRadius ** (4./3.))
+!                else
+!                    Friction = 0.0
+!                endif
+!
+!                !Advection
+!                if ((Me%ComputeAdvectionV(i,j) == 1) .and. (Me%myWaterColumn(i,j) .gt. Me%MinimumWaterColumnAdvection)  &
+!                     .and. (Me%myWaterColumn(i-1,j) .gt. Me%MinimumWaterColumnAdvection)) then
+!                    
+!                    !Face YV(i+1,j)
+!                    if ((Me%ComputeFaceV(i, j) +  Me%ComputeFaceV(i+1, j) == 2)) then 
+!                        
+!                        if ((Me%FlowYOld(i, j) * Me%FlowYOld(i+1, j)) .ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowYOld(i, j) + Me%FlowYOld(i+1, j)) / 2.0
+!
+!                            if (Qf > 0.0) then
+!                                YTopAdv = Me%FlowYOld(i, j)   * Me%FlowYOld(i, j) / Me%AreaV(i, j)
+!                            else
+!                                YTopAdv = Me%FlowYOld(i+1, j) * Me%FlowYOld(i+1, j) / Me%AreaV(i+1, j)
+!                            endif
+!                        else
+!                            YTopAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        YTopAdv = 0.0
+!                    endif
+!                    
+!                    !Face YV(i,j)
+!                    if ((Me%ComputeFaceV(i-1, j) + Me%ComputeFaceV(i, j) == 2)) then 
+!
+!                        if ((Me%FlowYOld(i-1, j) * Me%FlowYOld(i, j)) .ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowYOld(i-1, j) + Me%FlowYOld(i, j)) / 2.0
+!
+!                            if (Qf > 0.0) then
+!                                YBottomAdv = Me%FlowYOld(i-1, j)   * Me%FlowYOld(i-1, j) / Me%AreaV(i-1, j)
+!                            else
+!                                YBottomAdv = Me%FlowYOld(i, j) * Me%FlowYOld(i, j) / Me%AreaV(i, j)
+!                            endif
+!                        else
+!                            YBottomAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        YBottomAdv = 0.0
+!                    endif                
+!        
+!                    if (Me%ComputeFaceU(i, j+1) +  Me%ComputeFaceU(i-1, j+1) .gt. 0) then
+!                        
+!                        !if flows in same direction, advection is computed                        
+!                        if ((Me%FlowXOld(i, j+1) * Me%FlowXOld(i-1, j+1)).ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowXOld(i, j+1) + Me%FlowXOld(i-1, j+1)) / 2.0
+!                            
+!                            if (Qf > 0.0) then
+!                                
+!                                XRightAdv = Qf   * Me%FlowYOld(i, j) / Me%AreaV(i, j)
+!                                
+!                            elseif (Qf < 0.0)then
+!                                
+!                                if(Me%ComputeFaceV(i,j+1) == Compute) then
+!                                    XRightAdv = Qf   * Me%FlowYOld(i, j+1) / Me%AreaV(i, j+1)
+!                                    !XRightAdv =  (Me%FlowXOld(i,   j) * (Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)        + &
+!                                    !                                    Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)) / 2.0 + & 
+!                                    !             Me%FlowXOld(i-1, j) * (Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)        + &
+!                                    !                                    Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)) / 2.0)/2.0
+!                                else
+!                                    if(Me%ComputeFaceV(i-1, j+1) == Compute)then
+!                                        XRightAdv = Qf   *  Me%FlowYOld(i-1, j+1) / Me%AreaV(i-1, j+1)
+!                                    elseif(Me%ComputeFaceV(i+1, j+1) == Compute)then
+!                                        XRightAdv = Qf   * Me%FlowYOld(i+1, j+1) / Me%AreaV(i+1, j+1) 
+!                                    else
+!                                        XRightAdv = 0.0
+!                                    endif
+!                                endif
+!                                
+!                            else 
+!                                XRightAdv = 0.0
+!                            endif
+!                        else
+!                            XRightAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        XRightAdv = 0.0
+!                    endif       
+!
+!                    if (Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i-1, j) .gt. 0) then
+!                        
+!                        !if flows in same direction, advection is computed                        
+!                        if ((Me%FlowXOld(i, j) * Me%FlowXOld(i-1, j)).ge. 0.0) then
+!                            
+!                            Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i-1, j)) / 2.0
+!                            
+!                            if (Qf > 0.0)then
+!                                if(Me%ComputeFaceV(i,j-1) == Compute) then
+!                                    XLeftAdv = Qf   * Me%FlowYOld(i, j-1) / Me%AreaV(i, j-1)
+!                                    
+!                                    !XLeftAdv =  (Me%FlowXOld(i,   j) * (Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)        + &
+!                                    !                                   Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)) / 2.0 + & 
+!                                    !            Me%FlowXOld(i-1, j) * (Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)        + &
+!                                    !                                   Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)) / 2.0)/2.0
+!                                    
+!                                else
+!                                    
+!                                    if(Me%ComputeFaceV(i+1, j-1) == Compute)then
+!                                        XLeftAdv = Qf * Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1) 
+!                                    elseif(Me%ComputeFaceV(i-1, j-1) == Compute)then
+!                                        XLeftAdv = Qf * Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)
+!                                    else
+!                                        XLeftAdv = 0.0
+!                                    endif
+!                                   
+!                                endif
+!                            elseif (Qf < 0.0) then
+!                                XLeftAdv = Qf   * Me%FlowYOld(i, j) / Me%AreaV(i, j)
+!                            else
+!                                XLeftAdv = 0.0
+!                            endif
+!                        else
+!                            XLeftAdv = 0.0
+!                        endif
+!                        
+!                    else
+!                        XLeftAdv = 0.0
+!                    endif       
+!                           
+!                    !Advection = (upAdv - downAdv) * LocalDT / Me%ExtVar%DVY(i, j)
+!                    Advection = (YBottomAdv - YTopAdv) * LocalDT / Me%ExtVar%DZY(i-1, j)     &
+!                                + (XLeftAdv - XRightAdv) * LocalDT / Me%ExtVar%DXX(i, j)
+!                    
+!                else
+!                
+!                    Advection = 0.0
+!                    
+!                endif
+!                
+!                Me%lFlowY(i, j) = (Me%FlowYOld(i, j) + Pressure + Advection) / (1.0 + Friction)
+!                
+!                if (abs(Me%lFlowY(i, j)) > Almostzero) then
+!                
+!                    if (Me%LimitToCriticalFlow) then
+!                    
+!    !                    if ((level_bottom .lt. Me%ExtVar%Topography(i,j)) .or. (level_top .lt. Me%ExtVar%Topography(i-1,j))) then
+!                    
+!                            !Waterdepth at the center of the face - depending on flow direction since flow
+!                            !can be in opposite direction of height gradient (AreaU uses the higher)
+!                            !WaterDepth = Me%AreaV(i,j)/Me%ExtVar%DXX(i,j)
+!                            if (Me%FaceWaterColumn == WCMaxBottom_) then
+!                                MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i-1, j))
+!                                                            
+!                                if (Me%lFlowY(i, j) .gt. 0.0) then           
+!                                    WaterDepth = max(Me%MyWaterLevel(i-1,j) - MaxBottom, 0.0)
+!                                else
+!                                    WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
+!                                endif                
+!                            elseif (Me%FaceWaterColumn == WCAverageBottom_) then
+!                                if (Me%lFlowY(i, j) .gt. 0.0) then           
+!                                    WaterDepth = Me%MyWaterColumn(i-1,j)
+!                                else
+!                                    WaterDepth = Me%MyWaterColumn(i,j)
+!                                endif                                        
+!                            endif
+!                        
+!                            !Critical Flow
+!                            !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
+!                            !m3/s = m * m * m/s
+!                            CriticalFlow = WaterDepth * Me%ExtVar%DXX(i,j) * sqrt(Gravity * WaterDepth)
+!                        
+!                            !only limit if flow higher
+!                            if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
+!                                if (Me%lFlowY(i, j) > 0) then
+!                                    Me%lFlowY(i, j) = CriticalFlow
+!                                else
+!                                    Me%lFlowY(i, j) = -1.0 * CriticalFlow
+!                                endif
+!                            endif
+!     !                   endif
+!                
+!                    else
+!                        if (Me%lFlowY(i, j) .lt. 0.0) then
+!                            if ( abs(Me%lFlowY(i, j))* LocalDT  .gt. Me%myWaterVolumePred(i,j)) then
+!                                Me%lFlowY(i, j) = - Me%myWaterVolumePred(i,j)  / LocalDT
+!                            endif
+!                        elseif (Me%lFlowY(i, j) .gt. 0.0) then
+!                            if ( Me%lFlowY(i, j)* LocalDT .gt. Me%myWaterVolumePred(i-1,j)) then
+!                                Me%lFlowY(i, j) =  Me%myWaterVolumePred(i-1,j) / LocalDT
+!                            endif
+!                        endif                
+!                    
+!                        Me%myWaterVolumePred(i  ,j) = Me%myWaterVolumePred(i,  j) + (Me%lFlowY(i, j) * LocalDT)                        
+!                        Me%myWaterVolumePred(i-1,j) = Me%myWaterVolumePred(i-1,j) - (Me%lFlowY(i, j) * LocalDT) 
+!                    
+!                    endif
+!                else
+!                    Me%lFlowY(i, j) = 0.0
+!                endif
+!            endif
+!            
+!        enddo
+!        enddo         
+!        !$OMP END DO NOWAIT
+!        !$OMP END PARALLEL
+!        
+!        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY")
+!        
+!        
+!    end subroutine DynamicWaveYY
+    
+    
     !---------------------------------------------------------------------------
     
-    subroutine UpdateWaterLevels(LocalDT)
+    subroutine UpdateWaterLevels(Restart)
     
         !Arguments-------------------------------------------------------------
-        real                                        :: LocalDT
-        
+        logical, intent(INOUT)                      :: Restart
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: dVol
-        logical                                     :: computecell
+        real(8)                                     :: WaterVolume
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterLevels")
 
@@ -14376,98 +14964,188 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         JLB = Me%WorkSize%JLB
         JUB = Me%WorkSize%JUB
 
-
-        !X
-        !$OMP PARALLEL PRIVATE(I,J, computecell)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
-        do i = ILB, IUB
-        do j = JLB-1, JUB
-            computecell = .false.
-            
-            if (Me%ComputeFaceU(i, j) == 1) then
-                !dVol
-                Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + Me%lFlowX(i, j) * LocalDT
-                computecell = .true.
-            endif
-            
-            if (Me%ComputeFaceU(i, j+1) == 1) then
-                !dVol
-                Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT  
-                computecell = .true.
-            endif
-            
-            if (computecell) then
-                !Updates Water Column
-                if ( Me%GridIsConstant) then
-                    Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%GridCellArea
-                else
-                    Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-                endif
+        !$OMP PARALLEL PRIVATE(I,J, WaterVolume)
+        if (Me%GridIsConstant) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ActivePoints(i,j) == 1) then
+                    WaterVolume = Me%myWaterVolume (i, j)
                 
-                Me%ActivePoints(i,j) = 0
-                Me%OpenPoints(i,j) = 0
-                if (Me%myWaterColumn(i, j) > AlmostZero) then
-                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                    if (WaterVolume < AllmostZeroNegative) then
+                        Restart = .true.
+                    else if (WaterVolume < 0.0) then  
+                        Me%myWaterVolume (i, j) = 0.0                 
+                    endif
+                
+                    !Updates Water Column
+                    Me%myWaterColumn  (i, j)   = WaterVolume / Me%GridCellArea
+                
                     if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                         Me%OpenPoints(i,j) = 1 !For use in output routines
+                    elseif (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%OpenPoints(i,j) = 0
+                    else
+                        Me%OpenPoints(i,j) = 0
+                        Me%ActivePoints(i,j) = 0
                     endif
-                endif
                 
-                !Updates Water Level
-                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-            endif
+                    !Updates Water Level
+                    Me%myWaterLevel (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+        else
             
-        enddo
-        enddo
-        !$OMP END DO
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
+            do i = ILB, IUB
+            do j = JLB, JUB
+                if (Me%ActivePoints(i,j) == 1) then
+                    WaterVolume = Me%myWaterVolume (i, j)
+                
+                    if (WaterVolume < AllmostZeroNegative) then
+                        Restart = .true.
+                    else if (WaterVolume < 0.0) then  
+                        Me%myWaterVolume (i, j) = 0.0                 
+                    endif
+                
+                    !Updates Water Column
+                    Me%myWaterColumn  (i, j)   = WaterVolume / Me%ExtVar%GridCellArea(i, j)
+                
+                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                        Me%OpenPoints(i,j) = 1 !For use in output routines
+                    elseif (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%OpenPoints(i,j) = 0
+                    else
+                        Me%OpenPoints(i,j) = 0
+                        Me%ActivePoints(i,j) = 0
+                    endif
+                
+                    !Updates Water Level
+                    Me%myWaterLevel (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+        endif
         !$OMP END PARALLEL        
-
-        !Y
-        !$OMP PARALLEL PRIVATE(I,J,dVol, computecell)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = JLB, JUB
-        do i = ILB-1, IUB
-            computecell = .false.
-            if (Me%ComputeFaceV(i, j) == 1) then
-                !dVol
-                Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + Me%lFlowY(i, j) * LocalDT
-                computecell = .true.
-            endif
-            
-            if (Me%ComputeFaceV(i+1, j) == 1) then
-                computecell = .true.
-                !dVol
-                Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowY(i+1, j) * LocalDT
-            endif
-            
-            if (computecell) then
-                !Updates Water Column
-                if ( Me%GridIsConstant) then
-                    Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%GridCellArea
-                else
-                    Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-                endif
-                
-                Me%ActivePoints(i,j) = 0
-                Me%OpenPoints(i,j) = 0
-                if (Me%myWaterColumn(i, j) > AlmostZero) then
-                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
-                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
-                        Me%OpenPoints(i,j) = 1 !For use in output routines
-                    endif
-                endif
-                
-                !Updates Water Level
-                Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-            endif
-        enddo
-        enddo
-        !$OMP END DO
-        !$OMP END PARALLEL
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
 
-    end subroutine UpdateWaterLevels 
+    end subroutine UpdateWaterLevels
+    
+    
+    !subroutine UpdateWaterLevels(LocalDT)
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    real                                        :: LocalDT
+    !    
+    !    !Local-----------------------------------------------------------------
+    !    integer                                     :: i, j
+    !    integer                                     :: ILB, IUB, JLB, JUB
+    !    real                                        :: dVol
+    !    logical                                     :: computecell
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterLevels")
+    !
+    !    ILB = Me%WorkSize%ILB
+    !    IUB = Me%WorkSize%IUB
+    !    JLB = Me%WorkSize%JLB
+    !    JUB = Me%WorkSize%JUB
+    !
+    !
+    !    !X
+    !    !$OMP PARALLEL PRIVATE(I,J, computecell)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
+    !    do i = ILB, IUB
+    !    do j = JLB-1, JUB
+    !        computecell = .false.
+    !        
+    !        if (Me%ComputeFaceU(i, j) == 1) then
+    !            !dVol
+    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + Me%lFlowX(i, j) * LocalDT
+    !            computecell = .true.
+    !        endif
+    !        
+    !        if (Me%ComputeFaceU(i, j+1) == 1) then
+    !            !dVol
+    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT  
+    !            computecell = .true.
+    !        endif
+    !        
+    !        if (computecell) then
+    !            !Updates Water Column
+    !            if ( Me%GridIsConstant) then
+    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%GridCellArea
+    !            else
+    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+    !            endif
+    !            
+    !            Me%ActivePoints(i,j) = 0
+    !            Me%OpenPoints(i,j) = 0
+    !            if (Me%myWaterColumn(i, j) > AlmostZero) then
+    !                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+    !                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+    !                    Me%OpenPoints(i,j) = 1 !For use in output routines
+    !                endif
+    !            endif
+    !            
+    !            !Updates Water Level
+    !            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+    !        endif
+    !        
+    !    enddo
+    !    enddo
+    !    !$OMP END DO
+    !    !$OMP END PARALLEL        
+    !
+    !    !Y
+    !    !$OMP PARALLEL PRIVATE(I,J,dVol, computecell)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+    !    do j = JLB, JUB
+    !    do i = ILB-1, IUB
+    !        computecell = .false.
+    !        if (Me%ComputeFaceV(i, j) == 1) then
+    !            !dVol
+    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + Me%lFlowY(i, j) * LocalDT
+    !            computecell = .true.
+    !        endif
+    !        
+    !        if (Me%ComputeFaceV(i+1, j) == 1) then
+    !            computecell = .true.
+    !            !dVol
+    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowY(i+1, j) * LocalDT
+    !        endif
+    !        
+    !        if (computecell) then
+    !            !Updates Water Column
+    !            if ( Me%GridIsConstant) then
+    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%GridCellArea
+    !            else
+    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+    !            endif
+    !            
+    !            Me%ActivePoints(i,j) = 0
+    !            Me%OpenPoints(i,j) = 0
+    !            if (Me%myWaterColumn(i, j) > AlmostZero) then
+    !                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+    !                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+    !                    Me%OpenPoints(i,j) = 1 !For use in output routines
+    !                endif
+    !            endif
+    !            
+    !            !Updates Water Level
+    !            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+    !        endif
+    !    enddo
+    !    enddo
+    !    !$OMP END DO
+    !    !$OMP END PARALLEL
+    !    
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
+    !
+    !end subroutine UpdateWaterLevels
 
     !--------------------------------------------------------------------------
     
@@ -16068,11 +16746,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     !Updates Water Volume
                     Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j)   - dVol 
                     
-                    !Updates Water Column
-                    Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-
-                    !Updates Water Level
-                    Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
+                    Me%ActivePoints(i,j)   = 1
+                    !!Updates Water Column
+                    !Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
+                    !
+                    !!Updates Water Level
+                    !Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
                     
 
                 else
@@ -16663,28 +17342,28 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "CheckStability")
 
         n_restart = 0
-        Restart = .false.
+        !Restart = .false.
         
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if (.not. Restart) then
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    if (Me%myWaterVolume(i, j) < AllmostZeroNegative) then
-                        !!$OMP CRITICAL
-                        Restart = .true.
-                        !!$OMP END CRITICAL
-                        !exit
-                    else if (Me%myWaterVolume (i, j) < 0.0) then  
-                        Me%myWaterVolume (i, j) = 0.0                 
-                    endif
-                endif
-            endif
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-        !$OMP END PARALLEL
+        !!$OMP PARALLEL PRIVATE(I,J)
+        !!$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+        !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        !    if (.not. Restart) then
+        !        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+        !            if (Me%myWaterVolume(i, j) < AllmostZeroNegative) then
+        !                !!$OMP CRITICAL
+        !                Restart = .true.
+        !                !!$OMP END CRITICAL
+        !                !exit
+        !            else if (Me%myWaterVolume (i, j) < 0.0) then  
+        !                Me%myWaterVolume (i, j) = 0.0                 
+        !            endif
+        !        endif
+        !    endif
+        !enddo
+        !enddo
+        !!$OMP END DO NOWAIT
+        !!$OMP END PARALLEL
 
 
         if ((.not. Restart) .and. Me%CV%Stabilize) then
@@ -16858,12 +17537,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / SumDTs
-                Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / SumDTs
-                DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
-                Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / &
-                                            SumDTs
-                sumDischarge = sumDischarge + DischargeVolume
+                if (Me%ActivePoints(i,j) == Compute) then
+                    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / SumDTs
+                    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / SumDTs
+                    DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
+                    Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / &
+                                                SumDTs
+                    sumDischarge = sumDischarge + DischargeVolume
+                    !Should discharges become a 1D array and this integration be done seperately as a single cell with a discharge
+                    ! will consume a lot of CPU in this function
+                endif
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -16872,13 +17555,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                !if (Me%ComputeFaceU(i, j) == Compute) then
-                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                if (Me%ActivePoints(i,j) == Compute) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                !endif
-                !if (Me%ComputeFaceV(i, j) == Compute) then
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
                 endif
+                
+                !if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                !    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                !    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+                !endif
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -17649,7 +18334,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     do i = ILB, IUB
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                             if (Me%OpenPoints(i,j) == BasinPoint) then
-                            !if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                                 FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
                                 FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
                     
@@ -17676,7 +18360,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                             if (Me%OpenPoints(i,j) == BasinPoint) then
-                            !if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                                 FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
                                 FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
                     
@@ -17705,7 +18388,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     do j = JLB, JUB
                     do i = ILB, IUB
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                            !if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                             if (Me%OpenPoints(i,j) == BasinPoint) then
                                 Me%CenterFlowX_R4(i, j) = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
                                 Me%CenterFlowY_R4(i, j) = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
@@ -17726,7 +18408,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     do j = JLB, JUB
                     do i = ILB, IUB
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                            !if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                             if (Me%OpenPoints(i,j) == BasinPoint) then
                                 Me%CenterFlowX_R4(i, j) = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
                                 Me%CenterFlowY_R4(i, j) = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
@@ -17753,7 +18434,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = JLB, JUB
             do i = ILB, IUB
-
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
@@ -17772,7 +18452,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%CenterVelocityY_R4(i, j) = 0.0
                     end if
                 endif
-
             enddo
             enddo
             !$OMP END DO NOWAIT 
@@ -17786,10 +18465,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = JLB, JUB
             do i = ILB, IUB
-
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                    !if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                     if (Me%OpenPoints(i,j) == BasinPoint) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
                         Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
@@ -17800,7 +18476,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%VelocityModulus_R4(i, j) = 0.0
                     end if
                 endif
-
             enddo
             enddo
             !$OMP END DO NOWAIT 
@@ -17810,10 +18485,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = JLB, JUB
             do i = ILB, IUB
-
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                
-                    !if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
                     if (Me%OpenPoints(i,j) == BasinPoint) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
                         Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
@@ -17823,7 +18495,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%VelocityModulus_R4(i, j) = 0.0
                     end if
                 endif
-
             enddo
             enddo
             !$OMP END DO NOWAIT 
@@ -19082,6 +19753,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Begin-----------------------------------------------------------------
 
+        if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFloodPeriod")
    
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -19131,6 +19803,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         endif
 
+        if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFloodPeriod")
     end subroutine OutputFloodPeriod
    
     !-----------------------------------------------------------------------------    
@@ -19152,6 +19825,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Begin-----------------------------------------------------------------
 
    
+        if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFloodArrivalTime")
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         Sum   = 0.0
@@ -19185,6 +19859,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             Me%Output%TimeOfMaxTotalFloodedArea = Me%ExtVar%Now - Me%BeginTime
         endif
 
+        if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFloodArrivalTime")
     end subroutine OutputFloodArrivalTime
 
     !-----------------------------------------------------------------------------    
