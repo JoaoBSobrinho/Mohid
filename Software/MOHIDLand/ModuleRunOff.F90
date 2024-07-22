@@ -11445,7 +11445,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 
                 !Update water volumes
-                dVol = Me%lFlowX(i, j) * LocalDT
+                dVol = Me%lFlowX(i, j) * Me%CV%CurrentDT
                 Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
                 Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
                 
@@ -11561,7 +11561,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 
                 !Update water volumes
-                dVol = Me%lFlowY(i, j) * LocalDT
+                dVol = Me%lFlowY(i, j) * Me%CV%CurrentDT
                 Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
                 Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
                 
@@ -18975,7 +18975,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
         if (Me%StormWaterModel) then
             if (Me%StormWaterModelDT < Me%CV%NextDT) then        
-                Me%CV%NextDT = Me%StormWaterModelDT            
+                Me%CV%NextDT = Me%StormWaterModelDT
+                write(*,*) "DT from StormWaterModel = ", Me%StormWaterModelDT
             endif
         end if
     
