@@ -19472,13 +19472,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
                     do j = JLB+1, JUB
                     do i = ILB+1, IUB
-                        if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                        !if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                             do c = 1, size(strideJ,1)
                                 !Compute fluxes of east and north cell faces
                                 j_East = j - strideJ(c, 1)
                                 i_North = i - strideJ(c, 2)
                             
-                                if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+                                !if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
                                     
                                     if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North,j_East) == Compute) then
                                         waterColumn = Me%myWaterColumn (i,j)
@@ -19493,9 +19493,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                         celerity = sqrt(Gravity * aux)
                                         totalVel = max(abs(velFace + celerity),abs(velFace - celerity))
                                     endif
-                                endif
+                                !endif
                             enddo
-                        endif
+                        !endif
                     enddo
                     enddo
                     !$OMP END DO 
