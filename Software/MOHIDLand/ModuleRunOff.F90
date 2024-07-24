@@ -8421,9 +8421,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                     call ComputeStormWaterModel
 
-                    call ModifyGeometryAndMapping
-                    !call ModifyGeometryAndMapping_X_StormWater
-                    !call ModifyGeometryAndMapping_Y_StormWater
+                    !call ModifyGeometryAndMapping
+                    call ModifyGeometryAndMapping_X_StormWater
+                    call ModifyGeometryAndMapping_Y_StormWater
                 endif
 
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
@@ -15536,7 +15536,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                     if (WaterVolume < AllmostZeroNegative) then
                         Restart = .true.
-                        write(*,*) "Volume negativo na celula : ", i, j, WaterVolume
                     else if (WaterVolume < 0.0) then  
                         Me%myWaterVolume (i, j) = 0.0                 
                     endif
@@ -18439,15 +18438,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                !if (Me%ActivePoints(i,j) == Compute) then
-                !    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                !    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
-                !endif
-                
-                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                if (Me%ActivePoints(i,j) == Compute) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
                 endif
+                
+                !if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                !    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
+                !    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
+                !endif
             enddo
             enddo
             !$OMP END DO NOWAIT
@@ -18571,6 +18570,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         
                     !Updates Water Column
                     Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / Me%ExtVar%GridCellArea(i, j)
+                    
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1 !For use in output routines
+                        endif
+                    endif
 
                     !Updates Water Level
                     Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Me%ExtVar%Topography(i, j)
@@ -18701,7 +18707,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         
                             !Updates Water Column
                             Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / Me%GridCellArea
-
+                            
+                            if (Me%myWaterColumn(i, j) > AlmostZero) then
+                                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                    Me%OpenPoints(i,j) = 1 !For use in output routines
+                                endif
+                            endif
                             !Updates Water Level
                             Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
                         else
@@ -18816,7 +18828,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         
                             !Updates Water Column
                             Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / GridCellArea
-
+                            
+                            if (Me%myWaterColumn(i, j) > AlmostZero) then
+                                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                    Me%OpenPoints(i,j) = 1 !For use in output routines
+                                endif
+                            endif
                             !Updates Water Level
                             Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
                         else
@@ -18871,7 +18889,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterLevel (i, j) = max(Me%WaterLevelBoundaryValue(i,j), Me%ExtVar%Topography (i, j))
 
                     !Updates Water Column
-                    Me%myWaterColumn(i, j) = Me%myWaterLevel (i, j) - Me%ExtVar%Topography (i, j) 
+                    Me%myWaterColumn(i, j) = Me%myWaterLevel (i, j) - Me%ExtVar%Topography (i, j)
+                    
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1 !For use in output routines
+                        endif
+                    endif
                     
                     !Updates Volume and BoundaryFlowVolume
                     OldVolume              = Me%myWaterVolume(i, j)
@@ -18937,6 +18962,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                         !Updates Water Column
                         Me%myWaterColumn(i, j) = Me%myWaterLevel (i, j) - Me%ExtVar%Topography (i, j)
+                        
+                        if (Me%myWaterColumn(i, j) > AlmostZero) then
+                            Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                            if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                Me%OpenPoints(i,j) = 1 !For use in output routines
+                            endif
+                        endif
                         
                         OldVolume              = Me%myWaterVolume(i, j)
                         
