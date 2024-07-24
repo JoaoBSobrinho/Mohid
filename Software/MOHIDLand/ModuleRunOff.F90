@@ -5428,7 +5428,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%ComputeFaceU, Me%Size, 0)
         call SetMatrixValue(Me%ComputeFaceV, Me%Size, 0)
         call SetMatrixValue(Me%OpenPoints, Me%Size, 0)
-        call SetMatrixValue(Me%ActivePoints, Me%Size, 0)
+        call SetMatrixValue(Me%ActivePoints, Me%Size, 1)
         call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
         call SetMatrixValue(Me%Bottom_Y, Me%Size, 0.0)
         
@@ -8234,8 +8234,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 !Stores initial values = from basin
                 !if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
-                call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
-                !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
+                !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
+                call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
                 !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
                 call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
