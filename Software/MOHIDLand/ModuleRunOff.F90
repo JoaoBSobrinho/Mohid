@@ -948,6 +948,7 @@ Module ModuleRunOff
         real                                        :: Transition_acoef_1D_2D = 100 ! "a" coeficient in ax+b=y
         logical                                     :: UpdatedWaterColumnFromBasin
         logical                                     :: HasRunoffProperties
+        logical                                     :: CheckGlobalMass
         logical                                     :: GridIsRotated = .false.
         logical                                     :: GridIsConstant = .false.
         real                                        :: DX                       = null_real
@@ -985,6 +986,7 @@ Module ModuleRunOff
                                DrainageNetworkID,                               &
                                DischargesID,                                    &
                                HasRunoffProperties,                             &
+                               CheckGlobalMass,                                 &
                                STAT)
 
         !Arguments---------------------------------------------------------------
@@ -998,7 +1000,7 @@ Module ModuleRunOff
         integer                                         :: DrainageNetworkID
         integer, optional, intent(OUT)                  :: STAT     
         integer, intent (OUT)                           :: DischargesID
-        logical                                         :: HasRunoffProperties
+        logical                                         :: HasRunoffProperties, CheckGlobalMass
 
         !External----------------------------------------------------------------
         integer                                         :: ready_         
@@ -1023,6 +1025,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             
             Me%ModelName = ModelName
             Me%HasRunoffProperties = HasRunoffProperties
+            Me%CheckGlobalMass     = CheckGlobalMass
             !Associates External Instances
             Me%ObjTime            = AssociateInstance (mTIME_           , ComputeTimeID     )
             Me%ObjHorizontalGrid  = AssociateInstance (mHORIZONTALGRID_ , HorizontalGridID  )
@@ -8232,6 +8235,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !Stores initial values = from basin
                 !if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
                 call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
+                !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
                 !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
                 call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
@@ -8260,9 +8264,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
                     !Calculates local Watercolumn
                     call ReadLockExternalVar   (StaticOnly = .true.)
-                    if (.not. firstRestart) then
-                        call LocalWaterColumn      (Me%myWaterColumnOld)
-                    endif
+                    
                     !Important when restart happens more than once at the same iteration of modifyRunOff.
                     if (Me%Discharges) Me%TotalDischargeFlowVolume = TotalDischargeFlowVolume_entry
                     
@@ -8275,23 +8277,23 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     if (Niter > 1) then                
                         call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
                     endif
-                
+                    
                     call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
                     call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
                 
                     if (firstRestart) then
                         !using Me%InitialFlowX and Me%InitialFlowY directly
                     else
+                        call LocalWaterColumn (Me%myWaterColumnOld)
                         call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
                         call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                        if (Me%CheckGlobalMass) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+                        if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                     endif
                 
                     if (Me%ObjDrainageNetwork /= 0 .or. Me%Use1D2DInteractionMapping) then
                         call SetMatrixValue(Me%iFlowToChannels, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                     endif
-                
-                    if (Me%ImposeBoundaryValue) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
-                    if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                 
                     call ReadUnLockExternalVar (StaticOnly = .true.)
                 
@@ -8301,7 +8303,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         call ReadLockExternalVar (StaticOnly = .false.)
 
                         !Stores WaterVolume for convergence test
-                        call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
+                        if (iter > 1) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                         if (firstRestart) then
                             call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
@@ -10516,7 +10518,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
 
         !Sets to 0
-        call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0)
+        call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0, Me%ExtVar%BasinPoints)
         
         !The discharge flow is controled using two basic rules:
         ! 1 - when the flow is negative can not remove more than the volume present in the cell;
@@ -18486,7 +18488,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !logical                                     :: NearBoundary
         !real                                        :: AreaZX, AreaZY !, Width
         real                                        :: WaveHeight, Celerity, MaxFlow
-        real                                        :: InflowVolume, OutflowVolume
+        real                                        :: InflowVolume, OutflowVolume, iFlowBoundary
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue")
         !Routes water outside the watershed if water is higher then a given treshold values
@@ -18496,7 +18498,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         JUB = Me%WorkSize%JUB
         
         !Default is zero
-        Me%iFlowBoundary = 0.0
+        if (Me%CheckGlobalMass) Me%iFlowBoundary = 0.0
 
         Me%BoundaryFlowVolume = 0.0
         InflowVolume          = 0.0 
@@ -18530,7 +18532,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     do dj = 0, 1
                         if ((Me%ComputeFaceU(i,j+dj) == 0)) then
                             ![m3/s] = [m3/s] - [m] * [m] * [m/s]
-                            Me%iFlowBoundary(i, j) = Me%iFlowBoundary(i, j) - Me%ExtVar%DVY(i,j) *      &
+                            iFlowBoundary = iFlowBoundary - Me%ExtVar%DVY(i,j) *      &
                                                      min(dh, WaveHeight) * Celerity
                         endif
                     enddo
@@ -18539,7 +18541,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     do di = 0, 1
                         if ((Me%ComputeFaceV(i+di,j) == 0)) then
                             ![m3/s] = [m3/s] - [m] * [m] * [m/s]
-                            Me%iFlowBoundary(i, j) = Me%iFlowBoundary(i, j) - Me%ExtVar%DUX(i,j) *      &
+                            iFlowBoundary = iFlowBoundary - Me%ExtVar%DUX(i,j) *      &
                                                      min(dh, WaveHeight) * Celerity
                         endif
                     enddo
@@ -18550,12 +18552,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     MaxFlow = - min(dh, WaveHeight) *  Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
                     
                     !Me%iFlowBoundary(i, j)  = max (Me%iFlowBoundary(i, j), MaxFlow)
-                    if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
-                        Me%iFlowBoundary(i, j) = MaxFlow
-                    endif                    
+                    if (abs(iFlowBoundary) > abs(MaxFlow)) then
+                        iFlowBoundary = MaxFlow
+                    endif
+                    
+                    if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = iFlowBoundary
                     
                     !dVol
-                    dVol = Me%iFlowBoundary(i, j) * Me%ExtVar%DT
+                    dVol = iFlowBoundary * Me%ExtVar%DT
                         
                     !Updates Water Volume
                     Me%myWaterVolume (i, j)   = Me%myWaterVolume (i, j)   + dVol 
@@ -18580,10 +18584,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                     !Updates Water Level
                     Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Me%ExtVar%Topography(i, j)
-                    
-                else
-                
-                    Me%iFlowBoundary(i, j) = 0.0
                 
                 endif
 
@@ -18630,7 +18630,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: WaveHeight, Celerity, minHeight
         real                                        :: WaterLevelBoundaryValue, BoundaryFlowAux_U, BoundaryFlowAux_V
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
-        real                                        :: Topography
+        real                                        :: Topography, iFlowBoundary
         !Begin------------------------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D_CG")
@@ -18644,7 +18644,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         !$OMP PARALLEL PRIVATE(i,j,n,WaveHeight,dh,WaterLevelBoundaryValue,Celerity,minHeight,BoundaryFlowAux_U,BoundaryFlowAux_V,MaxFlow,dVol, &
-        !$OMP NonComputeFaces, Topography)
+        !$OMP NonComputeFaces, Topography, iFlowBoundary)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
         do n = 1, size(Me%WaterLevelBoundaryValue_1D)
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
@@ -18681,18 +18681,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             ![m3/s]           =      [m]           *         [m]         * [m/s]
                             BoundaryFlowAux_V = Me%DX * minHeight * Celerity * NonComputeFaces
                             
-                            Me%iFlowBoundary(i, j) = - BoundaryFlowAux_U - BoundaryFlowAux_V
+                            iFlowBoundary = - BoundaryFlowAux_U - BoundaryFlowAux_V
                     
                             !m3/s = m * m2 / s
                             MaxFlow = - minHeight *  Me%GridCellArea / Me%ExtVar%DT
                             !MaxFlow = - Me%myWaterVolume(i, j) / Me%ExtVar%DT
                                 
-                            if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
-                                Me%iFlowBoundary(i, j) = MaxFlow
+                            if (abs(iFlowBoundary) > abs(MaxFlow)) then
+                                iFlowBoundary = MaxFlow
                             endif                    
                     
                             !dVol
-                            dVol = Me%iFlowBoundary(i, j) * Me%ExtVar%DT
+                            dVol = iFlowBoundary * Me%ExtVar%DT
+                            
+                            if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = iFlowBoundary
                         
                             !Updates Water Volume
                             Me%myWaterVolume (i, j) = max(Me%myWaterVolume (i, j) + dVol, 0.0)
@@ -18716,8 +18718,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                             !Updates Water Level
                             Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
-                        else
-                            Me%iFlowBoundary(i, j) = 0.0
                         endif
                     endif
                 endif
@@ -18748,7 +18748,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: WaveHeight, Celerity, minHeight
         real                                        :: WaterLevelBoundaryValue, BoundaryFlowAux_U, BoundaryFlowAux_V
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
-        real                                        :: Topography, GridCellArea
+        real                                        :: Topography, GridCellArea, iFlowBoundary
         !Begin------------------------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_1D_VG")
@@ -18762,7 +18762,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         !$OMP PARALLEL PRIVATE(i,j,n,WaveHeight,dh,WaterLevelBoundaryValue,Celerity,minHeight,BoundaryFlowAux_U,BoundaryFlowAux_V,MaxFlow,dVol, &
-        !$OMP GridCellArea, NonComputeFaces, Topography)
+        !$OMP GridCellArea, NonComputeFaces, Topography, iFlowBoundary)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
         do n = 1, size(Me%WaterLevelBoundaryValue_1D)
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
@@ -18799,7 +18799,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             ![m3/s]           =      [m]           *         [m]         * [m/s]
                             BoundaryFlowAux_V = Me%ExtVar%DUX(i,j) * minHeight * Celerity * NonComputeFaces
                             
-                            Me%iFlowBoundary(i, j) = - BoundaryFlowAux_U - BoundaryFlowAux_V
+                            iFlowBoundary = - BoundaryFlowAux_U - BoundaryFlowAux_V
                     
                             !cant remove more than up to boundary or water column if boundary lower than topography 
                             !or add more up to boundary level if boundary level higher
@@ -18808,12 +18808,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             MaxFlow = - minHeight *  GridCellArea / Me%ExtVar%DT
                             !MaxFlow = - Me%myWaterVolume(i, j) / Me%ExtVar%DT
                                 
-                            if (abs(Me%iFlowBoundary(i, j)) > abs(MaxFlow)) then
-                                Me%iFlowBoundary(i, j) = MaxFlow
+                            if (abs(iFlowBoundary) > abs(MaxFlow)) then
+                                iFlowBoundary = MaxFlow
                             endif                    
                     
                             !dVol
-                            dVol = Me%iFlowBoundary(i, j) * Me%ExtVar%DT
+                            dVol = iFlowBoundary * Me%ExtVar%DT
+                            
+                            if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = iFlowBoundary
                         
                             !Updates Water Volume
                             Me%myWaterVolume (i, j) = max(Me%myWaterVolume (i, j) + dVol, 0.0)
@@ -18837,8 +18839,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                             !Updates Water Level
                             Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
-                        else
-                            Me%iFlowBoundary(i, j) = 0.0
                         endif
                     endif
                 endif
@@ -18866,7 +18866,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: i, j !, di, dj
         integer                                     :: ILB, IUB, JLB, JUB
 !        logical                                     :: NearBoundary
-        real                                        :: OldVolume, dVol
+        real                                        :: OldVolume, dVol, iFlowBoundary
 
         !Routes water outside the watershed if water is higher then a given treshold values
         ILB = Me%WorkSize%ILB
@@ -18916,7 +18916,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + (OldVolume - Me%myWaterVolume(i, j))
                     
                     !m3/s = m3 / s - always negative exiting runoff
-                    Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
+                    if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
                     
 !                endif
            
@@ -18937,7 +18937,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, n
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
+        real                                        :: OldVolume, dVol, WaterLevelBoundaryValue, iFlowBoundary
 
         !Routes water outside the watershed if water is higher then a given treshold values
         ILB = Me%WorkSize%ILB
@@ -18989,7 +18989,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + dVol
                     
                         !m3/s = m3 / s - always negative exiting runoff
-                        Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
+                        if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
                     endif
                 endif
             endif
