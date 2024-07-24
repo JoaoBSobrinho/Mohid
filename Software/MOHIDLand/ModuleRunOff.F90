@@ -8238,9 +8238,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
                 !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
-                call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
-                call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ExtVar%BasinPoints)            
-          
+                !call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
+                !call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ExtVar%BasinPoints)
+                call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ActivePoints)
+                call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ActivePoints)
+                
                 if (Me%Discharges) TotalDischargeFlowVolume_entry = Me%TotalDischargeFlowVolume
                 
                 !Set 1D River level in river boundary cells
@@ -8278,8 +8280,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
                     endif
                     
-                    call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
-                    call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
+                    !call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
+                    !call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
+                    call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
+                    call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
                 
                     if (firstRestart) then
                         !using Me%InitialFlowX and Me%InitialFlowY directly
