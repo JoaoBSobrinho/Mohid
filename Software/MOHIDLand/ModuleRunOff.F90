@@ -20896,7 +20896,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     
-                if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                if (Me%ActivePoints(i, j) == 1) then
                     !m3 = m3  + m3
                     Sum = Sum + Me%MyWaterVolume(i, j)
 
@@ -20906,6 +20906,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
+            
+            !!$OMP PARALLEL PRIVATE(I,J)
+            !!$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+            !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            !        
+            !    if (Me%ExtVar%BasinPoints(i, j) == 1) then
+            !        !m3 = m3  + m3
+            !        Sum = Sum + Me%MyWaterVolume(i, j)
+            !
+            !    endif
+            !
+            !enddo
+            !enddo
+            !!$OMP END DO NOWAIT
+            !!$OMP END PARALLEL
 
             Me%TotalStoredVolume        = Sum
             Me%VolumeStoredInSurface    = Sum
