@@ -8314,8 +8314,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                             firstRestart = .false.
                         else
-                            call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ExtVar%BasinPoints)
-                            call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ExtVar%BasinPoints)
+                            !call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ExtVar%BasinPoints)
+                            !call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ExtVar%BasinPoints)
+                            call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ActivePoints)
+                            call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ActivePoints)
                         endif
 
                         !Updates Geometry
