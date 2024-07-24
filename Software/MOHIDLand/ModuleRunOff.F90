@@ -11012,22 +11012,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
     
-    subroutine ModifyGeometryAndMapping
-
-        !Arguments-------------------------------------------------------------
-        
-        !Local-----------------------------------------------------------------
-        !Begin-----------------------------------------------------------------
-        
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
-        
-        call ModifyGeometryAndMapping_X
-        
-        call ModifyGeometryAndMapping_Y
-        
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
-        
-    end subroutine ModifyGeometryAndMapping
+    !subroutine ModifyGeometryAndMapping
+    !
+    !    !Arguments-------------------------------------------------------------
+    !    
+    !    !Local-----------------------------------------------------------------
+    !    !Begin-----------------------------------------------------------------
+    !    
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+    !    
+    !    call ModifyGeometryAndMapping_X
+    !    
+    !    call ModifyGeometryAndMapping_Y
+    !    
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+    !    
+    !end subroutine ModifyGeometryAndMapping
     
     !--------------------------------------------------------------------------
    
@@ -11270,216 +11270,216 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 !--------------------------------------------------------------------------------------------------------
     
     
-    !subroutine ModifyGeometryAndMapping_teste
-    !
-    !    !Arguments-------------------------------------------------------------
-    !    
-    !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j
-    !    integer                                     :: ILB, IUB, JLB, JUB
-    !    real                                        :: WCA, Bottom, Aux, Aux_X, Aux_Y
-    !    integer                                     :: CHUNK
-    !    integer, dimension(2,2)                     :: strideJ
-    !
-    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !    
-    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_teste")
-    !
-    !    ILB = Me%WorkSize%ILB
-    !    IUB = Me%WorkSize%IUB
-    !    JLB = Me%WorkSize%JLB
-    !    JUB = Me%WorkSize%JUB
-    !    strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
-    !    
-    !    !$OMP PARALLEL PRIVATE(I,J, WCA, c, di, dj, j_East, i_North)
-    !    if (Me%HydrodynamicApproximation == KinematicWave_) then
-    !        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !        do j = JLB, JUB
-    !        do i = ILB, IUB
-    !            if (Me%ExtVar%BasinPoints(i, j) == 1) then
-    !                    
-    !                do c = 1, size(strideJ,1)
-    !                        
-    !                    dj = strideJ(c, 1)
-    !                    di = strideJ(c, 2)
-    !                    !Compute fluxes of east and north cell faces
-    !                    j_East = j - dj
-    !                    i_North = i - di
-    !                    if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
-    !                        if (dj == 1) then
-    !                            if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
-    !                                !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-    !                                if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
-    !                                    !Water Column Left (above MaxBottom)
-    !                                    WCA = max(Me%myWaterLevel(i, j-1) - Me%Bottom_X(i,j), AlmostZero_Double)
-    !                                else
-    !                                    !Water Column Right (above MaxBottom)
-    !                                    WCA = max(Me%myWaterLevel(i, j  ) - Me%Bottom_X(i,j), AlmostZero_Double)
-    !                                endif
-    !                                    
-    !                                !Area  = Water Column * Side lenght of cell
-    !                                Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
-    !                                    
-    !                                if (WCA > Me%MinimumWaterColumn) then
-    !                                    Me%ComputeFaceU(i, j) = 1
-    !                                else
-    !                                    Me%ComputeFaceU(i, j) = 0
-    !                                endif
-    !                            else
-    !                                Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
-    !                                Me%ComputeFaceU(i, j) = 0
-    !                            endif
-    !                        else
-    !                            if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
-    !                                !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
-    !                                if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
-    !                                    !Water Column Left (above MaxBottom)
-    !                                    WCA = max(Me%myWaterLevel(i-1, j) - Me%Bottom_Y(i,j), AlmostZero_Double)
-    !                                else
-    !                                    !Water Column Right (above MaxBottom)
-    !                                    WCA = max(Me%myWaterLevel(i, j  ) - Me%Bottom_Y(i,j), AlmostZero_Double)
-    !                                endif
-    !            
-    !                                !Area  = Water Column * Side lenght of cell
-    !                                Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
-    !            
-    !                                if (WCA > Me%MinimumWaterColumn) then
-    !                                    Me%ComputeFaceV(i, j) = 1
-    !                                else
-    !                                    Me%ComputeFaceV(i, j) = 0
-    !                                endif
-    !                            else
-    !                                Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
-    !                                Me%ComputeFaceV(i, j) = 0
-    !                            endif
-    !                        endif
-    !                    endif
-    !                enddo
-    !            endif
-    !        enddo
-    !        enddo
-    !        !$OMP END DO NOWAIT
-    !    
-    !    else
-    !        if (Me%GridIsConstant) then
-    !            Aux_Y = AlmostZero_Double * Me%DY
-    !            Aux_X = AlmostZero_Double * Me%DX
-    !            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !            do j = JLB, JUB
-    !            do i = ILB, IUB
-    !                if (Me%ExtVar%BasinPoints(i, j) == 1) then
-    !                    
-    !                    do c = 1, size(strideJ,1)
-    !                        
-    !                        dj = strideJ(c, 1)
-    !                        di = strideJ(c, 2)
-    !                        !Compute fluxes of east and north cell faces
-    !                        j_East = j - dj
-    !                        i_North = i - di
-    !                        if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
-    !                            if (dj == 1) then
-    !                                if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
-    !                                    WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
-    !                            
-    !                                    !Area  = Water Column * Side lenght of cell
-    !                                    Me%AreaU(i, j) = WCA * Me%DY
-    !            
-    !                                    if (WCA > Me%MinimumWaterColumn) then
-    !                                        Me%ComputeFaceU(i, j) = 1
-    !                                    else
-    !                                        Me%ComputeFaceU(i, j) = 0
-    !                                    endif
-    !                                else
-    !                                    Me%AreaU(i, j) = Aux_Y
-    !                                    Me%ComputeFaceU(i, j) = 0
-    !                                endif
-    !                            else
-    !                                if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
-    !                                    WCA = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
-    !            
-    !                                    !Area  = Water Column * Side lenght of cell
-    !                                    Me%AreaV(i, j) = WCA * Me%DX
-    !            
-    !                                    if (WCA > Me%MinimumWaterColumn) then
-    !                                        Me%ComputeFaceV(i, j) = 1
-    !                                    else
-    !                                        Me%ComputeFaceV(i, j) = 0
-    !                                    endif
-    !                                else
-    !                                    Me%AreaV(i, j) = Aux_X
-    !                                    Me%ComputeFaceV(i, j) = 0
-    !                                endif
-    !                            endif
-    !                        endif
-    !                    enddo
-    !                endif
-    !            enddo
-    !            enddo
-    !            !$OMP END DO
-    !        else
-    !            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-    !            do j = JLB, JUB
-    !            do i = ILB, IUB
-    !                if (Me%ExtVar%BasinPoints(i, j) == 1) then
-    !                    
-    !                    do c = 1, size(strideJ,1)
-    !                        
-    !                        dj = strideJ(c, 1)
-    !                        di = strideJ(c, 2)
-    !                        !Compute fluxes of east and north cell faces
-    !                        j_East = j - dj
-    !                        i_North = i - di
-    !                        if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
-    !                            if (dj == 1) then
-    !                                if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
-    !                                    WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
-    !                            
-    !                                    !Area  = Water Column * Side lenght of cell
-    !                                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
-    !            
-    !                                    if (WCA > Me%MinimumWaterColumn) then
-    !                                        Me%ComputeFaceU(i, j) = 1
-    !                                    else
-    !                                        Me%ComputeFaceU(i, j) = 0
-    !                                    endif
-    !                                else
-    !                                    Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
-    !                                    Me%ComputeFaceU(i, j) = 0
-    !                                endif
-    !                            else
-    !                                if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
-    !                                    WCA = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
-    !            
-    !                                    !Area  = Water Column * Side lenght of cell
-    !                                    Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
-    !            
-    !                                    if (WCA > Me%MinimumWaterColumn) then
-    !                                        Me%ComputeFaceV(i, j) = 1
-    !                                    else
-    !                                        Me%ComputeFaceV(i, j) = 0
-    !                                    endif
-    !                                else
-    !                                    Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
-    !                                    Me%ComputeFaceV(i, j) = 0
-    !                                endif
-    !                            endif
-    !                        endif
-    !                    enddo
-    !                endif
-    !            enddo
-    !            enddo
-    !            !$OMP END DO
-    !        endif
-    !        
-    !
-    !    endif
-    !        
-    !    !$OMP END PARALLEL
-    !
-    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_teste")
-    !
-    !
-    !end subroutine ModifyGeometryAndMapping_teste
+    subroutine ModifyGeometryAndMapping
+    
+        !Arguments-------------------------------------------------------------
+        
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, di, dj, c, j_East, i_North
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: WCA, Bottom, Aux, Aux_X, Aux_Y
+        integer                                     :: CHUNK
+        integer, dimension(2,2)                     :: strideJ
+    
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_teste")
+    
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
+        
+        !$OMP PARALLEL PRIVATE(I,J, WCA, c, di, dj, j_East, i_North)
+        if (Me%HydrodynamicApproximation == KinematicWave_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                        
+                    do c = 1, size(strideJ,1)
+                            
+                        dj = strideJ(c, 1)
+                        di = strideJ(c, 2)
+                        !Compute fluxes of east and north cell faces
+                        j_East = j - dj
+                        i_North = i - di
+                        if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
+                            if (dj == 1) then
+                                if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
+                                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                                    if (Me%ExtVar%Topography(i, j-1) > Me%ExtVar%Topography(i, j)) then
+                                        !Water Column Left (above MaxBottom)
+                                        WCA = max(Me%myWaterLevel(i, j-1) - Me%Bottom_X(i,j), AlmostZero_Double)
+                                    else
+                                        !Water Column Right (above MaxBottom)
+                                        WCA = max(Me%myWaterLevel(i, j  ) - Me%Bottom_X(i,j), AlmostZero_Double)
+                                    endif
+                                        
+                                    !Area  = Water Column * Side lenght of cell
+                                    Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                                        
+                                    if (WCA > Me%MinimumWaterColumn) then
+                                        Me%ComputeFaceU(i, j) = 1
+                                    else
+                                        Me%ComputeFaceU(i, j) = 0
+                                    endif
+                                else
+                                    Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
+                                    Me%ComputeFaceU(i, j) = 0
+                                endif
+                            else
+                                if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
+                                    !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                                    if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
+                                        !Water Column Left (above MaxBottom)
+                                        WCA = max(Me%myWaterLevel(i-1, j) - Me%Bottom_Y(i,j), AlmostZero_Double)
+                                    else
+                                        !Water Column Right (above MaxBottom)
+                                        WCA = max(Me%myWaterLevel(i, j  ) - Me%Bottom_Y(i,j), AlmostZero_Double)
+                                    endif
+                
+                                    !Area  = Water Column * Side lenght of cell
+                                    Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                                    if (WCA > Me%MinimumWaterColumn) then
+                                        Me%ComputeFaceV(i, j) = 1
+                                    else
+                                        Me%ComputeFaceV(i, j) = 0
+                                    endif
+                                else
+                                    Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
+                                    Me%ComputeFaceV(i, j) = 0
+                                endif
+                            endif
+                        endif
+                    enddo
+                endif
+            enddo
+            enddo
+            !$OMP END DO NOWAIT
+        
+        else
+            if (Me%GridIsConstant) then
+                Aux_Y = AlmostZero_Double * Me%DY
+                Aux_X = AlmostZero_Double * Me%DX
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                        
+                        do c = 1, size(strideJ,1)
+                            
+                            dj = strideJ(c, 1)
+                            di = strideJ(c, 2)
+                            !Compute fluxes of east and north cell faces
+                            j_East = j - dj
+                            i_North = i - di
+                            if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
+                                if (dj == 1) then
+                                    if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
+                                        WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
+                                
+                                        !Area  = Water Column * Side lenght of cell
+                                        Me%AreaU(i, j) = WCA * Me%DY
+                
+                                        if (WCA > Me%MinimumWaterColumn) then
+                                            Me%ComputeFaceU(i, j) = 1
+                                        else
+                                            Me%ComputeFaceU(i, j) = 0
+                                        endif
+                                    else
+                                        Me%AreaU(i, j) = Aux_Y
+                                        Me%ComputeFaceU(i, j) = 0
+                                    endif
+                                else
+                                    if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
+                                        WCA = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
+                
+                                        !Area  = Water Column * Side lenght of cell
+                                        Me%AreaV(i, j) = WCA * Me%DX
+                
+                                        if (WCA > Me%MinimumWaterColumn) then
+                                            Me%ComputeFaceV(i, j) = 1
+                                        else
+                                            Me%ComputeFaceV(i, j) = 0
+                                        endif
+                                    else
+                                        Me%AreaV(i, j) = Aux_X
+                                        Me%ComputeFaceV(i, j) = 0
+                                    endif
+                                endif
+                            endif
+                        enddo
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+            else
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                        
+                        do c = 1, size(strideJ,1)
+                            
+                            dj = strideJ(c, 1)
+                            di = strideJ(c, 2)
+                            !Compute fluxes of east and north cell faces
+                            j_East = j - dj
+                            i_North = i - di
+                            if (Me%ExtVar%BasinPoints(i_North, j_East) == 1) then
+                                if (dj == 1) then
+                                    if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
+                                        WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
+                                
+                                        !Area  = Water Column * Side lenght of cell
+                                        Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                
+                                        if (WCA > Me%MinimumWaterColumn) then
+                                            Me%ComputeFaceU(i, j) = 1
+                                        else
+                                            Me%ComputeFaceU(i, j) = 0
+                                        endif
+                                    else
+                                        Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
+                                        Me%ComputeFaceU(i, j) = 0
+                                    endif
+                                else
+                                    if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
+                                        WCA = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
+                
+                                        !Area  = Water Column * Side lenght of cell
+                                        Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                
+                                        if (WCA > Me%MinimumWaterColumn) then
+                                            Me%ComputeFaceV(i, j) = 1
+                                        else
+                                            Me%ComputeFaceV(i, j) = 0
+                                        endif
+                                    else
+                                        Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
+                                        Me%ComputeFaceV(i, j) = 0
+                                    endif
+                                endif
+                            endif
+                        enddo
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+            endif
+            
+    
+        endif
+            
+        !$OMP END PARALLEL
+    
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_teste")
+    
+    
+    end subroutine ModifyGeometryAndMapping
 
     !--------------------------------------------------------------------------
     
@@ -19598,7 +19598,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (Me%StormWaterModel) then
             if (Me%StormWaterModelDT < Me%CV%NextDT) then        
                 Me%CV%NextDT = Me%StormWaterModelDT
-                write(*,*) "DT from StormWaterModel = ", Me%StormWaterModelDT
             endif
         end if
     
