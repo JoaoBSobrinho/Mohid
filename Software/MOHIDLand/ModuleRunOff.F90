@@ -562,6 +562,7 @@ Module ModuleRunOff
         logical                                     :: RestartOverwrite     = .false.
         integer                                     :: NextRestartOutput    = 1 
         integer                                     :: RestartFormat         = BIN_
+        logical                                     :: SinglePrecision     = .false.
         
         logical                                     :: BoxFluxes            = .false.
         logical                                     :: OutputFloodRisk      = .false.
@@ -1128,10 +1129,10 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                 Me%InitialTotalVolume = Me%TotalStoredVolume
             else
                 if (Me%OutPut%Yes .or. Me%OutPut%TimeSeries) then
-                    if (Me%HasRunoffProperties) then
-                        call ComputeCenterValues
-                    else
+                    if (Me%OutPut%SinglePrecision) then
                         call ComputeCenterValues_R4
+                    else
+                        call ComputeCenterValues
                     endif
                 endif 
             endif
@@ -1765,7 +1766,15 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                            STAT        = STAT_CALL)
         Me%OutPut%NextOutPut = 1    
 
-
+        call GetData(Me%OutPut%SinglePrecision,                             &
+                     Me%ObjEnterData, iflag,                                &  
+                     keyword      = 'OUTPUT_SINGLEPRECISION',               &
+                     ClientModule = 'ModuleRunOff',                         &
+                     SearchType   = FromFile,                               &
+                     Default      = .false.,                                &
+                     STAT         = STAT_CALL)                                  
+        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR445'
+        
         !Output for restart
         call GetOutPutTime(Me%ObjEnterData,                                             &
                            CurrentTime  = Me%ExtVar%Now,                                &
@@ -5338,21 +5347,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0)   !Sets values initially to zero, so  
         endif
         
-        if (Me%HasRunoffProperties) then
-            allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            Me%BoundaryCells = 0
-            
-            allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            
-            allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%CenterFlowY    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%FlowModulus    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, null_real)
-            
-        else
+        if (Me%OutPut%SinglePrecision) then
             allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
                
@@ -5374,6 +5369,20 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%FlowModulus_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%VelocityModulus_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%MaxVelocityModulus_R4, Me%Size, ZeroValue)
+            
+        else
+            allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%BoundaryCells = 0
+            
+            allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            
+            allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterFlowY    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FlowModulus    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, null_real)
         endif
         
         if (.not. Me%LimitToCriticalFlow) then
@@ -5436,20 +5445,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%VelModFaceU, Me%Size, 0.0)
         call SetMatrixValue(Me%VelModFaceV, Me%Size, 0.0)
 
-        if (Me%HasRunoffProperties) then
-            allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        
-            call SetMatrixValue(Me%Output%MaxFlowModulus, Me%Size, 0.0)
-        
-            call SetMatrixValue(Me%Output%MaxWaterColumn, Me%Size, Me%MinimumWaterColumn)
- 
-            allocate (Me%Output%VelocityAtMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
-
-            allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, null_real)
-        else
+        if (Me%OutPut%SinglePrecision) then
             allocate (Me%Output%MaxFlowModulus_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
         
@@ -5462,6 +5458,19 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
 
             allocate (Me%Output%MaxFloodRisk_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
             call SetMatrixValue(Me%Output%MaxFloodRisk_R4, Me%Size, null_real_4)
+        else           
+            allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+        
+            call SetMatrixValue(Me%Output%MaxFlowModulus, Me%Size, 0.0)
+        
+            call SetMatrixValue(Me%Output%MaxWaterColumn, Me%Size, Me%MinimumWaterColumn)
+ 
+            allocate (Me%Output%VelocityAtMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
+
+            allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
+            call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, null_real)
         endif
         
         allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
@@ -8454,10 +8463,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 endif
 
                 !Calculates center flow and velocities (for output and next DT)
-                if (Me%HasRunoffProperties) then
-                    call ComputeCenterValues
-                else
+                if (Me%OutPut%SinglePrecision) then
                     call ComputeCenterValues_R4
+                else
+                    call ComputeCenterValues
                 endif
             
                 call ComputeNextDT (Niter)
@@ -9985,11 +9994,18 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        
-        if (Me%GridIsConstant) then
-            call UpdateFVSOutputVariables_CG
+        if (Me%OutPut%SinglePrecision) then
+            if (Me%GridIsConstant) then
+                call UpdateFVSOutputVariables_CG_R4
+            else
+                call UpdateFVSOutputVariables_VG_R4
+            endif
         else
-            call UpdateFVSOutputVariables_VG
+            if (Me%GridIsConstant) then
+                call UpdateFVSOutputVariables_CG
+            else
+                call UpdateFVSOutputVariables_VG
+            endif
         endif
         
     end subroutine UpdateFVSOutputVariables
@@ -9997,7 +10013,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !---------------------------------------------------------------------------
     !> @author Joao Sobrinho - Bentley Systems
     !> @brief
-    !> Updates center velocities, fluxes, and statistics for constant grid
+    !> Updates center velocities, fluxes, and statistics for constant grid - Double precision
     subroutine UpdateFVSOutputVariables_CG
         !Arguments-------------------------------------------------------------
 
@@ -10018,7 +10034,176 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         Sum = 0.0
         if(.not. Me%ExtVar%Distortion) then
 
-            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - CenterVelocity_R4")
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - CenterVelocity")
+
+            if (Me%GridIsRotated) then
+                !$OMP PARALLEL PRIVATE(I, J, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i, j) * Me%GridCellArea
+                        
+                        WaterColumn = Me%myWaterColumn(i, j)
+                        if (WaterColumn > Me%MinimumWaterColumn) then
+                            Me%CenterVelocityX (i, j) = Me%VelModFaceU(i, j) * Me%GridCosAngleX + Me%VelModFaceV(i, j) * Me%GridCosAngleY
+                            Me%CenterVelocityY (i, j) = Me%VelModFaceU(i, j) * Me%GridSinAngleX + Me%VelModFaceV(i, j) * Me%GridSinAngleY
+
+                            Me%CenterFlowX(i, j) = Me%CenterVelocityX (i, j) * WaterColumn * Me%DY
+                            Me%CenterFlowY(i, j) = Me%CenterVelocityY (i, j) * WaterColumn * Me%DX
+                        else
+                            Me%CenterFlowX(i, j) = 0.0
+                            Me%CenterFlowY(i, j) = 0.0
+                            Me%CenterVelocityX(i, j) = 0.0
+                            Me%CenterVelocityY(i, j) = 0.0
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i, j) * Me%GridCellArea
+                        
+                        WaterColumn = Me%myWaterColumn(i, j)
+                        if (WaterColumn > Me%MinimumWaterColumn) then
+                            Me%CenterVelocityX (i, j) = Me%VelModFaceU(i, j)
+                            Me%CenterVelocityY (i, j) = Me%VelModFaceV(i, j)
+                        
+                            Me%CenterFlowX(i, j) = Me%VelModFaceU(i, j) * WaterColumn * Me%DY
+                            Me%CenterFlowY(i, j) = Me%VelModFaceV(i, j) * WaterColumn * Me%DX
+                        else
+                            Me%CenterFlowX(i, j) = 0.0
+                            Me%CenterFlowY(i, j) = 0.0
+                            Me%CenterVelocityX(i, j) = 0.0
+                            Me%CenterVelocityY(i, j) = 0.0
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            endif
+            
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - CenterVelocity")
+
+        else
+            !$OMP PARALLEL PRIVATE(I, J, RotationX, RotationY, WaterColumn)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !m3 = m3  +      m      *     m2
+                    Sum = Sum + Me%myWaterColumn(i, j) * Me%GridCellArea
+                    
+                    WaterColumn = Me%myWaterColumn (i,j)
+                    if (WaterColumn > Me%MinimumWaterColumn) then
+                        RotationX = Me%ExtVar%RotationX(i, j)
+                        RotationY = Me%ExtVar%RotationY(i, j)
+                    
+                        Me%CenterVelocityX (i, j) = Me%VelModFaceU(i, j) * cos(RotationX) + Me%VelModFaceV(i, j) * cos(RotationY)
+                        Me%CenterVelocityY (i, j) = Me%VelModFaceU(i, j) * sin(RotationX) + Me%VelModFaceV(i, j) * sin(RotationY)
+                    
+                        Me%CenterFlowX(i, j) = Me%CenterVelocityX (i, j) * WaterColumn * Me%DY
+                        Me%CenterFlowY(i, j) = Me%CenterVelocityY (i, j) * WaterColumn * Me%DX
+                    else
+                        Me%CenterFlowX(i, j) = 0.0
+                        Me%CenterFlowY(i, j) = 0.0
+                        Me%CenterVelocityX(i, j) = 0.0
+                        Me%CenterVelocityY(i, j) = 0.0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        endif
+        
+        Me%TotalStoredVolume        = Sum
+        Me%VolumeStoredInSurface    = Sum
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - Modulus")
+
+        if(Me%Output%WriteMaxFlowModulus) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                        
+                        Me%Output%MaxFlowModulus(i, j) = max(Me%Output%MaxFlowModulus(i, j), Me%FlowModulus(i, j))
+                    else
+                        Me%FlowModulus(i, j) = 0.0
+                        Me%VelocityModulus(i, j) = 0.0
+                    end if
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                    else
+                        Me%FlowModulus(i, j) = 0.0
+                        Me%VelocityModulus(i, j) = 0.0
+                    end if
+                endif
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        endif
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - Modulus")
+
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG")
+        
+    end subroutine UpdateFVSOutputVariables_CG
+    
+    !---------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
+    !> @author Joao Sobrinho - Bentley Systems
+    !> @brief
+    !> Updates center velocities, fluxes, and statistics for constant grid - Single Precision
+    subroutine UpdateFVSOutputVariables_CG_R4
+        !Arguments-------------------------------------------------------------
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: ILB, IUB, JLB, JUB
+        integer                                     :: CHUNK
+        real(4)                                     :: WaterColumn, RotationX, RotationY
+        real                                        :: Sum
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG_R4")
+        
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        Sum = 0.0
+        if(.not. Me%ExtVar%Distortion) then
+
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG_R4 - CenterVelocity_R4")
 
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I, J, WaterColumn)
@@ -10076,7 +10261,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !$OMP END PARALLEL
             endif
             
-            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - CenterVelocity_R4")
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG_R4 - CenterVelocity_R4")
 
         else
             !$OMP PARALLEL PRIVATE(I, J, RotationX, RotationY, WaterColumn)
@@ -10113,7 +10298,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         Me%TotalStoredVolume        = Sum
         Me%VolumeStoredInSurface    = Sum
 
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - Modulus_R4")
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG_R4 - Modulus_R4")
 
         if(Me%Output%WriteMaxFlowModulus) then
             !$OMP PARALLEL PRIVATE(I,J)
@@ -10155,18 +10340,18 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         endif
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG - Modulus_R4")
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG_R4 - Modulus_R4")
 
 
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG")
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_CG_R4")
         
-    end subroutine UpdateFVSOutputVariables_CG
+    end subroutine UpdateFVSOutputVariables_CG_R4
     
     !---------------------------------------------------------------------------
     
     !> @author Joao Sobrinho - Bentley Systems
     !> @brief
-    !> Updates center velocities, fluxes, and statistics for variable grid
+    !> Updates center velocities, fluxes, and statistics for variable grid - Double precision
     subroutine UpdateFVSOutputVariables_VG
         !Arguments-------------------------------------------------------------
 
@@ -10188,7 +10373,178 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
         if(.not. Me%ExtVar%Distortion) then
 
-            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - CenterVelocity_R4")
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - CenterVelocity")
+
+            if (Me%GridIsRotated) then
+                !$OMP PARALLEL PRIVATE(I, J, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                        
+                        WaterColumn = Me%myWaterColumn(i, j)
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%CenterVelocityX (i, j) = Me%VelModFaceU(i, j) * Me%GridCosAngleX + Me%VelModFaceV(i, j) * Me%GridCosAngleY
+                            Me%CenterVelocityY (i, j) = Me%VelModFaceU(i, j) * Me%GridSinAngleX + Me%VelModFaceV(i, j) * Me%GridSinAngleY
+
+                            Me%CenterFlowX(i, j) = Me%CenterVelocityX (i, j) * WaterColumn * Me%ExtVar%DYY(i,j)
+                            Me%CenterFlowY(i, j) = Me%CenterVelocityY (i, j) * WaterColumn * Me%ExtVar%DXX(i,j)
+                        else
+                            Me%CenterFlowX(i, j) = 0.0
+                            Me%CenterFlowY(i, j) = 0.0
+                            Me%CenterVelocityX(i, j) = 0.0
+                            Me%CenterVelocityY(i, j) = 0.0
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m3 = m3  +      m      *     m2
+                        Sum = Sum + Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                        
+                        WaterColumn = Me%myWaterColumn(i, j)
+                        if (WaterColumn > Me%MinimumWaterColumn) then
+                            Me%CenterVelocityX (i, j) = Me%VelModFaceU(i, j)
+                            Me%CenterVelocityY (i, j) = Me%VelModFaceV(i, j)
+                        
+                            Me%CenterFlowX(i, j) = Me%VelModFaceU(i, j) * WaterColumn * Me%ExtVar%DYY(i,j)
+                            Me%CenterFlowY(i, j) = Me%VelModFaceV(i, j) * WaterColumn * Me%ExtVar%DXX(i,j)
+                        else
+                            Me%CenterFlowX(i, j) = 0.0
+                            Me%CenterFlowY(i, j) = 0.0
+                            Me%CenterVelocityX(i, j) = 0.0
+                            Me%CenterVelocityY(i, j) = 0.0
+                        endif
+
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+            endif
+            
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - CenterVelocity")
+
+        else
+            !$OMP PARALLEL PRIVATE(I, J, RotationX, RotationY, WaterColumn)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    !m3 = m3  +      m      *     m2
+                    Sum = Sum + Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                    WaterColumn = Me%myWaterColumn (i,j)
+                    if (WaterColumn > Me%MinimumWaterColumn) then
+                        RotationX = Me%ExtVar%RotationX(i, j)
+                        RotationY = Me%ExtVar%RotationY(i, j)
+                    
+                        Me%CenterVelocityX (i, j) = Me%VelModFaceU(i, j) * cos(RotationX) + Me%VelModFaceV(i, j) * cos(RotationY)
+                        Me%CenterVelocityY (i, j) = Me%VelModFaceU(i, j) * sin(RotationX) + Me%VelModFaceV(i, j) * sin(RotationY)
+                    
+                        Me%CenterFlowX(i, j) = Me%CenterVelocityX (i, j) * WaterColumn * Me%ExtVar%DYY(i,j)
+                        Me%CenterFlowY(i, j) = Me%CenterVelocityY (i, j) * WaterColumn * Me%ExtVar%DXX(i,j)
+                    else
+                        Me%CenterFlowX(i, j) = 0.0
+                        Me%CenterFlowY(i, j) = 0.0
+                        Me%CenterVelocityX(i, j) = 0.0
+                        Me%CenterVelocityY(i, j) = 0.0
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        endif
+        
+        Me%TotalStoredVolume        = Sum
+        Me%VolumeStoredInSurface    = Sum
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - Modulus")
+
+        if(Me%Output%WriteMaxFlowModulus) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                        
+                        Me%Output%MaxFlowModulus(i, j) = max(Me%Output%MaxFlowModulus(i, j), Me%FlowModulus(i, j))
+                    else
+                        Me%FlowModulus(i, j) = 0.0
+                        Me%VelocityModulus(i, j) = 0.0
+                    end if
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%FlowModulus(i, j) = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        Me%VelocityModulus (i, j) = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                    else
+                        Me%FlowModulus(i, j) = 0.0
+                        Me%VelocityModulus(i, j) = 0.0
+                    end if
+                endif
+            enddo
+            enddo
+            !$OMP END DO NOWAIT 
+            !$OMP END PARALLEL
+        endif
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - Modulus")
+
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG")
+        
+    end subroutine UpdateFVSOutputVariables_VG
+    
+    
+    !---------------------------------------------------------------------------
+    
+    !> @author Joao Sobrinho - Bentley Systems
+    !> @brief
+    !> Updates center velocities, fluxes, and statistics for variable grid - Single precision
+    subroutine UpdateFVSOutputVariables_VG_R4
+        !Arguments-------------------------------------------------------------
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: ILB, IUB, JLB, JUB
+        integer                                     :: CHUNK
+        real(4)                                     :: WaterColumn, RotationX, RotationY
+        real                                        :: Sum
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG_R4")
+        
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        Sum = 0.0
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+            
+        if(.not. Me%ExtVar%Distortion) then
+
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG_R4 - CenterVelocity_R4")
 
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I, J, WaterColumn)
@@ -10247,7 +10603,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !$OMP END PARALLEL
             endif
             
-            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - CenterVelocity_R4")
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG_R4 - CenterVelocity_R4")
 
         else
             !$OMP PARALLEL PRIVATE(I, J, RotationX, RotationY, WaterColumn)
@@ -10283,7 +10639,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         Me%TotalStoredVolume        = Sum
         Me%VolumeStoredInSurface    = Sum
 
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - Modulus_R4")
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG_R4 - Modulus_R4")
 
         if(Me%Output%WriteMaxFlowModulus) then
             !$OMP PARALLEL PRIVATE(I,J)
@@ -10325,12 +10681,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         endif
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG - Modulus_R4")
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG_R4 - Modulus_R4")
 
 
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG")
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateFVSOutputVariables_VG_R4")
         
-    end subroutine UpdateFVSOutputVariables_VG
+    end subroutine UpdateFVSOutputVariables_VG_R4
 
     !____________________________________________________________________________________
     
@@ -19278,200 +19634,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
     !--------------------------------------------------------------------------
     
-    subroutine ComputeNextDT (Niter)
-    
-        !Arguments-------------------------------------------------------------
-        integer                                     :: Niter        
-        
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j, STAT_CALL, CHUNK, c, nx, ny
-        integer                                     :: ILB, IUB, JLB, JUB, j_East, i_North
-        real                                        :: nextDTCourant, aux
-        real                                        :: nextDTVariation, MaxDT
-        logical                                     :: VariableDT
-        real                                        :: CurrentDT, Distance_Courant, totalVel
-        real                                        :: velface, celerity, waterColumn, waterColumn_NE
-        integer, dimension(2,2)                     :: strideJ
-        !----------------------------------------------------------------------
-    
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
-    
-    
-        call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
-    
-        call GetMaxComputeTimeStep(Me%ObjTime, MaxDT, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR020'
-    
-        nextDTCourant   = -null_real
-        nextDTVariation = -null_real
-        totalVel = 0.0
-        
-        strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
-        
-        if (VariableDT) then
-    
-            CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    
-            ILB = Me%WorkSize%ILB
-            IUB = Me%WorkSize%IUB
-            JLB = Me%WorkSize%JLB
-            JUB = Me%WorkSize%JUB
-            
-            if (Me%CV%LimitDTCourant) then
-                if (Me%GridIsConstant) then
-                    Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-                    do j = JLB+1, JUB
-                    do i = ILB+1, IUB
-                        !if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                            do c = 1, size(strideJ,1)
-                                !Compute fluxes of east and north cell faces
-                                j_East = j - strideJ(c, 1)
-                                i_North = i - strideJ(c, 2)
-                            
-                                !if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-                                    
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North,j_East) == Compute) then
-                                        waterColumn = Me%myWaterColumn (i,j)
-                                        waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-                                        
-                                        nx = strideJ(c, 1)
-                                        ny = strideJ(c, 2)
-                                        aux = (waterColumn + waterColumn_NE) / 2
-                                        
-                                        velFace = Me%iFlowX(i, j) / (aux * (Me%DY * nx + Me%DX * ny))
-                                        !VelFace + celerity
-                                        celerity = sqrt(Gravity * aux)
-                                        totalVel = max(abs(velFace + celerity),abs(velFace - celerity))
-                                    endif
-                                !endif
-                            enddo
-                        !endif
-                    enddo
-                    enddo
-                    !$OMP END DO 
-                    !$OMP END PARALLEL
-                    
-                    if (totalVel > AlmostZero) then
-                        aux = Distance_Courant / totalVel
-                        
-                        nextDTCourant = min(nextDTCourant, aux)
-                    endif
-                else
-                    !$OMP PARALLEL PRIVATE(I,J,aux)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-                    do j = JLB, JUB
-                    do i = ILB, IUB
-                        
-                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-    
-                            !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
-                            !
-                            !if (vel .gt. 0.0) then
-                            !
-                            !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
-                            !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
-                                aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
-                                       Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
-                        
-                                nextDTCourant = min(nextDTCourant, aux)
-                            
-                            !endif
-                            
-                        endif
-    
-                    enddo
-                    enddo
-                    !$OMP END DO NOWAIT 
-                    !$OMP END PARALLEL
-                endif
-            endif
-            
-            
-            if (Niter == 1) then
-            
-                nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
-                Me%CV%NextNiteration = Niter
-                
-            elseif (Niter <= Me%CV%MinIterations) then                            
-            
-                if (Niter > Me%CV%LastGoodNiteration) then
-    
-                    nextDTVariation = Me%ExtVar%DT
-                    Me%CV%NextNiteration = Niter
-    
-                else
-                
-                    nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
-                    Me%CV%NextNiteration = Niter
-    
-                endif
-                
-            else
-            
-                if (Niter >= Me%CV%StabilizeHardCutLimit) then
-                
-                    nextDTVariation = (Me%ExtVar%DT / Niter) * Me%CV%MinIterations
-                    Me%CV%NextNiteration = Me%CV%MinIterations
-                    
-                elseif (Niter > Me%CV%LastGoodNiteration) then
-                
-                    nextDTVariation = Me%ExtVar%DT / Me%CV%DTFactorDown
-                    Me%CV%NextNiteration = max(int(nextDTVariation / Me%CV%CurrentDT), 1)
-                    
-                else
-                
-                    nextDTVariation = Me%ExtVar%DT
-                    Me%CV%NextNiteration = max(min(int(Niter / Me%CV%DTSplitFactor), Niter - 1), 1)
-                    
-                endif 
-                               
-            endif
-            
-            CurrentDT = nextDTVariation / Me%CV%NextNiteration                                     
-                      
-            Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
-            
-            if (Me%CV%NextDT < nextDTVariation) then                
-                Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
-            endif
-                       
-        else
-        
-            Me%CV%NextDT = Me%ExtVar%DT
-            Me%CV%NextNiteration = Niter            
-        
-        endif
-        
-        Me%CV%LastGoodNiteration = Niter
-        Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
-    
-        if (Me%StormWaterModel) then
-            if (Me%StormWaterModelDT < Me%CV%NextDT) then        
-                Me%CV%NextDT = Me%StormWaterModelDT
-            endif
-        end if
-    
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
-    
-    end subroutine ComputeNextDT
-    
-    
     !subroutine ComputeNextDT (Niter)
     !
     !    !Arguments-------------------------------------------------------------
     !    integer                                     :: Niter        
     !    
     !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j, STAT_CALL, CHUNK
-    !    integer                                     :: ILB, IUB, JLB, JUB
+    !    integer                                     :: i, j, STAT_CALL, CHUNK, c, nx, ny
+    !    integer                                     :: ILB, IUB, JLB, JUB, j_East, i_North
     !    real                                        :: nextDTCourant, aux
     !    real                                        :: nextDTVariation, MaxDT
     !    logical                                     :: VariableDT
-    !    real                                        :: CurrentDT
-    !
+    !    real                                        :: CurrentDT, Distance_Courant, totalVel
+    !    real                                        :: velface, celerity, waterColumn, waterColumn_NE
+    !    integer, dimension(2,2)                     :: strideJ
     !    !----------------------------------------------------------------------
     !
     !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
@@ -19485,6 +19661,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !
     !    nextDTCourant   = -null_real
     !    nextDTVariation = -null_real
+    !    totalVel = 0.0
+    !    
+    !    strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
     !    
     !    if (VariableDT) then
     !
@@ -19496,35 +19675,76 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !        JUB = Me%WorkSize%JUB
     !        
     !        if (Me%CV%LimitDTCourant) then
-    !                    
-    !            !$OMP PARALLEL PRIVATE(I,J,aux)
-    !            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-    !            do j = JLB, JUB
-    !            do i = ILB, IUB
-    !                    
-    !                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-    !
-    !                    !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
-    !                    !
-    !                    !if (vel .gt. 0.0) then
-    !                    !
-    !                    !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
-    !                    !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
-    !                        aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
-    !                               Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
-    !                    
-    !                        nextDTCourant = min(nextDTCourant, aux)
+    !            if (Me%GridIsConstant) then
+    !                Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
+    !                !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
+    !                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
+    !                do j = JLB+1, JUB
+    !                do i = ILB+1, IUB
+    !                    !if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+    !                        do c = 1, size(strideJ,1)
+    !                            !Compute fluxes of east and north cell faces
+    !                            j_East = j - strideJ(c, 1)
+    !                            i_North = i - strideJ(c, 2)
     !                        
+    !                            !if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+    !                                
+    !                                if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North,j_East) == Compute) then
+    !                                    waterColumn = Me%myWaterColumn (i,j)
+    !                                    waterColumn_NE = Me%myWaterColumn (i_North,j_East)
+    !                                    
+    !                                    nx = strideJ(c, 1)
+    !                                    ny = strideJ(c, 2)
+    !                                    aux = (waterColumn + waterColumn_NE) / 2
+    !                                    
+    !                                    velFace = Me%iFlowX(i, j) / (aux * (Me%DY * nx + Me%DX * ny))
+    !                                    !VelFace + celerity
+    !                                    celerity = sqrt(Gravity * aux)
+    !                                    totalVel = max(abs(velFace + celerity),abs(velFace - celerity))
+    !                                endif
+    !                            !endif
+    !                        enddo
     !                    !endif
-    !                        
+    !                enddo
+    !                enddo
+    !                !$OMP END DO 
+    !                !$OMP END PARALLEL
+    !                
+    !                if (totalVel > AlmostZero) then
+    !                    aux = Distance_Courant / totalVel
+    !                    
+    !                    nextDTCourant = min(nextDTCourant, aux)
     !                endif
+    !            else
+    !                !$OMP PARALLEL PRIVATE(I,J,aux)
+    !                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+    !                do j = JLB, JUB
+    !                do i = ILB, IUB
+    !                    
+    !                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
     !
-    !            enddo
-    !            enddo
-    !            !$OMP END DO NOWAIT 
-    !            !$OMP END PARALLEL
+    !                        !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
+    !                        !
+    !                        !if (vel .gt. 0.0) then
+    !                        !
+    !                        !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
+    !                        !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
+    !                            aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
+    !                                   Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
+    !                    
+    !                            nextDTCourant = min(nextDTCourant, aux)
+    !                        
+    !                        !endif
+    !                        
+    !                    endif
     !
+    !                enddo
+    !                enddo
+    !                !$OMP END DO NOWAIT 
+    !                !$OMP END PARALLEL
+    !            endif
     !        endif
+    !        
     !        
     !        if (Niter == 1) then
     !        
@@ -19586,13 +19806,149 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !
     !    if (Me%StormWaterModel) then
     !        if (Me%StormWaterModelDT < Me%CV%NextDT) then        
-    !            Me%CV%NextDT = Me%StormWaterModelDT            
+    !            Me%CV%NextDT = Me%StormWaterModelDT
     !        endif
     !    end if
     !
     !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
     !
     !end subroutine ComputeNextDT
+    
+    
+    subroutine ComputeNextDT (Niter)
+    
+        !Arguments-------------------------------------------------------------
+        integer                                     :: Niter        
+        
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, STAT_CALL, CHUNK
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: nextDTCourant, aux
+        real                                        :: nextDTVariation, MaxDT
+        logical                                     :: VariableDT
+        real                                        :: CurrentDT
+    
+        !----------------------------------------------------------------------
+    
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
+    
+    
+        call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
+    
+        call GetMaxComputeTimeStep(Me%ObjTime, MaxDT, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR020'
+    
+        nextDTCourant   = -null_real
+        nextDTVariation = -null_real
+        
+        if (VariableDT) then
+    
+            CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    
+            ILB = Me%WorkSize%ILB
+            IUB = Me%WorkSize%IUB
+            JLB = Me%WorkSize%JLB
+            JUB = Me%WorkSize%JUB
+            
+            if (Me%CV%LimitDTCourant) then
+                        
+                !$OMP PARALLEL PRIVATE(I,J,aux)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                        
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+    
+                        !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
+                        !
+                        !if (vel .gt. 0.0) then
+                        !
+                        !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
+                        !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
+                            aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
+                                   Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
+                        
+                            nextDTCourant = min(nextDTCourant, aux)
+                            
+                        !endif
+                            
+                    endif
+    
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+    
+            endif
+            
+            if (Niter == 1) then
+            
+                nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
+                Me%CV%NextNiteration = Niter
+                
+            elseif (Niter <= Me%CV%MinIterations) then                            
+            
+                if (Niter > Me%CV%LastGoodNiteration) then
+    
+                    nextDTVariation = Me%ExtVar%DT
+                    Me%CV%NextNiteration = Niter
+    
+                else
+                
+                    nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
+                    Me%CV%NextNiteration = Niter
+    
+                endif
+                
+            else
+            
+                if (Niter >= Me%CV%StabilizeHardCutLimit) then
+                
+                    nextDTVariation = (Me%ExtVar%DT / Niter) * Me%CV%MinIterations
+                    Me%CV%NextNiteration = Me%CV%MinIterations
+                    
+                elseif (Niter > Me%CV%LastGoodNiteration) then
+                
+                    nextDTVariation = Me%ExtVar%DT / Me%CV%DTFactorDown
+                    Me%CV%NextNiteration = max(int(nextDTVariation / Me%CV%CurrentDT), 1)
+                    
+                else
+                
+                    nextDTVariation = Me%ExtVar%DT
+                    Me%CV%NextNiteration = max(min(int(Niter / Me%CV%DTSplitFactor), Niter - 1), 1)
+                    
+                endif 
+                               
+            endif
+            
+            CurrentDT = nextDTVariation / Me%CV%NextNiteration                                     
+                      
+            Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
+            
+            if (Me%CV%NextDT < nextDTVariation) then                
+                Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
+            endif
+                       
+        else
+        
+            Me%CV%NextDT = Me%ExtVar%DT
+            Me%CV%NextNiteration = Niter            
+        
+        endif
+        
+        Me%CV%LastGoodNiteration = Niter
+        Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
+    
+        if (Me%StormWaterModel) then
+            if (Me%StormWaterModelDT < Me%CV%NextDT) then        
+                Me%CV%NextDT = Me%StormWaterModelDT            
+            endif
+        end if
+    
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
+    
+    end subroutine ComputeNextDT
 
     !--------------------------------------------------------------------------
     
@@ -19602,18 +19958,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Begin---------------------------------------------------------------
         if (Me%OutPut%Yes) then
             
-            if (Me%HasRunoffProperties) then
-                call RunOffOutput
-            else
+            if (Me%OutPut%SinglePrecision) then
                 call RunOffOutput_R4
+            else
+                call RunOffOutput
             endif
         endif
             
         if(Me%OutPut%TimeSeries) then
-            if (Me%HasRunoffProperties) then
-                call OutputTimeSeries
-            else
+            if (Me%OutPut%SinglePrecision) then
                 call OutputTimeSeries_R4
+            else
+                call OutputTimeSeries
             endif
         endif
             
@@ -19622,10 +19978,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
 
         if (Me%Output%WriteMaxWaterColumn .or. Me%Output%WriteMaxFloodRisk) then
-            if (Me%HasRunoffProperties) then
-                call OutputFlooding
-            else
+            if (Me%OutPut%SinglePrecision) then
                 call OutputFlooding_R4
+            else
+                call OutputFlooding
             endif
                 
         endif
@@ -21079,7 +21435,22 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
 
                 deallocate(Me%MassError)
 
-                if (Me%HasRunoffProperties) then
+                if (Me%OutPut%SinglePrecision) then
+                    if(Me%Output%WriteMaxFlowModulus) then
+                        call WriteGridData_v1_R4  (Me%Output%MaxFlowModulusFile,   &
+                             COMENT1          = "MaxFlowModulusFile",              &
+                             COMENT2          = "MaxFlowModulusFile",              &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxFlowModulus_R4,       &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR030'
+
+                        deallocate(Me%Output%MaxFlowModulus_R4)
+
+                    endif
+                else
                     if(Me%Output%WriteMaxFlowModulus) then
                         call WriteGridData  (Me%Output%MaxFlowModulusFile,         &
                              COMENT1          = "MaxFlowModulusFile",              &
@@ -21094,128 +21465,12 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                         deallocate(Me%Output%MaxFlowModulus)
 
                     endif
-                else
-                    if(Me%Output%WriteMaxFlowModulus) then
-                        call WriteGridData_v1_R4  (Me%Output%MaxFlowModulusFile,   &
-                             COMENT1          = "MaxFlowModulusFile",              &
-                             COMENT2          = "MaxFlowModulusFile",              &
-                             HorizontalGridID = Me%ObjHorizontalGrid,              &
-                             FillValue        = -99.0,                             &
-                             OverWrite        = .true.,                            &
-                             GridData2D_Real  = Me%Output%MaxFlowModulus_R4,       &
-                             STAT             = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR030'
-
-                        deallocate(Me%Output%MaxFlowModulus_R4)
-
-                    endif                    
                 endif
                 
                 if (Me%Output%WriteMaxWaterColumn) then
                     
-                    if (Me%HasRunoffProperties) then
+                    if (Me%OutPut%SinglePrecision) then
                         
-                        call WriteGridData  (Me%Output%MaxWaterColumnFile,         &
-                             COMENT1          = "MaxWaterColumnFile",              &
-                             COMENT2          = "MaxWaterColumnFile",              &
-                             HorizontalGridID = Me%ObjHorizontalGrid,              &
-                             FillValue        = -99.0,                             &
-                             OverWrite        = .true.,                            &
-                             GridData2D_Real  = Me%Output%MaxWaterColumn,          &
-                             STAT             = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR040'
-
-                        if(Me%Output%OutputFloodRisk)then
-                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_IN_METERS     : ", maxval(Me%Output%MaxWaterColumn)
-
-                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
-
-                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
-                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR049'
-
-                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_I             : ", MaxWC_IJ(1)-1
-                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_J             : ", MaxWC_IJ(2)-1
-                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_X_IN_METERS   : ", X
-                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_Y_IN_METERS   : ", Y
-
-                        endif
-
-                        call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR041'
-                    
-                        !Temporarilu use the max water column array to compute max water level
-                        Me%Output%MaxWaterColumn = Me%Output%MaxWaterColumn + Me%ExtVar%Topography
-                    
-                        !Gets a pointer to Topography
-                        call UnGetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR042'
-
-                        call WriteGridData  (Me%Output%MaxWaterLevelFile,          &
-                             COMENT1          = "MaxWaterLevelFile",               &
-                             COMENT2          = "MaxWaterLevelFile",               &
-                             HorizontalGridID = Me%ObjHorizontalGrid,              &
-                             FillValue        = -99.0,                             &
-                             OverWrite        = .true.,                            &
-                             GridData2D_Real  = Me%Output%MaxWaterColumn,          &
-                             STAT             = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043'
-
-                        if(Me%Output%OutputFloodRisk)then
-                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_IN_METERS      : ", maxval(Me%Output%MaxWaterColumn)
-
-                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
-
-                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
-                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043a'
-
-                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_I              : ", MaxWC_IJ(1)-1
-                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_J              : ", MaxWC_IJ(2)-1
-                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_X_IN_METERS    : ", X
-                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_Y_IN_METERS    : ", Y
-
-                        endif
-
-                        deallocate(Me%Output%MaxWaterColumn)
-
-                        call WriteGridData  (Me%Output%TimeOfMaxWaterColumnFile,   &
-                             COMENT1          = "TimeOfMaxWaterColumnFile",        &
-                             COMENT2          = "TimeOfMaxWaterColumnFile",        &
-                             HorizontalGridID = Me%ObjHorizontalGrid,              &
-                             FillValue        = -99.0,                             &
-                             OverWrite        = .true.,                            &
-                             GridData2D_Real  = Me%Output%TimeOfMaxWaterColumn,    &
-                             STAT             = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR044'
-
-                        if(Me%Output%OutputFloodRisk)then
-                            write(RunOffLogFileID, *)"TIME_OF_MAX_WATER_COLUMN       : ", maxval(Me%Output%TimeOfMaxWaterColumn)
-                        endif
-
-
-                        deallocate(Me%Output%TimeOfMaxWaterColumn)
-
-                    
-                        if (Me%Output%WriteVelocityAtMaxWaterColumn) then
-                            call WriteGridData  (Me%Output%VelocityAtMaxWaterColumnFile,&
-                                 COMENT1          = "VelocityAtMaxWaterColumnFile",     &
-                                 COMENT2          = "VelocityAtMaxWaterColumnFile",     &
-                                 HorizontalGridID = Me%ObjHorizontalGrid,               &
-                                 FillValue        = -99.0,                              &
-                                 OverWrite        = .true.,                             &
-                                 GridData2D_Real  = Me%Output%VelocityAtMaxWaterColumn, &
-                                 STAT             = STAT_CALL)
-                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR050'    
-
-                            if(Me%Output%OutputFloodRisk)then
-                                write(RunOffLogFileID, *)"VEL_AT_MAX_WATER_COLUMN        : ", maxval(Me%Output%VelocityAtMaxWaterColumn)
-                            endif
-
-                            deallocate(Me%Output%VelocityAtMaxWaterColumn)
-                        endif
-                          
-                    else
-                        
-                    
                     !Real 4 outputs--------------------------------------------------
                         call WriteGridData_v1_R4  (Me%Output%MaxWaterColumnFile,         &
                              COMENT1          = "MaxWaterColumnFile",              &
@@ -21314,24 +21569,112 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
 
                             deallocate(Me%Output%VelocityAtMaxWaterColumn_R4)
                         endif
+                          
+                    else
+                        
+                        call WriteGridData  (Me%Output%MaxWaterColumnFile,         &
+                             COMENT1          = "MaxWaterColumnFile",              &
+                             COMENT2          = "MaxWaterColumnFile",              &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxWaterColumn,          &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR040'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_IN_METERS     : ", maxval(Me%Output%MaxWaterColumn)
+
+                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
+
+                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR049'
+
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_I             : ", MaxWC_IJ(1)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_J             : ", MaxWC_IJ(2)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_X_IN_METERS   : ", X
+                            write(RunOffLogFileID, *)"MAX_WATER_COLUMN_Y_IN_METERS   : ", Y
+
+                        endif
+
+                        call GetGridData      (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR041'
+                    
+                        !Temporarilu use the max water column array to compute max water level
+                        Me%Output%MaxWaterColumn = Me%Output%MaxWaterColumn + Me%ExtVar%Topography
+                    
+                        !Gets a pointer to Topography
+                        call UnGetGridData (Me%ObjGridData, Me%ExtVar%Topography, STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR042'
+
+                        call WriteGridData  (Me%Output%MaxWaterLevelFile,          &
+                             COMENT1          = "MaxWaterLevelFile",               &
+                             COMENT2          = "MaxWaterLevelFile",               &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%MaxWaterColumn,          &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_IN_METERS      : ", maxval(Me%Output%MaxWaterColumn)
+
+                            MaxWC_IJ = maxloc(Me%Output%MaxWaterColumn)
+
+                            call GetCellZ_XY(Me%ObjHorizontalGrid, MaxWC_IJ(1)-1, MaxWC_IJ(2)-1, 0.5, 0.5, X, Y, STAT = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR043a'
+
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_I              : ", MaxWC_IJ(1)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_J              : ", MaxWC_IJ(2)-1
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_X_IN_METERS    : ", X
+                            write(RunOffLogFileID, *)"MAX_WATER_LEVEL_Y_IN_METERS    : ", Y
+
+                        endif
+
+                        deallocate(Me%Output%MaxWaterColumn)
+
+                        call WriteGridData  (Me%Output%TimeOfMaxWaterColumnFile,   &
+                             COMENT1          = "TimeOfMaxWaterColumnFile",        &
+                             COMENT2          = "TimeOfMaxWaterColumnFile",        &
+                             HorizontalGridID = Me%ObjHorizontalGrid,              &
+                             FillValue        = -99.0,                             &
+                             OverWrite        = .true.,                            &
+                             GridData2D_Real  = Me%Output%TimeOfMaxWaterColumn,    &
+                             STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR044'
+
+                        if(Me%Output%OutputFloodRisk)then
+                            write(RunOffLogFileID, *)"TIME_OF_MAX_WATER_COLUMN       : ", maxval(Me%Output%TimeOfMaxWaterColumn)
+                        endif
+
+
+                        deallocate(Me%Output%TimeOfMaxWaterColumn)
+
+                    
+                        if (Me%Output%WriteVelocityAtMaxWaterColumn) then
+                            call WriteGridData  (Me%Output%VelocityAtMaxWaterColumnFile,&
+                                 COMENT1          = "VelocityAtMaxWaterColumnFile",     &
+                                 COMENT2          = "VelocityAtMaxWaterColumnFile",     &
+                                 HorizontalGridID = Me%ObjHorizontalGrid,               &
+                                 FillValue        = -99.0,                              &
+                                 OverWrite        = .true.,                             &
+                                 GridData2D_Real  = Me%Output%VelocityAtMaxWaterColumn, &
+                                 STAT             = STAT_CALL)
+                            if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR050'    
+
+                            if(Me%Output%OutputFloodRisk)then
+                                write(RunOffLogFileID, *)"VEL_AT_MAX_WATER_COLUMN        : ", maxval(Me%Output%VelocityAtMaxWaterColumn)
+                            endif
+
+                            deallocate(Me%Output%VelocityAtMaxWaterColumn)
+                        endif
                     endif
                 endif
                 
                 if (Me%Output%WriteMaxFloodRisk) then
                     
-                    if (Me%HasRunoffProperties) then
-                        call WriteGridData  (Me%Output%MaxFloodRiskFile,           &
-                                COMENT1          = "MaxFloodRisk",                    &
-                                COMENT2          = "MaxFloodRisk",                    &
-                                HorizontalGridID = Me%ObjHorizontalGrid,              &
-                                FillValue        = -99.0,                             &
-                                OverWrite        = .true.,                            &
-                                GridData2D_Real  = Me%Output%MaxFloodRisk,            &
-                                STAT             = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR060'
-
-                        deallocate(Me%Output%MaxFloodRisk)
-                    else
+                    if (Me%OutPut%SinglePrecision) then
                         call WriteGridData_v1_R4  (Me%Output%MaxFloodRiskFile,           &
                                 COMENT1          = "MaxFloodRisk",                    &
                                 COMENT2          = "MaxFloodRisk",                    &
@@ -21343,6 +21686,18 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                         if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR060'
 
                         deallocate(Me%Output%MaxFloodRisk_R4)
+                    else
+                        call WriteGridData  (Me%Output%MaxFloodRiskFile,           &
+                                COMENT1          = "MaxFloodRisk",                    &
+                                COMENT2          = "MaxFloodRisk",                    &
+                                HorizontalGridID = Me%ObjHorizontalGrid,              &
+                                FillValue        = -99.0,                             &
+                                OverWrite        = .true.,                            &
+                                GridData2D_Real  = Me%Output%MaxFloodRisk,            &
+                                STAT             = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR060'
+
+                        deallocate(Me%Output%MaxFloodRisk)
                     endif
                     
                 endif
