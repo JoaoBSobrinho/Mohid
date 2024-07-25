@@ -8430,8 +8430,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ComputeStormWaterModel
 
                     !call ModifyGeometryAndMapping
-                    !call ModifyGeometryAndMapping_X_StormWater
-                    !call ModifyGeometryAndMapping_Y_StormWater
                 endif
 
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
@@ -11642,176 +11640,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !
     !end subroutine ModifyGeometryAndMapping
 
-    !--------------------------------------------------------------------------
-    
-    subroutine ModifyGeometryAndMapping_X_StormWater
-
-        !Arguments-------------------------------------------------------------
-        
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j, n, size_cenas
-        real                                        :: WCA, Aux
-        integer                                     :: CHUNK
-
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-        
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_X_StormWater")
-        size_cenas = size(Me%NodeAdjacentCellsJ,1)
-        Aux = AlmostZero_Double * Me%DY
-        !$OMP PARALLEL PRIVATE(i,j, n, WCA)
-        if (Me%GridIsConstant) then
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do n = 1, size(Me%NodeAdjacentCellsJ,1)
-                
-                i = Me%NodeAdjacentCellsJ(n, 1)
-                j = Me%NodeAdjacentCellsJ(n, 2)
-                
-                if (i > 0 .and. j > 0) then
-                    if (Me%ExtVar%BasinPoints(i, j) + Me%ExtVar%BasinPoints(i, j-1) == 2) then
-                        if (Me%ActivePoints(i,j-1) + Me%ActivePoints(i,j) > 0) then
-
-                            WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
-                            
-                            !Area  = Water Column * Side lenght of cell
-                            Me%AreaU(i, j) = WCA * Me%DY
-                
-                            if (WCA > Me%MinimumWaterColumn) then
-                                Me%ComputeFaceU(i, j) = 1
-                            else
-                                Me%ComputeFaceU(i, j) = 0
-                            endif
-                        else
-                            !Area  = Water Column * Side lenght of cell
-                            Me%AreaU(i, j) = Aux
-                            Me%ComputeFaceU(i, j) = 0
-                        endif
-                    endif
-                endif
-            enddo
-            !$OMP END DO
-        else
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do n = 1, size(Me%NodeAdjacentCellsJ,1)
-                
-                i = Me%NodeAdjacentCellsJ(n, 1)
-                j = Me%NodeAdjacentCellsJ(n, 2)
-                
-                if (i > 0 .and. j > 0) then    
-                    if (Me%myWaterColumn(i, j) + Me%myWaterColumn(i, j-1) > 0) then
-
-                        WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
-                
-                        !Area  = Water Column * Side lenght of cell
-                        Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
-                
-                        if (WCA > Me%MinimumWaterColumn) then
-                            Me%ComputeFaceU(i, j) = 1
-                        else
-                            Me%ComputeFaceU(i, j) = 0
-                        endif
-                    else
-                        !Area  = Water Column * Side lenght of cell
-                        Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
-                        Me%ComputeFaceU(i, j) = 0
-                    endif
-                endif
-            enddo
-            !$OMP END DO
-        endif
-            
-        !$OMP END PARALLEL
-
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_X_StormWater")
-
-    
-    end subroutine ModifyGeometryAndMapping_X_StormWater
-    
-    
-    !-----------------------------------------------------------------------------------------------
-    
-    
-    !--------------------------------------------------------------------------
-    
-    subroutine ModifyGeometryAndMapping_Y_StormWater
-
-        !Arguments-------------------------------------------------------------
-        
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j, n
-        real                                        :: WCA, Aux
-        integer                                     :: CHUNK
-
-        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-        
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping_Y_StormWater")
-        
-        !$OMP PARALLEL PRIVATE(I,J, n, WCA)
-        if (Me%GridIsConstant) then
-            Aux = AlmostZero_Double * Me%DX
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do n = 1, size(Me%NodeAdjacentCellsI,1)
-                
-                i = Me%NodeAdjacentCellsI(n, 1)
-                j = Me%NodeAdjacentCellsI(n, 2)
-                
-                if (i > 0 .and. j > 0) then
-                    if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) == 2) then
-                        if (Me%ActivePoints(i-1,j) + Me%ActivePoints(i,j) > 0) then
-                    
-                            WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
-                
-                            !Area  = Water Column * Side lenght of cell
-                            Me%AreaV(i, j) = WCA * Me%DX
-                
-                            if (WCA > Me%MinimumWaterColumn) then
-                                Me%ComputeFaceV(i, j) = 1
-                            else
-                                Me%ComputeFaceV(i, j) = 0
-                            endif
-                        else
-                            Me%AreaV(i, j) = Aux
-                            Me%ComputeFaceV(i, j) = 0
-                        endif
-                    endif
-                endif
-            enddo
-            !$OMP END DO
-        else
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do n = 1, size(Me%NodeAdjacentCellsI,1)
-                
-                i = Me%NodeAdjacentCellsI(n, 1)
-                j = Me%NodeAdjacentCellsI(n, 2)
-                if (i > 0 .and. j > 0) then
-                    if (Me%ExtVar%BasinPoints(i-1, j) + Me%ExtVar%BasinPoints(i, j) == 2) then
-                    
-                        if (Me%myWaterColumn(i-1, j) + Me%myWaterColumn(i, j) > 0) then
-                    
-                            WCA       = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
-                
-                            !Area  = Water Column * Side lenght of cell
-                            Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
-                
-                            if (WCA > Me%MinimumWaterColumn) then
-                                Me%ComputeFaceV(i, j) = 1
-                            else
-                                Me%ComputeFaceV(i, j) = 0
-                            endif
-                        else
-                            Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
-                            Me%ComputeFaceV(i, j) = 0
-                        endif
-                    endif
-                endif
-            enddo
-            !$OMP END DO
-        endif
-        !$OMP END PARALLEL
-        
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping_Y_StormWater")
-
-    
-    end subroutine ModifyGeometryAndMapping_Y_StormWater
     
     !------------------------------------------------------------------------------
 
@@ -12114,15 +11942,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Me%VelModFaceU(i, j) = sqrt(U**2.0 + Vaverage**2.0)
                 Me%VelModFaceU(i, j) = abs(cmplx(U, Vaverage))
             endif
-
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-        
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = JLB, JUB 
-        do i = ILB, IUB
-
+            
             if (Me%ComputeFaceV(i, j) == Compute) then
                 
                 Uaverage = (Me%FlowXOld(i   ,j)/Me%AreaU(i  ,j   ) + &
@@ -12139,8 +11959,30 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         enddo
         enddo
+        !$OMP END DO
         
-        !$OMP END DO NOWAIT
+        !!$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+        !do j = JLB, JUB 
+        !do i = ILB, IUB
+        !
+        !    if (Me%ComputeFaceV(i, j) == Compute) then
+        !        
+        !        Uaverage = (Me%FlowXOld(i   ,j)/Me%AreaU(i  ,j   ) + &
+        !                    Me%FlowXOld(i-1,j )/Me%AreaU(i-1,j   ) + &
+        !                    Me%FlowXOld(i-1,j+1)/Me%AreaU(i-1,j+1) + &
+        !                    Me%FlowXOld(i  ,j+1)/Me%AreaU(i  ,j+1)) /4.0
+        !        
+        !        V = Me%FlowYOld(i,j)/Me%AreaV(i,j)
+        !        
+        !        !Me%VelModFaceV(i, j) = sqrt(V**2.0 + Uaverage**2.0)
+        !        Me%VelModFaceV(i, j) = abs(cmplx(Uaverage, V))
+        !        
+        !    endif
+        !
+        !enddo
+        !enddo
+        !
+        !!$OMP END DO NOWAIT
         !$OMP END PARALLEL
     
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
