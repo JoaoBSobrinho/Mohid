@@ -8175,9 +8175,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_, ready_
         integer                                     :: STAT_CALL
-        real                                        :: SumDT, TotalDischargeFlowVolume_entry
+        real                                        :: SumDT, TotalDischargeFlowVolume_entry, aux
         logical                                     :: Restart
-        integer                                     :: Niter, iter
+        integer                                     :: Niter, iter, i, j
         integer                                     :: n_restart
         logical                                     :: firstRestart
         !----------------------------------------------------------------------
@@ -8241,6 +8241,20 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ModifyInfiltration
                 endif
                 
+!999 format(a25,1x,2i,1x, 1f23.18)
+!999 format(a25,1x,2i,1f29.18)
+                !if (Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                !    !write(*,*) "Saida updatewaterlevels"
+                !    !write(*,*) "WaterColumn 2, 2 = ", Me%myWaterColumn(2, 2)
+                !    write(99,999) "Entrada Modify", Me%myWaterVolume(2, 2)*1000000000.0
+                !endif
+                !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                !    if (Me%myWaterVolume(i, j) > 0.0) then
+                !        write(99,999) "Entrada no modify",i, j, Me%myWaterVolume(i, j)*1000000000.0
+                !    endif
+                !enddo
+                !enddo
                 !Stores initial values = from basin
                 !if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
                 !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
@@ -8331,12 +8345,29 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                         !Updates Geometry
                         call ModifyGeometryAndMapping
+                        
+                        !if (Me%myWaterVolume(i, j) > 0.0) then
+                        !    write(99,999) "saida modifygeometry",i, j, Me%myWaterVolume(i, j)*1000000000.0
+                        !endif
+                        !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                        !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        !    if (Me%myWaterVolume(i, j) > 0.0) then
+                        !        write(99,999) "saida modifygeometry",i, j, Me%myWaterVolume(i, j)*1000000000.0
+                        !    endif
+                        !enddo
+                        !enddo
                     
                         !save most recent water volume to predict if negative occur. in that case flux will be
                         !limited to water volume and next fluxes will be zero
                         if (.not. Me%LimitToCriticalFlow) then
                             call SetMatrixValue (Me%myWaterVolumePred, Me%Size, Me%myWaterVolume)
-                        endif        
+                        endif
+                        
+                        !if (Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                        !    !write(*,*) "Saida updatewaterlevels"
+                        !    !write(*,*) "WaterColumn 2, 2 = ", Me%myWaterColumn(2, 2)
+                        !    write(99,999) "Antes DynamicWaveXX", Me%myWaterVolume(2, 2)*1000000000.0
+                        !endif
                     
                         select case (Me%HydrodynamicApproximation)
                             case (KinematicWave_)
@@ -8366,6 +8397,50 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         
                         !Updates waterlevels, based on fluxes
                         call UpdateWaterLevels(Restart)
+                        !if (Me%lFlowX(1, 2) < -0.000000003032733502) then
+                        !    aux = Me%myWaterVolume(1, 2)*1000000000.0
+                        !    write(99,999) "Volume12", aux
+                        !    aux = Me%myWaterVolume(1, 3)*1000000000.0
+                        !    write(99,999) "Volume13", aux
+                        !    aux = Me%myWaterVolume(2, 2)*1000000000.0
+                        !    write(99,999) "Volume22", aux
+                        !    aux = Me%myWaterLevel(1, 2)*100.0
+                        !    write(99,999) "Level12", aux
+                        !    aux = Me%myWaterLevel(1, 3)*100.0
+                        !    write(99,999) "Level13", aux
+                        !    aux = Me%myWaterLevel(2, 2)*100.0
+                        !    write(99,999) "Level22", aux
+                        !    write(99,999) "FlowX12", Me%lFlowX(1, 2)
+                        !    write(99,999) "FlowX13", Me%lFlowX(1, 3)
+                        !    write(99,999) "FlowY12", Me%lFlowY(1, 2)
+                        !    write(99,999) "FlowY22", Me%lFlowY(2, 2)
+                            !if (aux > 12969431.0) then
+                            !    !write(99,999) "FlowX_1", Me%lFlowX(2, 2)
+                            !    !write(99,999) "FlowX_2", Me%lFlowX(2, 3)
+                            !    write(99,999) "saida UpdateWaterLevels", Me%myWaterVolume(2, 2)*1000000000.0
+                            !    write(99,999) "FlowY_1", Me%lFlowY(2, 2)
+                            !    write(99,999) "FlowY_2", Me%lFlowY(3, 2)
+                            !endif
+                        
+                        !endif
+                        !if (Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                        !    !write(*,*) "Saida updatewaterlevels"
+                        !    !write(*,*) "WaterColumn 2, 2 = ", Me%myWaterColumn(2, 2)
+                        !    write(99,999) "Saida updatewaterlevels", Me%myWaterVolume(2, 2)*1000000000.0
+                        !    write(99,999) "FlowX_1", Me%lFlowX(2, 2) * 1000.0
+                        !    write(99,999) "FlowX_2", Me%lFlowX(2, 3) * 1000.0
+                        !    write(99,999) "FlowY_1", Me%lFlowY(2, 2) * 1000.0
+                        !    write(99,999) "FlowY_2", Me%lFlowY(3, 2) * 1000.0
+                        !endif
+                        !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                        !do i = Me%WorkSize%ILB, 5
+                        !    if(Me%myWaterVolume(2, 3) * 1000000000.0 > 12868711.0) then
+                        !        write(99,999) "myWaterVolume i, j = ", i, j, Me%myWaterVolume(i, j) * 1000000000.0
+                        !        write(99,999) "FlowX", i, j, Me%lFlowX(i, j)
+                        !        write(99,999) "FlowY", i, j, Me%lFlowY(i, j)
+                        !    endif
+                        !enddo
+                        !enddo
                         
                         call CheckStability(Restart)
                         
@@ -8437,8 +8512,23 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%StormWaterModel) then
                 
                     call ComputeStormWaterModel
+                    !if (Me%myWaterVolume(2, 2) > 0.0) then
+                    !    write(99,999) "saida ComputeStormWaterModel", Me%myWaterVolume(2, 2)*1000000000.0
+                    !endif
+                    !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                    !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        !if (Me%myWaterVolume(i, j) > 0.0) then
+                        !    write(99,999) "saida ComputeStormWaterModel",i, j, Me%myWaterVolume(i, j)*1000000000.0
+                        !endif
+                    !enddo
+                    !enddo
 
                     !call ModifyGeometryAndMapping
+                    !if (Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                    !    !write(*,*) "Saida updatewaterlevels"
+                    !    !write(*,*) "WaterColumn 2, 2 = ", Me%myWaterColumn(2, 2)
+                    !    write(99,999) "Saida ComputeStormWaterModel", Me%myWaterVolume(2, 2)*1000000000.0
+                    !endif
                 endif
 
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
@@ -8461,7 +8551,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%ImposeBoundaryValue) then
                     call Modify_Boundary_Condition
                 endif
-
+                
+                !if (Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                !    !write(*,*) "Saida updatewaterlevels"
+                !    !write(*,*) "WaterColumn 2, 2 = ", Me%myWaterColumn(2, 2)
+                !    write(99,999) "Saida Modify_Boundary_Condition", Me%myWaterVolume(2, 2)*1000000000.0
+                !endif
                 !Calculates center flow and velocities (for output and next DT)
                 if (Me%OutPut%SinglePrecision) then
                     call ComputeCenterValues_R4
@@ -12371,7 +12466,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX")
-
+999 format(a25,1x,1f29.18)
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -12614,7 +12709,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 Me%lFlowX(i, j) = (Me%FlowXOld(i, j) + Pressure + Advection) / (1.0 + Friction)
                 
-                if (abs(Me%lFlowY(i, j)) > Almostzero) then
+                if (abs(Me%lFlowX(i, j)) > Almostzero) then
 
                     if (Me%LimitToCriticalFlow) then
 
@@ -12680,13 +12775,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
                 
                     dVol = Me%lFlowX(i, j) * LocalDT
+                    !if (i == 2 .and. (j == 2 .or. j == 3)  .and. Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                    !    write(99,999) "Entrada X", Me%myWaterVolume(2, 2)*1000000000.0
+                    !endif
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
                     Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
-                
+                    !if (i == 2 .and. (j == 2 .or. j == 3)  .and. Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                    !    write(99,999) "Saida X", Me%myWaterVolume(2, 2)*1000000000.0
+                    !endif
                     Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
                     !$OMP CRITICAL            
                     Me%ActivePoints(i,j-1) = 1
                     !$OMP END CRITICAL
+                else
+                    Me%lFlowX(i, j) = 0.0
                 endif
             else
                 Me%lFlowX(i, j) = 0.0
@@ -15094,7 +15196,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !character(len=StringLength)                 :: Direction
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveYY")
-
+999 format(a25,1x,1f29.18)
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -15375,11 +15477,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
                     
                     dVol = Me%lFlowY(i, j) * LocalDT
+                    !if ((i == 2 .or. i == 3) .and. j == 2 .and. Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                    !    write(99,999) "Entrada Y", Me%myWaterVolume(2, 2)*1000000000.0
+                    !endif
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
                     Me%myWaterVolume (i-1, j) = Me%myWaterVolume (i-1, j) - dVol
-                
+                    !if ((i == 2 .or. i == 3) .and. j == 2 .and. Me%myWaterVolume(2, 2) * 1000000000.0 > 913649.0 .and. Me%myWaterVolume(2, 2) * 1000000000.0 < 1028464.0) then
+                    !    write(99,999) "Saida Y", Me%myWaterVolume(2, 2)*1000000000.0
+                    !endif
                     Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels        
                     Me%ActivePoints(i-1,j) = 1  
+                else
+                    Me%lFlowY(i, j) = 0.0
                 endif
             else
                 Me%lFlowY(i, j) = 0.0
@@ -16468,9 +16577,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%MassError(i, j) = Me%MassError(i, j) + Me%myWaterVolume(i,j)
                         Me%myWaterVolume (i, j) = 0.0
                     endif
-
-                    Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea
+!999 format(a25,1x, 1f23.18)
+!                    if (Me%myWaterColumn(2, 2) > 0.0) then
+!                        write(99,999) "WaterColumnOutfall in", Me%myWaterColumn(2, 2)*1000000000.0
+!                        write(99,999) "WaterVolumeOutfall in", Me%myWaterVolume(2, 2)*1000000000.0
+!                        write(99,999) "FlowOutfall in", Me%Outfalls(xn)%Flow*Me%ExtVar%DT*1000000000.0
+!                        write(99,999) "FlowOutfall in", Me%Outfalls(xn)%Flow*1000000000.0
+!                    endif
+                    Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
                     Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
+!                    
+!                    if (Me%myWaterColumn(2, 2) > 0.0) then
+!                        write(99,999) "WaterColumnOutfall out", Me%myWaterColumn(2, 2)*1000000000.0
+!                        write(99,999) "WaterVolumeOutfall out", Me%myWaterVolume(2, 2)*1000000000.0
+!                    endif
                     
                     Me%ActivePoints(i,j)   = 1
                 endif
