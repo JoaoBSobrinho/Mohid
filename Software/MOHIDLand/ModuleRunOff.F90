@@ -5264,9 +5264,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
 
             Me%GridCosAngleX = cos(Me%ExtVar%GridRotation)
             Me%GridCosAngleY = cos(Pi/2. + Me%ExtVar%GridRotation)
+            if (abs(Me%GridCosAngleX) <= AlmostZero) Me%GridCosAngleX = 0.0
+            if (abs(Me%GridCosAngleY) <= AlmostZero) Me%GridCosAngleY = 0.0
 
             Me%GridSinAngleX = sin(Me%ExtVar%GridRotation)
             Me%GridSinAngleY = sin(Pi/2. + Me%ExtVar%GridRotation)
+            
+            if (abs(Me%GridSinAngleX) <= AlmostZero) Me%GridSinAngleX = 0.0
+            if (abs(Me%GridSinAngleY) <= AlmostZero) Me%GridSinAngleY = 0.0
             
             if (Me%ExtVar%GridRotation == 0) then
                 Me%GridIsRotated = .false.                
