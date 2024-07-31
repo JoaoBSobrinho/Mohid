@@ -5025,25 +5025,6 @@ cd0:    if (Exist) then
             call DividePrecipitation_VG(PrecipitationFlux)
         endif
         
-        !if (Me%RunOffUsingFVS) then
-        !    call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
-        !    if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
-        !else
-        !    !This actualy should be done in module runoff... changing the water level inside Basin just seems like a really bad idea
-        !    !$OMP PARALLEL PRIVATE(I,J)
-        !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-        !        if(Me%CellHasRain(i,j) == BasinPoint) then
-        !            !Put rain on water column - it will facilitate the structure of the property mixture
-        !            Me%ExtUpdate%WaterLevel(i,j) = Me%ExtUpdate%WaterLevel(i,j) + Me%ThroughFall(i, j)
-        !        endif
-        !    enddo
-        !    enddo
-        !    !$OMP END DO
-        !    !$OMP END PARALLEL
-        !endif
-        
         call SetRunOffRainFall(Me%ObjRunoff, Me%ThroughFall, Me%CellHasRain, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'DividePrecipitation - ModuleBasin - ERR01'
 
@@ -5094,7 +5075,6 @@ cd0:    if (Exist) then
                         Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
                     
                         !mm/ hour                   m                       s         1000mm/m   *  3600s/h
-                        !Me%ThroughRate(i, j) = GrossPrecipitation / Me%CurrentDT * 3600000.0
                         Me%ThroughRate(i, j) = GrossPrecipitation * aux3
                     
                         ! For now uncovered rain is total. it will be changed ir there are leafs
@@ -6484,7 +6464,6 @@ cd0:    if (Exist) then
         
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
         CHUNK = ChunkJ
-        
         Me%ConstantCurveNumber = .True.
         
         if (Me%CurrentTime > Me%SCSCNRunOffModel%NextRainAccStart) then
@@ -6544,28 +6523,19 @@ cd0:    if (Exist) then
                                     (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
                         
                     qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
-                        
+                    
                     Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
-                        
                     !Output mm/h = mm/s * 3600 s/hour
-                    !Me%InfiltrationRate (i, j) = ((rain - qInTimeStep) / Me%CurrentDT) * 3600.0
                     Me%InfiltrationRate (i, j) = (rain - qInTimeStep) * aux2
                         
                 else
                     !Output mm/h = m/s * 3600000 (mm/m * s/hour)
-                    !Me%InfiltrationRate (i, j) = (rain_m / Me%CurrentDT) * 3600000.0
                     Me%InfiltrationRate (i, j) = rain_m * aux3
                 endif
                 
                 Me%Infiltration(i,j) = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
                 !m - Accumulated Infiltration of the entite area
                 Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
-                
-                !if (.not. Me%RunOffUsingFVS) then
-                !    ! TODO : Need to update runoff code to apply this inside it, instead of doing it here.
-                !    !m                            = m - mm/hour * s / s/hour / mm/m
-                !    Me%ExtUpdate%WaterLevel(i, j) = Me%ExtUpdate%WaterLevel (i, j) - Me%Infiltration(i,j)
-                !endif
             else
                 !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
                 Me%InfiltrationRate (i, j)    =  0.0
@@ -6573,15 +6543,11 @@ cd0:    if (Exist) then
             
         enddo
         enddo
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !$OMP END PARALLEL
             
         call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
         
-        !if (Me%RunOffUsingFVS) then
-        !    
-        !    call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
-        !endif
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
         
     end subroutine SCSCNRunOffModel

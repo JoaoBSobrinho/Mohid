@@ -6133,7 +6133,7 @@ else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
                 enddo
                 enddo
                 !$OMP END DO NOWAIT
-                !DYY
+            !DYY
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = JLB, JUB + 1
                 do i = ILB, IUB
