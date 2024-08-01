@@ -768,6 +768,7 @@ Module ModuleRunOff
 
         integer, dimension(:,:), pointer            :: OpenPoints               => null() !Mask for gridcells above min watercolumn
         integer, dimension(:,:), pointer            :: ActivePoints             => null() !Mask for gridcells with water
+        integer, dimension(:,:), pointer            :: ActivePoints_Left        => null() !Mask for gridcells with water
         real,    dimension(:,:), pointer            :: OverLandCoefficient      => null() !Manning or Chezy
         real,    dimension(:,:), pointer            :: OverLandCoefficientDelta => null() !For erosion/deposition
         real,    dimension(:,:), pointer            :: OverLandCoefficientX     => null() !Manning or Chezy
@@ -5431,6 +5432,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%ComputeFaceV         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%OpenPoints           (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ActivePoints         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%ActivePoints_Left    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceU          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5449,7 +5451,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%ComputeFaceU, Me%Size, 0)
         call SetMatrixValue(Me%ComputeFaceV, Me%Size, 0)
         call SetMatrixValue(Me%OpenPoints, Me%Size, 0)
-        call SetMatrixValue(Me%ActivePoints, Me%Size, 1)
+        call SetMatrixValue(Me%ActivePoints, Me%Size, Me%ExtVar%BasinPoints)
+        call SetMatrixValue(Me%ActivePoints_Left, Me%Size, 0)
         call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
         call SetMatrixValue(Me%Bottom_Y, Me%Size, 0.0)
         
@@ -8157,13 +8160,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 endif
                 
                 !Stores initial values = from basin
-                !if (.not. Me%UpdatedWaterColumnFromBasin) call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
-                !call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
                 call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
                 !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
-                !call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ExtVar%BasinPoints)
-                !call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ExtVar%BasinPoints)
                 call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ActivePoints)
                 call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ActivePoints)
                 
@@ -8204,8 +8203,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
                     endif
                     
-                    !call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
-                    !call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ExtVar%BasinPoints)
                     call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
                     call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
                 
@@ -8238,8 +8235,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                             firstRestart = .false.
                         else
-                            !call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ExtVar%BasinPoints)
-                            !call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ExtVar%BasinPoints)
                             call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ActivePoints)
                             call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ActivePoints)
                         endif
@@ -8262,7 +8257,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                 call ComputeFaceVelocityModulus
                                 call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                 call DynamicWaveYY    (Me%CV%CurrentDT)
-                        end select
+                        end select   
                         !Interaction with channels
                         if (.not. Me%Use1D2DInteractionMapping .and. Me%ObjDrainageNetwork /= 0 .and. .not. Me%SimpleChannelInteraction) then
                             call FlowIntoChannels       (Me%CV%CurrentDT)
@@ -8274,11 +8269,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         endif
                         
                         !Updates waterlevels, based on fluxes
-                        call UpdateWaterLevels(Restart)
+                        call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
                         
                         call CheckStability(Restart)
-                        
-                        !call ReadUnLockExternalVar (StaticOnly = .false.)
                     
                         if (Restart) then
                             call ReadUnLockExternalVar (StaticOnly = .false.)
@@ -8349,7 +8342,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     
                     call ModifyGeometryAndMapping
                 endif
-
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
                 !because of resistance. However in both methods the area used is not consistent (regular faces flow
@@ -11679,8 +11671,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !X
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do i = ILB, IUB
         do j = JLB, JUB
+        do i = ILB, IUB
             if (Me%ComputeFaceU(i, j) == Compute) then
             
                 !Adds to the final level the height of the buidings, if any
@@ -11773,14 +11765,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !Update water volumes
                 dVol = Me%lFlowX(i, j) * Me%CV%CurrentDT
                 Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
-                Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
                 
                 Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                Me%ActivePoints(i,j-1) = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                
+                Me%ActivePoints_Left(i,j) = 1
             else
                 
                 Me%lFlowX(i, j) = 0.0
+                Me%ActivePoints_Left(i,j) = 0
             
             endif
                 
@@ -12012,6 +12003,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
         do i = ILB, IUB
+
             if (Me%ComputeFaceU(i, j) == Compute) then
             
                 level_left  = Me%myWaterLevel(i, j-1)
@@ -12276,19 +12268,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                     dVol = Me%lFlowX(i, j) * LocalDT
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
-                    Me%myWaterVolume (i, j-1) = Me%myWaterVolume (i, j-1) - dVol
                     
                     Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels       
-                    Me%ActivePoints(i,j-1) = 1
+                    Me%ActivePoints_Left(i,j) = 1
                 else
                     Me%lFlowX(i, j) = 0.0
+                    Me%ActivePoints_Left(i,j) = 0
                 endif
             else
                 Me%lFlowX(i, j) = 0.0
+                Me%ActivePoints_Left(i,j) = 0
             endif
         enddo
         enddo        
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !$OMP END PARALLEL
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX")
@@ -12659,17 +12652,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: HydraulicRadius
         real                                        :: Friction
         real                                        :: Pressure
-        !real                                        :: upAdv, downAdv, 
         real                                        :: XLeftAdv, XRightAdv, YBottomAdv, YTopAdv
         real                                        :: Advection, Qf, WetPerimeter
         real(8)                                     :: CriticalFlow
         real                                        :: Margin1, Margin2
         integer                                     :: CHUNK, di
         real                                        :: MaxBottom, WaterDepth, dVol
-        !character(len=StringLength)                 :: Direction
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveYY")
-!999 format(a25,1x,1f29.18)
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
@@ -12816,10 +12806,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 
                                 if(Me%ComputeFaceV(i,j+1) == Compute) then
                                     XRightAdv = Qf   * Me%FlowYOld(i, j+1) / Me%AreaV(i, j+1)
-                                    !XRightAdv =  (Me%FlowXOld(i,   j) * (Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)        + &
-                                    !                                    Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)) / 2.0 + & 
-                                    !             Me%FlowXOld(i-1, j) * (Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)        + &
-                                    !                                    Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)) / 2.0)/2.0
                                 else
                                     if(Me%ComputeFaceV(i-1, j+1) == Compute)then
                                         XRightAdv = Qf   *  Me%FlowYOld(i-1, j+1) / Me%AreaV(i-1, j+1)
@@ -12852,11 +12838,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 if(Me%ComputeFaceV(i,j-1) == Compute) then
                                     XLeftAdv = Qf   * Me%FlowYOld(i, j-1) / Me%AreaV(i, j-1)
                                     
-                                    !XLeftAdv =  (Me%FlowXOld(i,   j) * (Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)        + &
-                                    !                                   Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)) / 2.0 + & 
-                                    !            Me%FlowXOld(i-1, j) * (Me%FlowYOld(i,   j-1) / Me%AreaV(i,   j-1)        + &
-                                    !                                   Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)) / 2.0)/2.0
-                                    
                                 else
                                     
                                     if(Me%ComputeFaceV(i+1, j-1) == Compute)then
@@ -12881,7 +12862,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         XLeftAdv = 0.0
                     endif       
                            
-                    !Advection = (upAdv - downAdv) * LocalDT / Me%ExtVar%DVY(i, j)
                     Advection = (YBottomAdv - YTopAdv) * LocalDT / Me%ExtVar%DZY(i-1, j)     &
                                 + (XLeftAdv - XRightAdv) * LocalDT / Me%ExtVar%DXX(i, j)
                     
@@ -12963,7 +12943,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
         enddo
         enddo         
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !$OMP END PARALLEL
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY")
@@ -13293,10 +13273,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !---------------------------------------------------------------------------
     
-    subroutine UpdateWaterLevels(Restart)
+    subroutine UpdateWaterLevels(Restart, LocalDT)
     
         !Arguments-------------------------------------------------------------
         logical, intent(INOUT)                      :: Restart
+        real, intent(IN)                            :: LocalDT
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
@@ -13311,10 +13292,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !$OMP PARALLEL PRIVATE(I,J, WaterVolume)
         if (Me%GridIsConstant) then
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = JLB, JUB
             do i = ILB, IUB
+                if (Me%ActivePoints_Left(i,j+1) == 1) then!because cant update j-1 cell in dynamicwavexx due to paralelization
+                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT
+                    Me%ActivePoints(i,j) = 1
+                endif
+                
                 if (Me%ActivePoints(i,j) == 1) then
+                    
                     WaterVolume = Me%myWaterVolume (i, j)
                 
                     if (WaterVolume < AllmostZeroNegative) then
@@ -13343,9 +13330,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO
         else
             
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
-            do i = ILB, IUB
-            do j = JLB, JUB
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = ILB, IUB
+            do i = JLB, JUB
+                if (Me%ActivePoints_Left(i,j+1) == 1) then
+                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT
+                    Me%ActivePoints(i,j) = 1
+                endif
                 if (Me%ActivePoints(i,j) == 1) then
                     WaterVolume = Me%myWaterVolume (i, j)
                 
@@ -13379,118 +13370,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
 
     end subroutine UpdateWaterLevels
-    
-    
-    !subroutine UpdateWaterLevels(LocalDT)
-    !
-    !    !Arguments-------------------------------------------------------------
-    !    real                                        :: LocalDT
-    !    
-    !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j
-    !    integer                                     :: ILB, IUB, JLB, JUB
-    !    real                                        :: dVol
-    !    logical                                     :: computecell
-    !
-    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterLevels")
-    !
-    !    ILB = Me%WorkSize%ILB
-    !    IUB = Me%WorkSize%IUB
-    !    JLB = Me%WorkSize%JLB
-    !    JUB = Me%WorkSize%JUB
-    !
-    !
-    !    !X
-    !    !$OMP PARALLEL PRIVATE(I,J, computecell)
-    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKI)
-    !    do i = ILB, IUB
-    !    do j = JLB-1, JUB
-    !        computecell = .false.
-    !        
-    !        if (Me%ComputeFaceU(i, j) == 1) then
-    !            !dVol
-    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + Me%lFlowX(i, j) * LocalDT
-    !            computecell = .true.
-    !        endif
-    !        
-    !        if (Me%ComputeFaceU(i, j+1) == 1) then
-    !            !dVol
-    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT  
-    !            computecell = .true.
-    !        endif
-    !        
-    !        if (computecell) then
-    !            !Updates Water Column
-    !            if ( Me%GridIsConstant) then
-    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%GridCellArea
-    !            else
-    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-    !            endif
-    !            
-    !            Me%ActivePoints(i,j) = 0
-    !            Me%OpenPoints(i,j) = 0
-    !            if (Me%myWaterColumn(i, j) > AlmostZero) then
-    !                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
-    !                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
-    !                    Me%OpenPoints(i,j) = 1 !For use in output routines
-    !                endif
-    !            endif
-    !            
-    !            !Updates Water Level
-    !            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-    !        endif
-    !        
-    !    enddo
-    !    enddo
-    !    !$OMP END DO
-    !    !$OMP END PARALLEL        
-    !
-    !    !Y
-    !    !$OMP PARALLEL PRIVATE(I,J,dVol, computecell)
-    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-    !    do j = JLB, JUB
-    !    do i = ILB-1, IUB
-    !        computecell = .false.
-    !        if (Me%ComputeFaceV(i, j) == 1) then
-    !            !dVol
-    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + Me%lFlowY(i, j) * LocalDT
-    !            computecell = .true.
-    !        endif
-    !        
-    !        if (Me%ComputeFaceV(i+1, j) == 1) then
-    !            computecell = .true.
-    !            !dVol
-    !            Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowY(i+1, j) * LocalDT
-    !        endif
-    !        
-    !        if (computecell) then
-    !            !Updates Water Column
-    !            if ( Me%GridIsConstant) then
-    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%GridCellArea
-    !            else
-    !                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-    !            endif
-    !            
-    !            Me%ActivePoints(i,j) = 0
-    !            Me%OpenPoints(i,j) = 0
-    !            if (Me%myWaterColumn(i, j) > AlmostZero) then
-    !                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
-    !                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
-    !                    Me%OpenPoints(i,j) = 1 !For use in output routines
-    !                endif
-    !            endif
-    !            
-    !            !Updates Water Level
-    !            Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
-    !        endif
-    !    enddo
-    !    enddo
-    !    !$OMP END DO
-    !    !$OMP END PARALLEL
-    !    
-    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
-    !
-    !end subroutine UpdateWaterLevels
 
     !--------------------------------------------------------------------------
     
@@ -15956,29 +15835,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "CheckStability")
 
         n_restart = 0
-        !Restart = .false.
-        !
-        !!$OMP PARALLEL PRIVATE(I,J)
-        !!$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-        !    if (.not. Restart) then
-        !        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-        !            if (Me%myWaterVolume(i, j) < AllmostZeroNegative) then
-        !                !!$OMP CRITICAL
-        !                Restart = .true.
-        !                !!$OMP END CRITICAL
-        !                !exit
-        !            else if (Me%myWaterVolume (i, j) < 0.0) then  
-        !                Me%myWaterVolume (i, j) = 0.0                 
-        !            endif
-        !        endif
-        !    endif
-        !enddo
-        !enddo
-        !!$OMP END DO NOWAIT
-        !!$OMP END PARALLEL
-
 
         if ((.not. Restart) .and. Me%CV%Stabilize) then
 
@@ -16173,11 +16029,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
                 endif
-                
-                !if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                !    Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
-                !    Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
-                !endif
             enddo
             enddo
             !$OMP END DO NOWAIT
