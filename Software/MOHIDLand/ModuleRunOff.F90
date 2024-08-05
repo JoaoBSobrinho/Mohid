@@ -8341,9 +8341,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 endif
             
                 if (Me%StormWaterModel) then
-
                     call ComputeStormWaterModel
-                    call ModifyGeometryAndMapping
                 endif
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
@@ -11492,6 +11490,42 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
     !--------------------------------------------------------------------------
     
+    integer function ComputeFace(i, j, i_North, j_East, Area, directionU)
+    
+        !Arguments-------------------------------------------------------------
+        
+        !Local-----------------------------------------------------------------
+        integer, intent(IN)                          :: i, j, j_East, i_North
+        logical, intent(IN)                          :: directionU
+        real, dimension(:,:), pointer, intent(INOUT) :: Area
+        integer, intent(INOUT)                       :: ComputeFace
+        real                                         :: WCA, Aux
+        !Begin-----------------------------------------------------------------
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFace")
+        
+        Aux = AlmostZero_Double * Me%DX !In sewergems this is allways constant
+        if (directionU) then
+            WCA = max(max(Me%myWaterLevel(i_North, j_East), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
+        else
+            WCA = max(max(Me%myWaterLevel(i_North, j_East), Me%myWaterLevel(i, j)) - Me%Bottom_Y(i,j), AlmostZero_Double)
+        endif
+        
+        !Area  = Water Column * Side lenght of cell
+        Area(i, j) = WCA * Me%DY                
+        if (WCA > Me%MinimumWaterColumn) then
+            ComputeFace = 1
+        else
+            ComputeFace = 0
+        endif
+    
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFace")
+    
+    
+    end function ComputeFace
+
+    !--------------------------------------------------------------------------
+    
     !subroutine ModifyGeometryAndMapping
     !
     !    !Arguments-------------------------------------------------------------
@@ -13585,11 +13619,23 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     !Updates Water Column
                     Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                     Me%myWaterColumn  (it, jt) = Me%myWaterVolume (it, jt) / Me%ExtVar%GridCellArea(it, jt)
-
+                    
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1 !For use in output routines
+                        endif
+                    endif  
+                    if (Me%myWaterColumn(it, jt) > AlmostZero) then
+                        Me%ActivePoints(it,jt) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(it, jt) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(it,jt) = 1 !For use in output routines
+                        endif
+                    endif  
                     !Updates Water Level
                     Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
                     Me%myWaterLevel (it, jt)   = Me%myWaterColumn (it, jt) + Me%ExtVar%Topography(it, jt)
-                
+
                 else
                     Me%iFlowRouteDFour(i,j)    = 0.0
                 endif
@@ -13719,7 +13765,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     !Updates Water Column
                     Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
                     Me%myWaterColumn  (it, jt) = Me%myWaterVolume (it, jt) / Me%ExtVar%GridCellArea(it, jt)
-
+                    
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1 !For use in output routines
+                        endif
+                    endif  
+                    if (Me%myWaterColumn(it, jt) > AlmostZero) then
+                        Me%ActivePoints(it,jt) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(it, jt) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(it,jt) = 1 !For use in output routines
+                        endif
+                    endif 
+                    
                     !Updates Water Level
                     Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
                     Me%myWaterLevel (it, jt)   = Me%myWaterColumn (it, jt) + Me%ExtVar%Topography(it, jt)
@@ -13808,11 +13867,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             Me%Ponds(xn)%Flow = 0.0
         enddo
 
-        if (Me%GridIsConstant) then
-            call OpenChannelFlow_CG
-        else
-            call OpenChannelFlow_VG   
-        endif
+        call OpenChannelFlow !Assuming ConstantGrid in sewergems
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "NumberOfCrossSections")
         do n = 1, Me%NumberOfCrossSections
@@ -13873,7 +13928,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !---------------------------------------------------------------------------
     
-    subroutine OpenChannelFlow_CG
+    subroutine OpenChannelFlow
 
 #ifdef _SEWERGEMSENGINECOUPLER_
         !--------------------------------------------------------------------------
@@ -13881,21 +13936,24 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                        :: Flow, Flow_1, Flow_2, Flow_3, Flow_4, Flow_5, Flow_formulation_2, tF
         real                        :: dh, area, WaterLevelSWMM, Topography,WaterColumn
         real                        :: WaterLevel, SecondLinkWaterLevel
+        logical                     :: ActiveCell
 
         !--------------------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "OpenChannelFlow_CG")
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "OpenChannelFlow")
         
         do n = 1, Me%NumberOfOpenChannelLinks
+            
+            ActiveCell = .false.
             
             if(Me%OpenChannelLinks(n)%TypeOf /= OutfallLink_)then
                 !Get water level for main link node (if link type is Direct_ no more information is needed)
                 STAT_CALL = SewerGEMSEngine_getNodeWaterLevel(Me%OpenChannelLinks(n)%LinkID, Me%OpenChannelLinks(n)%WaterLevel)
-                if (STAT_CALL /= SUCCESS_) stop 'OpenChannelFlow_CG - ModuleRunOff - ERR01'
+                if (STAT_CALL /= SUCCESS_) stop 'OpenChannelFlow - ModuleRunOff - ERR01'
 
                 if(Me%OpenChannelLinks(n)%TypeOf == Weighted_)then
                     !Get water level for secondary link nodes
                     STAT_CALL = SewerGEMSEngine_getNodeWaterLevel(Me%OpenChannelLinks(n)%SecondLinkID, SecondLinkWaterLevel)
-                    if (STAT_CALL /= SUCCESS_) stop 'OpenChannelFlow_CG - ModuleRunOff - ERR10'
+                    if (STAT_CALL /= SUCCESS_) stop 'OpenChannelFlow - ModuleRunOff - ERR10'
                 endif
             endif
             i   = Me%OpenChannelLinks(n)%I
@@ -13921,7 +13979,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
                     
                     Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea
-                    Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
                     
                     if (Me%myWaterColumn(i, j) > AlmostZero) then
                         Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
@@ -13929,6 +13986,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Me%OpenPoints(i,j) = 1 !For use in output routines
                         endif
                     endif
+                    
+                    Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
+                    
+                    ActiveCell = .true.
                 endif
             else
 
@@ -14074,240 +14135,42 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
 
                     Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea
-                    Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
+                    
                     if (Me%myWaterColumn(i, j) > AlmostZero) then
                         Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
                         if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                             Me%OpenPoints(i,j) = 1 !For use in output routines
                         endif
                     endif
+                    
+                    Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
+                    
+                    ActiveCell = .true.
+                endif
+            endif
+            
+            if (ActiveCell) then
+                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
+                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
+                endif
+                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
+                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
                 endif
             endif
         enddo
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow_CG")
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow")
     
 #endif _SEWERGEMSENGINECOUPLER_
     
-    end subroutine OpenChannelFlow_CG
+    end subroutine OpenChannelFlow
     
     !---------------------------------------------------------------------------
-    
-    subroutine OpenChannelFlow_VG
-
-#ifdef _SEWERGEMSENGINECOUPLER_
-        !--------------------------------------------------------------------------
-        integer                     :: STAT_CALL, n, i, j, xn
-        real                        :: Flow, Flow_1, Flow_2, Flow_3, Flow_4, Flow_5, Flow_formulation_2, tF
-        real                        :: dh, area, WaterLevelSWMM, Topography,WaterColumn
-        real                        :: WaterLevel, SecondLinkWaterLevel
-
-        !--------------------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "OpenChannelFlow_CG")   
-        
-        do n = 1, Me%NumberOfOpenChannelLinks
-            
-            if(Me%OpenChannelLinks(n)%TypeOf /= OutfallLink_)then
-                !Get water level for main link node (if link type is Direct_ no more information is needed)
-                STAT_CALL = SewerGEMSEngine_getNodeWaterLevel(Me%OpenChannelLinks(n)%LinkID, Me%OpenChannelLinks(n)%WaterLevel)
-                if (STAT_CALL /= SUCCESS_) stop 'OpenChannelFlow_CG - ModuleRunOff - ERR01'
-
-                if(Me%OpenChannelLinks(n)%TypeOf == Weighted_)then
-                    !Get water level for secondary link nodes
-                    STAT_CALL = SewerGEMSEngine_getNodeWaterLevel(Me%OpenChannelLinks(n)%SecondLinkID, SecondLinkWaterLevel)
-                    if (STAT_CALL /= SUCCESS_) stop 'OpenChannelFlow_CG - ModuleRunOff - ERR10'
-                endif
-            endif
-            
-            i   = Me%OpenChannelLinks(n)%I
-            j   = Me%OpenChannelLinks(n)%J
-            
-            Topography = Me%ExtVar%Topography(i, j)
-            
-            if(Me%OpenChannelLinks(n)%TypeOf == OutfallLink_)then
-
-                xn  = Me%OpenChannelLinks(n)%OutfallID
-
-                !Divide total outfall flow by the weight of each grid cell it intercepts (= 1/nCells_InterceptedByOutfall) 
-                Flow = Me%Outfalls(xn)%Flow * Me%OpenChannelLinks(n)%Weight
-
-                Me%OpenChannelLinks(n)%Flow = Flow
-
-                Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + (Flow * Me%ExtVar%DT)
-                if(Me%myWaterVolume (i, j) < 0.0)then
-                    Me%MassError(i, j) = Me%MassError(i, j) + Me%myWaterVolume(i,j)
-                    Me%myWaterVolume (i, j) = 0.0
-                endif
-                    
-                Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-                Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
-                    
-                if (Me%myWaterColumn(i, j) > AlmostZero) then
-                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
-                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
-                        Me%OpenPoints(i,j) = 1 !For use in output routines
-                    endif
-                endif
-            else
-
-                if(Me%OpenChannelLinks(n)%TypeOf == PondLink_)then
-                    xn  = Me%OpenChannelLinks(n)%PondID
-                else
-                    xn  = Me%OpenChannelLinks(n)%CrossSectionID
-                endif
-
-                if(Me%OpenChannelLinks(n)%TypeOf == Weighted_)then
-                    !Interpolate between the 2 link nodes
-                    Me%OpenChannelLinks(n)%WaterLevel = SecondLinkWaterLevel               + & 
-                                                        (Me%OpenChannelLinks(n)%WaterLevel - & 
-                                                         SecondLinkWaterLevel)             * &
-                                                        Me%OpenChannelLinks(n)%Weight
-                endif
-
-                WaterLevelSWMM = Me%OpenChannelLinks(n)%WaterLevel
-
-                Me%OpenChannelLinks(n)%Flow = 0.0
-                
-                !Set default flow to 0
-                Flow = 0.0
-                
-                WaterColumn = Me%myWaterColumn (i, j)
-                WaterLevel = WaterColumn + Topography
-                
-                if (WaterLevelSWMM < Topography) then      
-                    !SWMM above topography
-                    if (WaterColumn > Me%MinimumWaterColumn) then
-
-                        dh = WaterColumn
-                        !Weir equation with 0.4 as coeficient.
-                        Flow_1 = 0.4 * Me%OpenChannelLinks(n)%FluxWidth  * sqrt(2.0 * Gravity) * dh ** 1.5
-                        
-                        Flow_2 = (dh - Me%MinimumWaterColumn) * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                        
-                        Flow_3 = (WaterLevel - WaterLevelSWMM) / 2.0 * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                        
-                        !Maximum empty cell or in between levels (if river level is close to topography)
-                        Flow = min(Flow_1, Flow_2, Flow_3)
-                        
-                        !Check if WaterLevelSWMM is close to topography (using 5mm for no specific reason).
-                        !If it is then the equation may soon change and a spike
-                        !in flow will appear. So a transition factor between the 2 formulations is computed to smooth it.
-                        !The use of mywatercolumn is because the transition can only occur until the maxwater level available
-                        !Which is the myWaterColumn.
-                        if (Topography - WaterLevelSWMM < Me%Transition_depth_1D2D) then
-                            !m2 = m * (m + m)/2
-                            !If WaterLevelSWMM is below topography the flux area must be mohid water column, or flow will be wrong
-                            area  = Me%OpenChannelLinks(n)%FluxWidth * dh
-                            
-                            !WaterlevelSWMM is below topography so height must be mohid water column
-                            
-                            !m3/s = m2 * (m2/3) * [] / s/(m1/3)
-                            Flow_4 = area * dh ** (2./3.) *                        &
-                                sqrt(dh/Me%OpenChannelLinks(n)%CellWidth) / Me%OverlandCoefficient(i, j)
-                            
-                            Flow_5 = (WaterColumn - Me%MinimumWaterColumn) * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                            ![] - this factor varies from 1 when the distance is > 0.005 (assumes formulation for flow
-                            !from 2D to SWMM) and 0 when the distance is -0.005 (above topography)
-                            ! equation : ax+b = y with x = distance to topography and b = 0.5. a was computed in constructor
-                            tF = (Topography - WaterLevelSWMM) * Me%Transition_acoef_1D_2D + 0.5
-                            
-                            Flow_formulation_2 = min(Flow_4,Flow_5)
-                            
-                            Flow = tF * Flow + (1-tF) * Flow_formulation_2
-                        endif
-                    endif
-                else
-                        
-                    if (WaterLevel - WaterLevelSWMM > Me%MinimumWaterColumn) then
-                        !Water flows from 2D to channel/pond
-                        !m = m + m
-                        dh =  WaterLevel - WaterLevelSWMM
-                        !m2 = m * (m + m)/2
-                        !area  = Me%OpenChannelLinks(n)%FluxWidth * (((WaterLevelSWMM - Me%ExtVar%Topography(i, j)) +  &
-                        !        (Me%myWaterLevel (i, j) - Me%ExtVar%Topography(i, j))) / 2.0)
-                        area  = Me%OpenChannelLinks(n)%FluxWidth * dh
-                        !For hydraulic radius calculations it is assumed that when the base width
-                        !is much larger than the height, then the hydraulic radius is equal to the height
-                        !m3/s = m2 * (m2/3) * [] / s/(m1/3). dh represents the hydraulic radious
-                        Flow_1 = area * dh ** (2./3.) *                        &
-                            sqrt(dh/Me%OpenChannelLinks(n)%CellWidth) / Me%OverlandCoefficient(i, j)
-                            
-                        Flow_2 = (dh / 2.0) * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                            
-                        Flow = min (Flow_1, Flow_2)
-                        !Check if WaterLevelSWMM is close to topography (using 5mm for no specific reason).
-                        !If it is then the equation may soon change and a spike
-                        !in flow will appear. So a transition factor between the 2 formulations is computed to smooth it.
-                        !The use of mywatercolumn is because the transition can only occur until the maxwater level available
-                        !Which is the myWaterColumn. This is only made when MOHID WaterLevel is higher than SWMM as the
-                        ! weir equation works only when the water level of SWMM is very close or below topography.
-                        if ((WaterLevelSWMM - Topography) < Me%Transition_depth_1D2D) then
-                            
-                            dh = WaterColumn
-                            !Weir equation with 0.4 as coeficient.
-                            Flow_3 = 0.4 * Me%OpenChannelLinks(n)%FluxWidth  * sqrt(2.0 * Gravity) * dh ** 1.5
-                        
-                            Flow_4 = (WaterColumn - Me%MinimumWaterColumn) * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                        
-                            Flow_5 = (WaterLevel - WaterLevelSWMM) / 2.0 * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                            ![] - this factor varies from 1 when the distance is > 0.005 (assumes formulation for flow
-                            !from 2D to SWMM) and 0 when the distance is -0.005 (above topography)
-                            tF = (WaterLevelSWMM - Topography) * Me%Transition_acoef_1D_2D + 0.5
-                            
-                            Flow_formulation_2 = min(Flow_3,Flow_4,Flow_5)
-                            
-                            Flow = tF * Flow + (1-tF) * Flow_formulation_2
-                        endif
-                    elseif  (WaterLevelSWMM - WaterLevel > Me%MinimumWaterColumn) then
-                        ! Water flows from channel/pond to 2D
-                        dh =  WaterLevelSWMM - WaterLevel
-                        area  = Me%OpenChannelLinks(n)%FluxWidth * dh
-                        Flow_1 = area * dh ** (2./3.) *                        &
-                            sqrt(dh/Me%OpenChannelLinks(n)%CellWidth) / Me%OverlandCoefficient(i, j)
-                            
-                        Flow_2 = (dh / 2.0) * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
-                            
-                        Flow = -1 * min (Flow_1, Flow_2)
-                        !m3/s
-                        !Flow is negative because SWMM level is higher than MOHID
-                        
-                    end if
-                endif
-                
-                if (Flow /= 0.0) then
-                    Me%OpenChannelLinks(n)%Flow = Flow
-
-                    if(Me%OpenChannelLinks(n)%TypeOf == PondLink_)then
-                        Me%Ponds(xn)%Flow = Me%Ponds(xn)%Flow + Flow
-                    else
-                        Me%CrossSections(xn)%Flow = Me%CrossSections(xn)%Flow + Flow
-                    endif
-                
-
-                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - (Flow * Me%ExtVar%DT)
-                
-                    if(Me%myWaterVolume (i, j) < 0.0)then
-                        Me%MassError(i, j) = Me%MassError(i, j) + Me%myWaterVolume(i,j)
-                        Me%myWaterVolume (i, j) = 0.0
-                    endif
-
-                    Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-                    Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Topography
-                    
-                    if (Me%myWaterColumn(i, j) > AlmostZero) then
-                        Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
-                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
-                            Me%OpenPoints(i,j) = 1 !For use in output routines
-                        endif
-                    endif
-                endif
-            endif
-        enddo
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow_VG")
-    
-#endif _SEWERGEMSENGINECOUPLER_
-    
-    end subroutine OpenChannelFlow_VG
-    !--------------------------------------------------------------------------- 
     
     subroutine ComputeStormWaterModel_original
 
@@ -14962,7 +14825,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !--------------------------------------------------------------------------
         integer                     :: STAT_CALL, n, i, j
         real                        :: FlowVolume, Sum
-        !Begin---------------------------------------------------------------------        
+        !Begin---------------------------------------------------------------------
+        
+        if 
         Sum = 0.0
         
         do n = 1, Me%NumberOfManholes
@@ -14977,7 +14842,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 i = Me%Manholes(n)%I
                 j = Me%Manholes(n)%J
                 
-                Sum = Sum + FlowVolume
+                Me%TotalStormWaterVolume = Me%TotalStormWaterVolume + Sum
+                Me%TotalManholesVolume   = Me%TotalManholesVolume   + Sum
             
                 Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + FlowVolume
 
@@ -14986,11 +14852,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j) = 0.0
                 endif
 
-                if (Me%GridIsConstant) then
-                    Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea
-                else
-                    Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-                endif
+                Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea !Assuming this is always constant in sewergems
                 
                 if (Me%myWaterColumn(i, j) > AlmostZero) then
                     Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
@@ -15000,13 +14862,24 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
+                
+                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
+                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
+                endif
+                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
+                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
+                endif
+                
             endif
             STAT_CALL = SewerGEMSEngine_setNodeSurfaceDepth(Me%Manholes(n)%SWMM_ID, Me%myWaterColumn (i, j))
             if (STAT_CALL /= SUCCESS_) stop 'FlowFromManholes - ModuleRunOff - ERR20'
         enddo
-        
-        Me%TotalStormWaterVolume = Me%TotalStormWaterVolume + Sum
-        Me%TotalManholesVolume   = Me%TotalManholesVolume   + Sum
         
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine FlowFromManholes
@@ -15064,14 +14937,30 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j) = 0.0
                 endif
 
-                Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-                Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
+                Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea !Assuming this is always constant in sewergems
+                
                 if (Me%myWaterColumn(i, j) > AlmostZero) then
                     Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
                     if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                         Me%OpenPoints(i,j) = 1 !For use in output routines
                     endif
                 endif
+                
+                Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
+                
+                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
+                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
+                endif
+                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
+                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
+                endif
+                
             endif
             STAT_CALL = SewerGEMSEngine_setNodeSurfaceDepth(Me%Inlets(n)%SWMM_ID, Me%myWaterColumn (i, j))
             if (STAT_CALL /= SUCCESS_) stop 'FlowFromToInlets - ModuleRunOff - ERR20'
@@ -15128,13 +15017,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j) = 0.0
                 endif
 
-                Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-                Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
+                Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%GridCellArea
                 if (Me%myWaterColumn(i, j) > AlmostZero) then
                     Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
                     if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
                         Me%OpenPoints(i,j) = 1 !For use in output routines
                     endif
+                endif
+                
+                Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
+                
+                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
+                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
+                endif
+                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
+                endif
+                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
+                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
                 endif
             endif
             
@@ -15428,7 +15331,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j)     = Me%myWaterVolume (i, j) - (Flow *  Me%ExtVar%DT)
                     
                     Me%myWaterColumn  (i, j)    = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-
+                    
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1 !For use in output routines
+                        endif
+                    endif
+                    
                     Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
 
                 
@@ -15562,7 +15472,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
             Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)                
             
-                    
+            if (Me%myWaterColumn(i, j) > AlmostZero) then
+                Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                    Me%OpenPoints(i,j) = 1 !For use in output routines
+                endif
+            endif     
             MarginGridPoint => MarginGridPoint%Next
                 
         enddo         
@@ -15678,7 +15593,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)                        
                        
-                           
+                if (Me%myWaterColumn(i, j) > AlmostZero) then
+                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                        Me%OpenPoints(i,j) = 1 !For use in output routines
+                    endif
+                endif           
             endif
 
         enddo
@@ -15819,7 +15739,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - (Flow * Me%ExtVar%DT)
                 
                 Me%myWaterColumn (i, j) = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
-
+                
+                if (Me%myWaterColumn(i, j) > AlmostZero) then
+                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                        Me%OpenPoints(i,j) = 1 !For use in output routines
+                    endif
+                endif  
+                
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
                            
             endif
@@ -18543,21 +18470,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
             
-            !!$OMP PARALLEL PRIVATE(I,J)
-            !!$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            !        
-            !    if (Me%ExtVar%BasinPoints(i, j) == 1) then
-            !        !m3 = m3  + m3
-            !        Sum = Sum + Me%MyWaterVolume(i, j)
-            !
-            !    endif
-            !
-            !enddo
-            !enddo
-            !!$OMP END DO NOWAIT
-            !!$OMP END PARALLEL
 
             Me%TotalStoredVolume        = Sum
             Me%VolumeStoredInSurface    = Sum
