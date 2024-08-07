@@ -795,6 +795,7 @@ Module ModuleRunOff
         
         logical                                     :: StormWaterModel          = .false. !If connected to SWMM
         real                                        :: StormWaterModelDT        = -null_real
+        integer, dimension(:,:), allocatable        :: ModifyGeometryStormWater
 
         type(T_SewerGEMSInlet),           dimension(:), allocatable :: Inlets
         type(T_SewerGEMSManhole),         dimension(:), allocatable :: Manholes
@@ -1070,7 +1071,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             if (Me%HydrodynamicApproximation /= FVFluxVectorSplitting_) then
                 call ComputeWCA_And_Bottom
 
-                call ModifyGeometryAndMapping
+                call ModifyGeometryAndMapping(UpdateMapping = .true.)
+                
             endif
             !Checks if River Network is consistent with the one previously constructed
             if (DrainageNetworkID /= 0) then
@@ -5364,8 +5366,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
                
-            call SetMatrixValue(Me%myWaterColumn_R4, Me%Size, null_real_4)       
-            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, null_real_4)
+            call SetMatrixValue(Me%myWaterColumn_R4, Me%Size, ZeroValue)       
+            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, ZeroValue)
             
             allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5411,15 +5413,17 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
 
-        call SetMatrixValue(Me%myWaterLevel, Me%Size, null_real)
+
 #ifdef _SEWERGEMSENGINECOUPLER_
+        call SetMatrixValue(Me%myWaterLevel, Me%Size, 0.0)
         call SetMatrixValue(Me%myWaterColumn, Me%Size, 0.0)
 #else
+        call SetMatrixValue(Me%myWaterLevel, Me%Size, null_real)
         call SetMatrixValue(Me%myWaterColumn, Me%Size, null_real)
 #endif _SEWERGEMSENGINECOUPLER_
         call SetMatrixValue(Me%myWaterVolume, Me%Size, 0.0)        !For OpenMI
-        call SetMatrixValue(Me%myWaterColumnOld, Me%Size, null_real)
-        call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, null_real)
+        call SetMatrixValue(Me%myWaterColumnOld, Me%Size, 0.0)
+        call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, 0.0)
         call SetMatrixValue(Me%MassError, Me%Size, 0.0)
 
         allocate(Me%iFlowX               (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5454,7 +5458,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%AreaV, Me%Size, AlmostZero)
         call SetMatrixValue(Me%ComputeFaceU, Me%Size, 0)
         call SetMatrixValue(Me%ComputeFaceV, Me%Size, 0)
-        call SetMatrixValue(Me%OpenPoints, Me%Size, 0)
+        call SetMatrixValue(Me%OpenPoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints_Left, Me%Size, 0)
         call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
@@ -5473,10 +5477,10 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%Output%MaxWaterColumn_R4, Me%Size, Aux)
  
             allocate (Me%Output%VelocityAtMaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn_R4, Me%Size, null_real_4)
+            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn_R4, Me%Size, ZeroValue)
 
             allocate (Me%Output%MaxFloodRisk_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            call SetMatrixValue(Me%Output%MaxFloodRisk_R4, Me%Size, null_real_4)
+            call SetMatrixValue(Me%Output%MaxFloodRisk_R4, Me%Size, ZeroValue)
         else           
             allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
@@ -5489,7 +5493,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
 
             allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-            call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, null_real)
+            call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, 0.0)
         endif
         
         allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
@@ -5534,6 +5538,12 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate(Me%FVS%element_flux(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB, 3))
             Me%FVS%element_flux = 0.0
         endif
+        
+        if (Me%StormWaterModel) then
+            allocate(Me%ModifyGeometryStormWater(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            call SetMatrixValueAllocatable(Me%ModifyGeometryStormWater, Me%Size, 0)
+        endif
+        
         
 
     end subroutine AllocateVariables
@@ -8341,6 +8351,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 endif
             
                 if (Me%StormWaterModel) then
+                    
+                    call SetMatrixValueAllocatable(Me%ModifyGeometryStormWater, Me%Size, 0)
                     call ComputeStormWaterModel
                 endif
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
@@ -11277,10 +11289,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 !--------------------------------------------------------------------------------------------------------
     
     
-    subroutine ModifyGeometryAndMapping
+    subroutine ModifyGeometryAndMapping(UpdateMapping)
     
         !Arguments-------------------------------------------------------------
-        
+        logical, optional, intent(IN)               :: UpdateMapping
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, di, dj, c, j_East, i_North
         integer                                     :: ILB, IUB, JLB, JUB
@@ -11477,52 +11489,36 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO
             endif
-            
-    
         endif
-            
         !$OMP END PARALLEL
+        
+        if (present(UpdateMapping)) then
+            if (UpdateMapping) then
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1
+                        endif
+                    else
+                        Me%OpenPoints(i,j) = 0
+                        Me%ActivePoints(i,j) = 0
+                    endif
+                enddo
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+            endif
+        endif
+        
     
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
     
     
     end subroutine ModifyGeometryAndMapping
-
-    !--------------------------------------------------------------------------
-    
-    integer function ComputeFace(i, j, i_North, j_East, Area, directionU)
-    
-        !Arguments-------------------------------------------------------------
-        
-        !Local-----------------------------------------------------------------
-        integer, intent(IN)                          :: i, j, j_East, i_North
-        logical, intent(IN)                          :: directionU
-        real, dimension(:,:), pointer, intent(INOUT) :: Area
-        integer, intent(INOUT)                       :: ComputeFace
-        real                                         :: WCA, Aux
-        !Begin-----------------------------------------------------------------
-        
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFace")
-        
-        Aux = AlmostZero_Double * Me%DX !In sewergems this is allways constant
-        if (directionU) then
-            WCA = max(max(Me%myWaterLevel(i_North, j_East), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
-        else
-            WCA = max(max(Me%myWaterLevel(i_North, j_East), Me%myWaterLevel(i, j)) - Me%Bottom_Y(i,j), AlmostZero_Double)
-        endif
-        
-        !Area  = Water Column * Side lenght of cell
-        Area(i, j) = WCA * Me%DY                
-        if (WCA > Me%MinimumWaterColumn) then
-            ComputeFace = 1
-        else
-            ComputeFace = 0
-        endif
-    
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFace")
-    
-    
-    end function ComputeFace
 
     !--------------------------------------------------------------------------
     
@@ -11937,10 +11933,100 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
     
+    !subroutine ComputeFaceVelocityModulus
+    !
+    !!Arguments-------------------------------------------------------------
+    !
+    !    !Local-----------------------------------------------------------------
+    !    integer                                             :: ILB, IUB, JLB, JUB    
+    !    integer                                             :: i, j, n
+    !    real                                                :: U, V, Uaverage, Vaverage
+    !    integer                                             :: CHUNK
+    !    
+    !    !Bounds
+    !    ILB = Me%WorkSize%ILB
+    !    IUB = Me%WorkSize%IUB
+    !
+    !    JLB = Me%WorkSize%JLB
+    !    JUB = Me%WorkSize%JUB
+    !    
+    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
+    !
+    !    
+    !    !$OMP PARALLEL PRIVATE(I,J,n, U, Vaverage, V, Uaverage)
+    !    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+    !    do j = JLB, JUB
+    !    do i = ILB, IUB
+    !        if (Me%ComputeFaceU(i, j) == Compute) then  
+    !            Vaverage = 0.0
+    !            n = 0
+    !            if (Me%ComputeFaceV(i, j) == Compute) then
+    !                Vaverage = Me%FlowYOld(i,  j  )/Me%AreaV(i,  j  )
+    !                n = n + 1
+    !            endif
+    !            if (Me%ComputeFaceV(i+1, j) == Compute) then
+    !                Vaverage = Vaverage + Me%FlowYOld(i+1,j  ) / Me%AreaV(i+1,j  )
+    !                n = n + 1
+    !            endif
+    !            if (Me%ComputeFaceV(i+1, j-1) == Compute) then
+    !                Vaverage = Vaverage + Me%FlowYOld(i+1,j-1) / Me%AreaV(i+1,j-1)
+    !                n = n + 1
+    !            endif  
+    !            if (Me%ComputeFaceV(i, j-1) == Compute) then
+    !                Vaverage = Vaverage + Me%FlowYOld(i,  j-1)/Me%AreaV(i,  j-1)
+    !                n = n + 1
+    !            endif
+    !            if (n > 0) Vaverage = Vaverage / n
+    !            
+    !            U = Me%FlowXOld(i,j)/Me%AreaU(i,j)
+    !            
+    !            Me%VelModFaceU(i, j) = abs(cmplx(U, Vaverage))
+    !        endif
+    !        
+    !        if (Me%ComputeFaceV(i, j) == Compute) then
+    !            Uaverage = 0.0
+    !            n = 0
+    !            if (Me%ComputeFaceU(i, j) == Compute) then
+    !                Uaverage = Me%FlowXOld(i   ,j)/Me%AreaU(i  ,j   )
+    !                n = n + 1
+    !            endif
+    !            if (Me%ComputeFaceU(i-1, j) == Compute) then
+    !                Uaverage = Uaverage + Me%FlowXOld(i-1,j )/Me%AreaU(i-1,j   )
+    !                n = n + 1
+    !            endif
+    !            if (Me%ComputeFaceU(i-1, j+1) == Compute) then
+    !                Uaverage = Uaverage + Me%FlowXOld(i-1,j+1)/Me%AreaU(i-1,j+1)
+    !                n = n + 1
+    !            endif  
+    !            if (Me%ComputeFaceU(i, j+1) == Compute) then
+    !                Uaverage = Uaverage + Me%FlowXOld(i  ,j+1)/Me%AreaU(i  ,j+1)
+    !                n = n + 1
+    !            endif
+    !            if (n > 0) Uaverage = Uaverage / n
+    !            
+    !            V = Me%FlowYOld(i,j)/Me%AreaV(i,j)
+    !            
+    !            Me%VelModFaceV(i, j) = abs(cmplx(Uaverage, V))
+    !        endif
+    !
+    !    enddo
+    !    enddo
+    !    !$OMP END DO
+    !    
+    !    !$OMP END PARALLEL
+    !
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
+    !
+    !end subroutine ComputeFaceVelocityModulus
+    
+    !-------------------------------------------------------------------------
+    
     subroutine ComputeFaceVelocityModulus
     
     !Arguments-------------------------------------------------------------
-
+    
         !Local-----------------------------------------------------------------
         integer                                             :: ILB, IUB, JLB, JUB    
         integer                                             :: i, j
@@ -11950,14 +12036,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Bounds
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
-
+    
         JLB = Me%WorkSize%JLB
         JUB = Me%WorkSize%JUB
         
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-
+    
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
-
+    
         
         !$OMP PARALLEL PRIVATE(I,J, U, Vaverage, V, Uaverage)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
@@ -11989,7 +12075,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%VelModFaceV(i, j) = abs(cmplx(Uaverage, V))
                 
             endif
-
+    
         enddo
         enddo
         !$OMP END DO
@@ -11997,10 +12083,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END PARALLEL
     
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
-
-    end subroutine ComputeFaceVelocityModulus
     
-    !-------------------------------------------------------------------------
+    end subroutine ComputeFaceVelocityModulus
+    !!-------------------------------------------------------------------------
     
     subroutine DynamicWaveXX (LocalDT)
     
@@ -13803,8 +13888,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
    
         !--------------------------------------------------------------------------
         real(c_double)              :: dt, elapsedTime
-        integer                     :: STAT_CALL, n, xn
-
+        integer                     :: STAT_CALL, n, xn, i, j, CHUNK, di, dj, c
+        integer, dimension(2,2)     :: strideJ
+        real                        :: WCA, Aux_X, Aux_Y
         !--------------------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeStormWaterModel")
 
@@ -13892,6 +13978,49 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         enddo
         
+        !ModifyGeometryandMapping
+        strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
+        Aux_Y = AlmostZero_Double * Me%DY
+        Aux_X = AlmostZero_Double * Me%DX
+        
+        !$OMP PARALLEL PRIVATE(i,j, dj, di, WCA, c)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ModifyGeometryStormWater(i,j)) then
+                do c = 1, size(strideJ,1)     
+                    dj = strideJ(c, 1)
+                    di = strideJ(c, 2)
+                    !Compute fluxes of east and north cell faces
+                    if (dj == 1) then
+                        WCA = max(max(Me%myWaterLevel(i, j-1), Me%myWaterLevel(i, j)) - Me%Bottom_X(i,j), AlmostZero_Double)
+                                
+                        !Area  = Water Column * Side lenght of cell
+                        Me%AreaU(i, j) = WCA * Me%DY
+                
+                        if (WCA > Me%MinimumWaterColumn) then
+                            Me%ComputeFaceU(i, j) = 1
+                        else
+                            Me%ComputeFaceU(i, j) = 0
+                        endif
+                    else
+                        WCA = max(max(Me%myWaterLevel(i-1, j), Me%myWaterLevel(i, j))  - Me%Bottom_Y(i,j), AlmostZero_Double)
+                
+                        !Area  = Water Column * Side lenght of cell
+                        Me%AreaV(i, j) = WCA * Me%DX
+                
+                        if (WCA > Me%MinimumWaterColumn) then
+                            Me%ComputeFaceV(i, j) = 1
+                        else
+                            Me%ComputeFaceV(i, j) = 0
+                        endif
+                    endif
+                enddo
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
         !Get SewerGEMS SWMM current total volume
         STAT_CALL = SewerGEMSEngine_getTotalVolume(Me%Total1DVolume)
         if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR180'
@@ -14150,18 +14279,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
             
             if (ActiveCell) then
-                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
-                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
-                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
-                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
-                endif
-                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
-                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
-                endif
+                Me%ModifyGeometryStormWater(i  ,j  ) = 1
+                Me%ModifyGeometryStormWater(i  ,j-1) = Me%ExtVar%BasinPoints(i  , j-1)
+                Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
+                Me%ModifyGeometryStormWater(i-1,j  ) = Me%ExtVar%BasinPoints(i-1, j  )
+                Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
             endif
         enddo
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow")
@@ -14827,7 +14949,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                        :: FlowVolume, Sum
         !Begin---------------------------------------------------------------------
         
-        if 
         Sum = 0.0
         
         do n = 1, Me%NumberOfManholes
@@ -14863,18 +14984,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
                 
-                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
-                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
-                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
-                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
-                endif
-                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
-                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
-                endif
+                Me%ModifyGeometryStormWater(i  ,j  ) = 1
+                Me%ModifyGeometryStormWater(i  ,j-1) = Me%ExtVar%BasinPoints(i  , j-1)
+                Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
+                Me%ModifyGeometryStormWater(i-1,j  ) = Me%ExtVar%BasinPoints(i-1, j  )
+                Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
                 
             endif
             STAT_CALL = SewerGEMSEngine_setNodeSurfaceDepth(Me%Manholes(n)%SWMM_ID, Me%myWaterColumn (i, j))
@@ -14948,18 +15062,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
                 
-                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
-                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
-                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
-                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
-                endif
-                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
-                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
-                endif
+                Me%ModifyGeometryStormWater(i  ,j  ) = 1
+                Me%ModifyGeometryStormWater(i  ,j-1) = Me%ExtVar%BasinPoints(i  , j-1)
+                Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
+                Me%ModifyGeometryStormWater(i-1,j  ) = Me%ExtVar%BasinPoints(i-1, j  )
+                Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
                 
             endif
             STAT_CALL = SewerGEMSEngine_setNodeSurfaceDepth(Me%Inlets(n)%SWMM_ID, Me%myWaterColumn (i, j))
@@ -15026,19 +15133,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
                 
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
-                
-                if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
-                    Me%ComputeFaceU(i  ,j  ) = ComputeFace(i  , j  , i  , j-1, Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i, j+1) == 1) then
-                    Me%ComputeFaceU(i  ,j+1) = ComputeFace(i  , j+1, i  , j  , Me%AreaU, .true.)
-                endif
-                if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
-                    Me%ComputeFaceV(i  ,j  ) = ComputeFace(i  , j  , i-1, j  , Me%AreaV, .false.)
-                endif
-                if (Me%ExtVar%BasinPoints(i+1, j) == 1) then
-                    Me%ComputeFaceV(i+1,j  ) = ComputeFace(i+1, j  , i  , j  , Me%AreaV, .false.)
-                endif
+                Me%ModifyGeometryStormWater(i  ,j  ) = 1
+                Me%ModifyGeometryStormWater(i  ,j-1) = Me%ExtVar%BasinPoints(i  , j-1)
+                Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
+                Me%ModifyGeometryStormWater(i-1,j  ) = Me%ExtVar%BasinPoints(i-1, j  )
+                Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
             endif
             
             if(Me%Headwalls(n)%OutputResults)then
