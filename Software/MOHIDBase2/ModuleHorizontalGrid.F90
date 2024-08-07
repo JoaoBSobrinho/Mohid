@@ -6118,13 +6118,13 @@ cd1:    if (Me%Grid_Angle /= 0. .or. Me%CoordType == CIRCULAR_ .or. Me%CornersXY
             !$OMP END PARALLEL
 else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
 
-            !$OMP PARALLEL PRIVATE(I,J)
             if (Me%ConstantSpacingX .and. Me%ConstantSpacingY) Then
                 Me%DXX(:,:) = Me%DX
                 Me%DYY(:,:) = Me%DY
             else
                 
             !DXX
+                !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = JLB, JUB
                 do i = ILB, IUB + 1

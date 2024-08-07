@@ -14952,16 +14952,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         Sum = 0.0
         
         do n = 1, Me%NumberOfManholes
-            
+            i = Me%Manholes(n)%I
+            j = Me%Manholes(n)%J
             STAT_CALL = SewerGEMSEngine_getNodeOverflow(Me%Manholes(n)%SWMM_ID, Me%Manholes(n)%Outflow)
             if (STAT_CALL /= SUCCESS_) stop 'FlowFromManholes - ModuleRunOff - ERR10'
             
             if (Me%Manholes(n)%Outflow /= 0.0) then
                 
                 FlowVolume = Me%Manholes(n)%Outflow * Me%ExtVar%DT
-                
-                i = Me%Manholes(n)%I
-                j = Me%Manholes(n)%J
                 
                 Me%TotalStormWaterVolume = Me%TotalStormWaterVolume + Sum
                 Me%TotalManholesVolume   = Me%TotalManholesVolume   + Sum
