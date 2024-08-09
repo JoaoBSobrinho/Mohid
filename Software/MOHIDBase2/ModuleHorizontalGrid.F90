@@ -6116,7 +6116,7 @@ cd1:    if (Me%Grid_Angle /= 0. .or. Me%CoordType == CIRCULAR_ .or. Me%CornersXY
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
-else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
+        else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
 
             if (Me%ConstantSpacingX .and. Me%ConstantSpacingY) Then
                 Me%DXX(:,:) = Me%DX
@@ -6132,7 +6132,7 @@ else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
                                                   Me%XX_IE(i  , j  )
                 enddo
                 enddo
-                !$OMP END DO NOWAIT
+                !$OMP END DO
             !DYY
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = JLB, JUB + 1
@@ -6142,8 +6142,10 @@ else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
                 enddo
                 enddo
                 !$OMP END DO
+                !$OMP END PARALLEL
             endif
             !DUX, DVY
+            !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = JLB, JUB
             do i = ILB, IUB
@@ -6176,7 +6178,7 @@ else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
                                            Me%DUX(i, j+1)) / 2.
         enddo
         enddo
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !DUY
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB + 1
@@ -6186,7 +6188,7 @@ else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
 
         enddo
         enddo
-        !$OMP END DO NOWAIT
+        !$OMP END DO
         !DZY
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = JLB, JUB
