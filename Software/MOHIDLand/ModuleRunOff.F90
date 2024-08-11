@@ -8101,16 +8101,18 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_
+        integer                                     :: STAT_, ready_, i, j
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
         integer                                     :: Niter, iter
         integer                                     :: n_restart
         logical                                     :: firstRestart
+        real, dimension(6), target                  :: AuxTime
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
-
+999 format(a25,1x,2i,1f30.18)
+998 format(a25,1x,2f30.18)
         call Ready(RunOffID, ready_)
 
         if (ready_ .EQ. IDLE_ERR_) then
@@ -8165,6 +8167,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (associated(Me%InfiltrationRate)) then
                     call ModifyInfiltration
                 endif
+                call ExtractDate   (Me%ExtVar%Now, AuxTime(1), AuxTime(2), AuxTime(3),          &
+                                        AuxTime(4), AuxTime(5), AuxTime(6))
+                write(99,998) "Tempo Entrada Modify ", AuxTime(5), AuxTime(6)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterColumn(i, j) > 0.0) then
+                        write(99,999) "Entrada Modify = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
+                    endif
+                enddo
+                enddo
                 
                 !Updates Geometry
                 call ModifyGeometryAndMapping
@@ -8282,7 +8294,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
-                        
+                            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                if (Me%myWaterColumn(i, j) > 0.0) then
+                                    write(99,999) "Saida UpdateWaterLevels = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
+                                endif
+                            enddo
+                            enddo
                             call CheckStability(Restart)
                     
                             if (Restart) then
@@ -8321,6 +8339,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     if (Me%Discharges) then
                         call ModifyWaterDischarges  (Me%CV%CurrentDT, UpdateWaterLevels = .true.)
                     endif
+                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        if (Me%myWaterColumn(i, j) > 0.0) then
+                            write(99,999) "Saida UpdateWaterLevels = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
+                        endif
+                    enddo
+                    enddo
                 endif
                 
                 !Gets ExternalVars
@@ -8328,10 +8353,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                 if (Me%Use1D2DInteractionMapping) then
                     !it will use mapping for any model (DN or SWMM or other)
+                    Me%Compute = .true.
                     call OverLandChannelInteraction_6_NewMapping            
                 else            
                     if (Me%ObjDrainageNetwork /= 0) then
                 
+                        Me%Compute = .true.
                         if (Me%SimpleChannelInteraction) then
                             !There were many methods to do this calculation that were implemented and abandoned
                             !Many of the abandoned methods were commented:
@@ -8358,14 +8385,21 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 endif
             
                 if (Me%StormWaterModel) then
-                    call SetMatrixValueAllocatable(Me%ModifyGeometryStormWater, Me%Size, 0)
                     call ComputeStormWaterModel
                 endif
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterColumn(i, j) > 0.0) then
+                        write(99,999) "Saida ComputeStormWaterModel = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
+                    endif
+                enddo
+                enddo
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
                 !because of resistance. However in both methods the area used is not consistent (regular faces flow
                 !already used all the cell vertical areas and the route D4 will overlapp areas - review this in the future
                 if (Me%RouteDFourPoints) then
+                    Me%Compute = .true.
                     if (Me%RouteDFourMethod == Manning_) then
                         call RouteDFourPoints
                     elseif (Me%RouteDFourMethod == Celerity_) then
@@ -11076,6 +11110,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                     Me%ActivePoints(i,j)   = 1
                     if (present(UpdateWaterLevels)) then
+                        if (AuxFlowIJ /= 0.0) Me%Compute = .true. !turn flag on so compute nexdt gets called
                         !Updates Water Column
                         Me%myWaterColumn  (i, j)    = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
                         
@@ -14301,6 +14336,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%ModifyGeometryStormWater(i  ,j  ) = 1
                 Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
                 Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
+            else
+                Me%ModifyGeometryStormWater(i  ,j  ) = 0
+                Me%ModifyGeometryStormWater(i  ,j+1) = 0
+                Me%ModifyGeometryStormWater(i+1,j  ) = 0
             endif
         enddo
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow")
@@ -15000,7 +15039,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%ModifyGeometryStormWater(i  ,j  ) = 1
                 Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
                 Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
-                
+            else
+                Me%ModifyGeometryStormWater(i  ,j  ) = 0
+                Me%ModifyGeometryStormWater(i  ,j+1) = 0
+                Me%ModifyGeometryStormWater(i+1,j  ) = 0
             endif
             STAT_CALL = SewerGEMSEngine_setNodeSurfaceDepth(Me%Manholes(n)%SWMM_ID, Me%myWaterColumn (i, j))
             if (STAT_CALL /= SUCCESS_) stop 'FlowFromManholes - ModuleRunOff - ERR20'
@@ -15070,16 +15112,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%OpenPoints(i,j) = 1 !For use in output routines
                     endif
                 endif
-                !if (i==557 .and. j==970) then
-                !    write(*,*)"flowinlets = ", Me%myWaterColumn(i, j), Overflow
-                !endif
                 
                 Me%myWaterLevel  (i, j) = Me%myWaterColumn (i, j) + Me%ExtVar%Topography  (i, j)
                 
                 Me%ModifyGeometryStormWater(i  ,j  ) = 1
                 Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
                 Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
-                
+            else
+                Me%ModifyGeometryStormWater(i  ,j  ) = 0
+                Me%ModifyGeometryStormWater(i  ,j+1) = 0
+                Me%ModifyGeometryStormWater(i+1,j  ) = 0
             endif
             STAT_CALL = SewerGEMSEngine_setNodeSurfaceDepth(Me%Inlets(n)%SWMM_ID, Me%myWaterColumn (i, j))
             if (STAT_CALL /= SUCCESS_) stop 'FlowFromToInlets - ModuleRunOff - ERR20'
@@ -15148,6 +15190,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%ModifyGeometryStormWater(i  ,j  ) = 1
                 Me%ModifyGeometryStormWater(i  ,j+1) = Me%ExtVar%BasinPoints(i  , j+1)
                 Me%ModifyGeometryStormWater(i+1,j  ) = Me%ExtVar%BasinPoints(i+1, j  )
+            else
+                Me%ModifyGeometryStormWater(i  ,j  ) = 0
+                Me%ModifyGeometryStormWater(i  ,j+1) = 0
+                Me%ModifyGeometryStormWater(i+1,j  ) = 0
             endif
             
             if(Me%Headwalls(n)%OutputResults)then
@@ -17095,231 +17141,24 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
     !--------------------------------------------------------------------------
     
-    subroutine ComputeNextDT (Niter)
-    
-        !Arguments-------------------------------------------------------------
-        integer                                     :: Niter        
-        
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j, STAT_CALL, CHUNK, c, nx, ny
-        integer                                     :: ILB, IUB, JLB, JUB, j_East, i_North
-        real                                        :: nextDTCourant, aux
-        real                                        :: nextDTVariation, MaxDT
-        logical                                     :: VariableDT
-        real                                        :: CurrentDT, Distance_Courant, totalVel
-        real                                        :: velface, celerity, waterColumn, waterColumn_NE
-        integer, dimension(2,2)                     :: strideJ
-        !----------------------------------------------------------------------
-    
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
-    
-    
-        call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
-    
-        call GetMaxComputeTimeStep(Me%ObjTime, MaxDT, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR020'
-    
-        nextDTCourant   = -null_real
-        nextDTVariation = -null_real
-        totalVel = 0.0
-        
-        strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
-        
-        if (VariableDT) then
-    
-            CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    
-            ILB = Me%WorkSize%ILB
-            IUB = Me%WorkSize%IUB
-            JLB = Me%WorkSize%JLB
-            JUB = Me%WorkSize%JUB
-            
-            if (Me%CV%LimitDTCourant) then
-                if (Me%GridIsConstant) then
-                    Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-                    do j = JLB+1, JUB
-                    do i = ILB+1, IUB
-                        if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                            do c = 1, size(strideJ,1)
-                                !Compute fluxes of east and north cell faces
-                                j_East = j - strideJ(c, 1)
-                                i_North = i - strideJ(c, 2)
-                            
-                                if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-                                    
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
-                                        waterColumn = Me%myWaterColumn (i,j)
-                                        waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-                                        
-                                        nx = strideJ(c, 1)
-                                        ny = strideJ(c, 2)
-                                        aux = (waterColumn + waterColumn_NE) / 2
-                                        
-                                        if (nx == 1) then
-                                            velFace = Me%iFlowX(i, j) / (aux * Me%DY)
-                                        else
-                                            velFace = Me%iFlowY(i, j) / (aux * Me%DX)
-                                        endif
-                                        !VelFace + celerity
-                                        celerity = sqrt(Gravity * aux)
-                                        aux = max(abs(velFace + celerity),abs(velFace - celerity))
-                                        totalVel = max(totalVel, aux)
-                                        if (totalVel > 10.0) then
-                                            write(*,*) "velocidade alta : ", i, j, i_North, j_East 
-                                            write(*,*) "velocidade alta : ", Me%OpenPoints(i,j), Me%OpenPoints(i_North, j_East)
-                                            write(*,*) "velocidade alta : ", waterColumn, waterColumn_NE, Me%iFlowX(i, j), Me%iFlowY(i, j)
-                                            write(*,*) "velocidade alta : ", aux, velFace, celerity
-                                            stop
-                                        endif
-                                        
-                                    endif
-                                endif
-                            enddo
-                        endif
-                    enddo
-                    enddo
-                    !$OMP END DO 
-                    !$OMP END PARALLEL
-                    
-                    if (totalVel > AlmostZero) then
-                        aux = Distance_Courant / totalVel
-                        
-                        nextDTCourant = min(nextDTCourant, aux)
-                    endif
-                    
-                else
-                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
-                    !$OMP Distance_Courant)
-                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-                    do j = JLB+1, JUB
-                    do i = ILB+1, IUB
-                        if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                            do c = 1, size(strideJ,1)
-                                !Compute fluxes of east and north cell faces
-                                j_East = j - strideJ(c, 1)
-                                i_North = i - strideJ(c, 2)
-                            
-                                if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-                                    
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
-                                        waterColumn = Me%myWaterColumn (i,j)
-                                        waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-                                        
-                                        nx = strideJ(c, 1)
-                                        ny = strideJ(c, 2)
-                                        aux = (waterColumn + waterColumn_NE) / 2
-                                        
-                                        if (nx == 1) then
-                                            velFace = Me%iFlowX(i, j) / (aux * Me%DY)
-                                        else
-                                            velFace = Me%iFlowY(i, j) / (aux * Me%DX)
-                                        endif
-                                        !VelFace + celerity
-                                        celerity = sqrt(Gravity * aux)
-                                        aux = max(abs(velFace + celerity),abs(velFace - celerity))
-                                        Distance_Courant = sqrt ((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
-                                        nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
-                                    endif
-                                endif
-                            enddo
-                        endif
-                    enddo
-                    enddo
-                    !$OMP END DO 
-                    !$OMP END PARALLEL
-                endif
-            endif
-            
-            !write(*,*)"DT MOHID = ", nextDTCourant
-            if (Niter == 1) then
-            
-                nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
-                Me%CV%NextNiteration = Niter
-                
-            elseif (Niter <= Me%CV%MinIterations) then                            
-            
-                if (Niter > Me%CV%LastGoodNiteration) then
-    
-                    nextDTVariation = Me%ExtVar%DT
-                    Me%CV%NextNiteration = Niter
-    
-                else
-                
-                    nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
-                    Me%CV%NextNiteration = Niter
-    
-                endif
-                
-            else
-            
-                if (Niter >= Me%CV%StabilizeHardCutLimit) then
-                
-                    nextDTVariation = (Me%ExtVar%DT / Niter) * Me%CV%MinIterations
-                    Me%CV%NextNiteration = Me%CV%MinIterations
-                    
-                elseif (Niter > Me%CV%LastGoodNiteration) then
-                
-                    nextDTVariation = Me%ExtVar%DT / Me%CV%DTFactorDown
-                    Me%CV%NextNiteration = max(int(nextDTVariation / Me%CV%CurrentDT), 1)
-                    
-                else
-                
-                    nextDTVariation = Me%ExtVar%DT
-                    Me%CV%NextNiteration = max(min(int(Niter / Me%CV%DTSplitFactor), Niter - 1), 1)
-                    
-                endif 
-                               
-            endif
-            
-            CurrentDT = nextDTVariation / Me%CV%NextNiteration                                     
-                      
-            Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
-            
-            if (Me%CV%NextDT < nextDTVariation) then                
-                Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
-            endif
-                       
-        else
-        
-            Me%CV%NextDT = Me%ExtVar%DT
-            Me%CV%NextNiteration = Niter            
-        
-        endif
-        
-        Me%CV%LastGoodNiteration = Niter
-        Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
-    
-        if (Me%StormWaterModel) then
-            if (Me%StormWaterModelDT < Me%CV%NextDT) then        
-                Me%CV%NextDT = Me%StormWaterModelDT
-                !write(*,*)"DT forcado pelo Swmm = ", Me%StormWaterModelDT
-            endif
-        end if
-    
-        !write(*,*)"DT MOHID - Me%CV%NextDT = ", Me%CV%NextDT
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
-    
-    end subroutine ComputeNextDT
-    
-    
     !subroutine ComputeNextDT (Niter)
     !
     !    !Arguments-------------------------------------------------------------
     !    integer                                     :: Niter        
     !    
     !    !Local-----------------------------------------------------------------
-    !    integer                                     :: i, j, STAT_CALL, CHUNK
-    !    integer                                     :: ILB, IUB, JLB, JUB
+    !    integer                                     :: i, j, STAT_CALL, CHUNK, c, nx, ny
+    !    integer                                     :: ILB, IUB, JLB, JUB, j_East, i_North
     !    real                                        :: nextDTCourant, aux
     !    real                                        :: nextDTVariation, MaxDT
     !    logical                                     :: VariableDT
-    !    real                                        :: CurrentDT
-    !
+    !    real                                        :: CurrentDT, Distance_Courant, totalVel
+    !    real                                        :: velface, celerity, waterColumn, waterColumn_NE
+    !    integer, dimension(2,2)                     :: strideJ
     !    !----------------------------------------------------------------------
+    !
     !    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
+    !
     !
     !    call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
     !    if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
@@ -17329,46 +17168,110 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !
     !    nextDTCourant   = -null_real
     !    nextDTVariation = -null_real
+    !    totalVel = 0.0
+    !    
+    !    strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
     !    
     !    if (VariableDT) then
+    !        if (Me%Compute) then
+    !            CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
     !
-    !        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    !
-    !        ILB = Me%WorkSize%ILB
-    !        IUB = Me%WorkSize%IUB
-    !        JLB = Me%WorkSize%JLB
-    !        JUB = Me%WorkSize%JUB
+    !            ILB = Me%WorkSize%ILB
+    !            IUB = Me%WorkSize%IUB
+    !            JLB = Me%WorkSize%JLB
+    !            JUB = Me%WorkSize%JUB
     !        
-    !        if (Me%CV%LimitDTCourant) then
-    !                    
-    !            !$OMP PARALLEL PRIVATE(I,J,aux)
-    !            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-    !            do j = JLB, JUB
-    !            do i = ILB, IUB
-    !                    
-    !                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-    !
-    !                    !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
-    !                    !
-    !                    !if (vel .gt. 0.0) then
-    !                    !
-    !                    !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
-    !                    !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
-    !                        aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
-    !                               Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
+    !            if (Me%CV%LimitDTCourant) then
+    !                if (Me%GridIsConstant) then
+    !                    Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
+    !                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
+    !                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
+    !                    do j = JLB+1, JUB
+    !                    do i = ILB+1, IUB
+    !                        if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+    !                            do c = 1, size(strideJ,1)
+    !                                !Compute fluxes of east and north cell faces
+    !                                j_East = j - strideJ(c, 1)
+    !                                i_North = i - strideJ(c, 2)
+    !                        
+    !                                if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+    !                                
+    !                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
+    !                                        waterColumn = Me%myWaterColumn (i,j)
+    !                                        waterColumn_NE = Me%myWaterColumn (i_North,j_East)
+    !                                    
+    !                                        nx = strideJ(c, 1)
+    !                                        ny = strideJ(c, 2)
+    !                                        aux = (waterColumn + waterColumn_NE) / 2
+    !                                    
+    !                                        if (nx == 1) then
+    !                                            velFace = Me%iFlowX(i, j) / (aux * Me%DY)
+    !                                        else
+    !                                            velFace = Me%iFlowY(i, j) / (aux * Me%DX)
+    !                                        endif
+    !                                        !VelFace + celerity
+    !                                        celerity = sqrt(Gravity * aux)
+    !                                        aux = max(abs(velFace + celerity),abs(velFace - celerity))
+    !                                        totalVel = max(totalVel, aux)                                        
+    !                                    endif
+    !                                endif
+    !                            enddo
+    !                        endif
+    !                    enddo
+    !                    enddo
+    !                    !$OMP END DO 
+    !                    !$OMP END PARALLEL
+    !                
+    !                    if (totalVel > AlmostZero) then
+    !                        aux = Distance_Courant / totalVel
     !                    
     !                        nextDTCourant = min(nextDTCourant, aux)
+    !                    endif
+    !                
+    !                else
+    !                    !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
+    !                    !$OMP Distance_Courant)
+    !                    !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+    !                    do j = JLB+1, JUB
+    !                    do i = ILB+1, IUB
+    !                        if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+    !                            do c = 1, size(strideJ,1)
+    !                                !Compute fluxes of east and north cell faces
+    !                                j_East = j - strideJ(c, 1)
+    !                                i_North = i - strideJ(c, 2)
     !                        
-    !                    !endif
-    !                        
+    !                                if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+    !                                
+    !                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
+    !                                        waterColumn = Me%myWaterColumn (i,j)
+    !                                        waterColumn_NE = Me%myWaterColumn (i_North,j_East)
+    !                                    
+    !                                        nx = strideJ(c, 1)
+    !                                        ny = strideJ(c, 2)
+    !                                        aux = (waterColumn + waterColumn_NE) / 2
+    !                                    
+    !                                        if (nx == 1) then
+    !                                            velFace = Me%iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
+    !                                        else
+    !                                            velFace = Me%iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
+    !                                        endif
+    !                                        !VelFace + celerity
+    !                                        celerity = sqrt(Gravity * aux)
+    !                                        aux = max(abs(velFace + celerity),abs(velFace - celerity))
+    !                                        Distance_Courant = sqrt ((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
+    !                                        nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
+    !                                    endif
+    !                                endif
+    !                            enddo
+    !                        endif
+    !                    enddo
+    !                    enddo
+    !                    !$OMP END DO 
+    !                    !$OMP END PARALLEL
     !                endif
-    !
-    !            enddo
-    !            enddo
-    !            !$OMP END DO NOWAIT 
-    !            !$OMP END PARALLEL
-    !
+    !            endif
     !        endif
+    !        
     !        if (Niter == 1) then
     !        
     !            nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
@@ -17413,7 +17316,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !                  
     !        Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
     !        
-    !        
     !        if (Me%CV%NextDT < nextDTVariation) then                
     !            Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
     !        endif
@@ -17427,17 +17329,154 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !    
     !    Me%CV%LastGoodNiteration = Niter
     !    Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
-    !    
     !
     !    if (Me%StormWaterModel) then
     !        if (Me%StormWaterModelDT < Me%CV%NextDT) then        
-    !            Me%CV%NextDT = Me%StormWaterModelDT  
+    !            Me%CV%NextDT = Me%StormWaterModelDT
     !        endif
     !    end if
     !
     !    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
     !
     !end subroutine ComputeNextDT
+    subroutine ComputeNextDT (Niter)
+    
+        !Arguments-------------------------------------------------------------
+        integer                                     :: Niter        
+        
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, STAT_CALL, CHUNK
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: nextDTCourant, aux
+        real                                        :: nextDTVariation, MaxDT
+        logical                                     :: VariableDT
+        real                                        :: CurrentDT
+    
+        !----------------------------------------------------------------------
+999 format(a25,1x,1f30.18)
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
+    
+        call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
+    
+        call GetMaxComputeTimeStep(Me%ObjTime, MaxDT, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR020'
+    
+        nextDTCourant   = -null_real
+        nextDTVariation = -null_real
+        
+        if (VariableDT) then
+    
+            CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    
+            ILB = Me%WorkSize%ILB
+            IUB = Me%WorkSize%IUB
+            JLB = Me%WorkSize%JLB
+            JUB = Me%WorkSize%JUB
+            
+            if (Me%CV%LimitDTCourant) then
+                        
+                !$OMP PARALLEL PRIVATE(I,J,aux)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+                do j = JLB, JUB
+                do i = ILB, IUB
+                        
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint .and. Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+    
+                        !vel = sqrt(Gravity * Me%myWaterColumn (i,j))
+                        !
+                        !if (vel .gt. 0.0) then
+                        !
+                        !    spatial step, in case of dx = dy, dist = sqrt(2) * dx
+                        !    dist = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
+                            aux = sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0)) * &
+                                   Me%CV%MaxCourant / sqrt(Gravity * Me%myWaterColumn (i,j)) 
+                        
+                            nextDTCourant = min(nextDTCourant, aux)
+                            
+                        !endif
+                            
+                    endif
+    
+                enddo
+                enddo
+                !$OMP END DO NOWAIT 
+                !$OMP END PARALLEL
+    
+            endif
+            !write(*,*) "nextDTCourant = ", nextDTCourant
+            if (Niter == 1) then
+            
+                nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
+                Me%CV%NextNiteration = Niter
+                
+            elseif (Niter <= Me%CV%MinIterations) then                            
+            
+                if (Niter > Me%CV%LastGoodNiteration) then
+    
+                    nextDTVariation = Me%ExtVar%DT
+                    Me%CV%NextNiteration = Niter
+    
+                else
+                
+                    nextDTVariation = Me%ExtVar%DT * Me%CV%DTFactorUp
+                    Me%CV%NextNiteration = Niter
+    
+                endif
+                
+            else
+            
+                if (Niter >= Me%CV%StabilizeHardCutLimit) then
+                
+                    nextDTVariation = (Me%ExtVar%DT / Niter) * Me%CV%MinIterations
+                    Me%CV%NextNiteration = Me%CV%MinIterations
+                    
+                elseif (Niter > Me%CV%LastGoodNiteration) then
+                
+                    nextDTVariation = Me%ExtVar%DT / Me%CV%DTFactorDown
+                    Me%CV%NextNiteration = max(int(nextDTVariation / Me%CV%CurrentDT), 1)
+                    
+                else
+                
+                    nextDTVariation = Me%ExtVar%DT
+                    Me%CV%NextNiteration = max(min(int(Niter / Me%CV%DTSplitFactor), Niter - 1), 1)
+                    
+                endif 
+                               
+            endif
+            
+            CurrentDT = nextDTVariation / Me%CV%NextNiteration                                     
+                      
+            Me%CV%NextDT = min(min(nextDTVariation, nextDTCourant), MaxDT)
+            
+            !write(*,*) "Me%CV%NextDT = ", Me%CV%NextDT
+            
+            if (Me%CV%NextDT < nextDTVariation) then                
+                Me%CV%NextNiteration = max(int(Me%CV%NextDT/CurrentDT), 1)
+            endif
+                       
+        else
+        
+            Me%CV%NextDT = Me%ExtVar%DT
+            Me%CV%NextNiteration = Niter            
+        
+        endif
+        
+        Me%CV%LastGoodNiteration = Niter
+        Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
+        
+        !write(*,*) "Me%CV%CurrentDT = ", Me%CV%CurrentDT
+    
+        if (Me%StormWaterModel) then
+            if (Me%StormWaterModelDT < Me%CV%NextDT) then        
+                Me%CV%NextDT = Me%StormWaterModelDT  
+            endif
+        end if
+    
+        write(99,999) "NextDT", Me%CV%NextDT
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeNextDT")
+    
+    end subroutine ComputeNextDT
 
     !--------------------------------------------------------------------------
     
@@ -18354,18 +18393,82 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
     !---------------------------------------------------------------------------
     
+    !subroutine OutputFloodPeriod
+    !
+    !    !Locals----------------------------------------------------------------
+    !    integer                                 :: ILB,IUB, JLB, JUB, i, j, n
+    !    integer                                 :: CHUNK
+    !
+    !    !Begin-----------------------------------------------------------------        
+    !
+    !    ILB = Me%WorkSize%ILB
+    !    IUB = Me%WorkSize%IUB
+    !    JLB = Me%WorkSize%JLB
+    !    JUB = Me%WorkSize%JUB
+    !
+    !    !Begin-----------------------------------------------------------------
+    !
+    !    if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFloodPeriod")
+    !
+    !    CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    !
+    !    if(Me%Output%nFloodPeriodLimits > 0)then
+    !        
+    !        !$OMP PARALLEL PRIVATE(I,J, n)
+    !        do n = 1, Me%Output%nFloodPeriodLimits
+    !
+    !            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !            do j = JLB, JUB
+    !            do i = ILB, IUB
+    !
+    !                if (Me%ActivePoints(i,j) == Compute) then
+    !
+    !                    if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+    !                        Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+    !                    endif
+    !
+    !                endif
+    !
+    !            enddo
+    !            enddo
+    !            !$OMP END DO NOWAIT
+    !        enddo
+    !        !$OMP END PARALLEL
+    !
+    !    else
+    !       
+    !        !$OMP PARALLEL PRIVATE(I,J)
+    !        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+    !        do j = JLB, JUB
+    !        do i = ILB, IUB
+    !
+    !            if (Me%ActivePoints(i,j) == Compute) then
+    !            
+    !                !Flooded cell
+    !                if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
+    !                    Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
+    !                endif
+    !
+    !            endif
+    !
+    !        enddo
+    !        enddo
+    !        !$OMP END DO NOWAIT
+    !        !$OMP END PARALLEL
+    !
+    !    endif
+    !
+    !    if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFloodPeriod")
+    !end subroutine OutputFloodPeriod
+   
+    !-----------------------------------------------------------------------------    
+    
     subroutine OutputFloodPeriod
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j, n
+        integer                                 :: i, j, n
         integer                                 :: CHUNK
-
-        !Begin-----------------------------------------------------------------        
-
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
+        real                                    :: WaterColumn
 
         !Begin-----------------------------------------------------------------
 
@@ -18375,48 +18478,73 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if(Me%Output%nFloodPeriodLimits > 0)then
             
-            !$OMP PARALLEL PRIVATE(I,J, n)
-            do n = 1, Me%Output%nFloodPeriodLimits
-
+            if (Me%MinimumWaterColumn > minval(Me%Output%FloodPeriodWaterColumnLimits)) then
+                !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
-   
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%OpenPoints(i,j) == Compute) then
+                        WaterColumn = Me%myWaterColumn(i, j)
+                        do n = 1, Me%Output%nFloodPeriodLimits
+                            if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+                                Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+                            endif
+                        enddo
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if (Me%ActivePoints(i,j) == Compute) then
-
-                        if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimits(n)) then
-                            Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
-                        endif
-
+                        WaterColumn = Me%myWaterColumn(i, j)
+                        do n = 1, Me%Output%nFloodPeriodLimits
+                            if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+                                Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+                            endif
+                        enddo
                     endif
-
                 enddo
                 enddo
-                !$OMP END DO NOWAIT
-            enddo
-            !$OMP END PARALLEL
-
+                !$OMP END DO
+                !$OMP END PARALLEL
+            endif
+            
         else
-           
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
-   
-                if (Me%ActivePoints(i,j) == Compute) then
-                
-                    !Flooded cell
-                    if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
-                        Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
+            if (Me%MinimumWaterColumn > Me%Output%FloodPeriodWaterColumnLimit) then
+                !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%OpenPoints(i,j) == Compute) then
+                        if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
+                            Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
+                        endif
                     endif
-
-                endif
-
-            enddo
-            enddo
-            !$OMP END DO NOWAIT
-            !$OMP END PARALLEL
-
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%ActivePoints(i,j) == Compute) then
+                        if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
+                            Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
+                        endif
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            endif
+            
         endif
 
         if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFloodPeriod")
@@ -18446,27 +18574,53 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         Sum   = 0.0
 
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-        do j = JLB, JUB
-        do i = ILB, IUB
-   
-            if (Me%ActivePoints(i,j) == Compute) then
+        if (Me%GridIsConstant) then
+        
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ActivePoints(i,j) == Compute) then
 
-                if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
+                    if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
 
-                    Sum = Sum + Me%ExtVar%GridCellArea(i,j)
+                        Sum = Sum + Me%GridCellArea
 
-                    if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
-                        Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
+                        if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                            Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
+                        endif
                     endif
                 endif
-            endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+            do j = JLB, JUB
+            do i = ILB, IUB
+   
+                if (Me%ActivePoints(i,j) == Compute) then
 
-        enddo
-        enddo
-        !$OMP END DO NOWAIT
-        !$OMP END PARALLEL
+                    if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
+
+                        Sum = Sum + Me%ExtVar%GridCellArea(i,j)
+
+                        if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                            Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
+                        endif
+                    endif
+                endif
+
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        
+        endif
+        
+    
 
         Me%Output%TotalFloodedArea = Sum
 

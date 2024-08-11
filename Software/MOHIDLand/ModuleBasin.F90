@@ -5048,7 +5048,7 @@ cd0:    if (Exist) then
         integer                                     :: Sum
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_CG")
-        
+        Sum = 0
         if (Me%NumberOftimeSeries > 0) then
             
             aux1 = Me%CurrentDT / Me%GridCellArea
