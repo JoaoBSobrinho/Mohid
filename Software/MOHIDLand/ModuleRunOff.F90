@@ -11347,7 +11347,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, di, dj, c
         integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: WCAs
+        real                                        :: WCA
         integer                                     :: CHUNK, Sum
         integer, dimension(2,2)                     :: strideJ
     
