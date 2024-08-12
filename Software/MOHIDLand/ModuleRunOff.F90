@@ -8340,6 +8340,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     Niter           = Me%CV%NextNiteration    !DB
                     Me%CV%CurrentDT = Me%ExtVar%DT / Niter
                     
+                    !Interaction with channels
+                    if (.not. Me%Use1D2DInteractionMapping .and. Me%ObjDrainageNetwork /= 0 .and. .not. Me%SimpleChannelInteraction) then
+                        call FlowIntoChannels       (Me%CV%CurrentDT, UpdateWaterLevels = .true.)
+                    endif
+                    
                     !Inputs Water from discharges
                     if (Me%Discharges) then
                         call ModifyWaterDischarges  (Me%CV%CurrentDT, UpdateWaterLevels = .true.)
@@ -11131,11 +11136,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                         Me%ActivePoints(ib,jb)   = 1
                         if (present(UpdateWaterLevels)) then
-                        !Updates Water Column
-                        Me%myWaterColumn  (ib, jb)    = Me%myWaterVolume (ib, jb) / Me%ExtVar%GridCellArea(ib, jb)
+                            !Updates Water Column
+                            Me%myWaterColumn  (ib, jb)    = Me%myWaterVolume (ib, jb) / Me%ExtVar%GridCellArea(ib, jb)
                         
-                        !Updates Water Level
-                        Me%myWaterLevel (ib, jb)      = Me%myWaterColumn (ib, jb) + Me%ExtVar%Topography(ib, jb)
+                            !Updates Water Level
+                            Me%myWaterLevel (ib, jb)      = Me%myWaterColumn (ib, jb) + Me%ExtVar%Topography(ib, jb)
                         endif
                     endif
 
@@ -15963,11 +15968,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
 
-    subroutine FlowIntoChannels(LocalDT)
+    subroutine FlowIntoChannels(LocalDT, UpdateWaterLevels)
     
         !Arguments-------------------------------------------------------------
         real                                        :: LocalDT
-        
+        logical, optional, intent(IN)               :: UpdateWaterLevels
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB, STAT_CALL
@@ -16073,12 +16078,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j)    = Me%myWaterVolume (i, j)   - dVol 
                     
                     Me%ActivePoints(i,j)   = 1
-                    !!Updates Water Column
-                    !Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)   / Me%ExtVar%GridCellArea(i, j)
-                    !
-                    !!Updates Water Level
-                    !Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)   + Me%ExtVar%Topography(i, j)
                     
+                    if (present(UpdateWaterLevels)) then
+                        Me%Compute = .true. !turn flag on so compute nexdt gets called
+                        !Updates Water Column
+                        Me%myWaterColumn  (i, j)    = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
+                        
+                        !Updates Water Level
+                        Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
+                    endif
 
                 else
                 
