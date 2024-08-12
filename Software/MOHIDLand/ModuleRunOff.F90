@@ -12385,7 +12385,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         real                                        :: Slope
-        real                                        :: level_left, level_right
+        real                                        :: level_left, level_right, waterColumn_left, waterColumn_right
+        real                                        :: topography_left, topography_right
         real                                        :: HydraulicRadius
         real                                        :: Friction
         real                                        :: Pressure
@@ -12403,7 +12404,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter, dVol)
+        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter, dVol, &
+        !$OMP waterColumn_left, waterColumn_right, topography_left, topography_right)
         
         !X
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
@@ -12412,9 +12414,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
             if (Me%ComputeFaceU(i, j) == Compute) then
             
-                level_left  = Me%myWaterLevel(i, j-1)
-                level_right = Me%myWaterLevel(i, j)
-                    
+                waterColumn_left = Me%myWaterColumn(i, j-1)
+                waterColumn_right = Me%myWaterColumn(i, j)
+                
+                topography_left = Me%ExtVar%Topography(i, j-1)
+                topography_right = Me%ExtVar%Topography(i, j)
+                
+                level_left  = waterColumn_left + topography_left
+                level_right = waterColumn_right + topography_right
                 !!Slope
                 if (Me%AdjustSlope) then
                     Slope           = AdjustSlope((level_left - level_right) / Me%DX)
@@ -12427,30 +12434,28 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 WetPerimeter = Me%DY
                 
                 !only compute margins if water column method is MaxBottom (topography discretization by "stairs")
-                if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
-                    !Then, is checked if "margins" occur on the cell of the highest water level
-                    !water depth consistent with AreaU computed (only water above max bottom)
-                    WaterDepth = Me%AreaU(i,j) / Me%DY
-                    MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))
+                !Then, is checked if "margins" occur on the cell of the highest water level
+                !water depth consistent with AreaU computed (only water above max bottom)
+                WaterDepth = Me%AreaU(i,j) / Me%DY
+                MaxBottom = max(Topography_right, Topography_left)
                     
-                    !to check which cell to use since areaU depends on higher water level
-                    if (level_left .gt. level_right) then
-                        dj = -1
-                    else
-                        dj = 0
-                    endif
+                !to check which cell to use since areaU depends on higher water level
+                if (level_left .gt. level_right) then
+                    dj = -1
+                else
+                    dj = 0
+                endif
                     
-                    !bottom Difference to adjacent cells (to check existence of “margins” on the side)
-                    Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
-                    Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
+                !bottom Difference to adjacent cells (to check existence of “margins” on the side)
+                Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
+                Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
 
-                    !if positive, than there is a “margin” on the side and friction occurs at wet length
-                    if (Margin1 .gt. 0.0) then
-                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
-                    endif
-                    if (Margin2 .gt. 0.0) then
-                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin2)
-                    endif
+                !if positive, than there is a “margin” on the side and friction occurs at wet length
+                if (Margin1 .gt. 0.0) then
+                    WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
+                endif
+                if (Margin2 .gt. 0.0) then
+                    WetPerimeter = WetPerimeter + min(WaterDepth, Margin2)
                 endif
                 
                 HydraulicRadius = Me%AreaU(i, j) / WetPerimeter
@@ -12470,7 +12475,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                            (HydraulicRadius ** (4./3.)) 
                 
                 !Advection (may be limited to water column height)
-                if (Me%ActivePoints(i,j) + Me%ActivePoints(i,j-1) == 2) then
+                if (waterColumn_left > AlmostZero .and. waterColumn_right > AlmostZero) then
                     !Face XU(i,j+1). Z U Faces have to be open
                     XRightAdv = 0.0
                     if ((Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i, j+1) == 2)) then                     
@@ -12559,27 +12564,17 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 if (abs(Me%lFlowX(i, j)) > Almostzero) then
 
-                    if (Me%LimitToCriticalFlow) then
-                        if (Me%FaceWaterColumn == WCMaxBottom_) then
-                            MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i, j-1))     
-                                                            
-                            if (Me%lFlowX(i, j) .gt. 0.0) then           
-                                WaterDepth = max(Me%MyWaterLevel(i,j-1) - MaxBottom, 0.0)
-                            else
-                                WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
-                            endif
-                        elseif (Me%FaceWaterColumn == WCAverageBottom_) then
-                            if (Me%lFlowX(i, j) .gt. 0.0) then           
-                                WaterDepth = Me%MyWaterColumn(i,j-1)
-                            else
-                                WaterDepth = Me%MyWaterColumn(i,j)
-                            endif                        
+                    if (Me%LimitToCriticalFlow) then                  
+                        if (Me%lFlowX(i, j) .gt. 0.0) then           
+                            WaterDepth = max(level_left - MaxBottom, 0.0)
+                        else
+                            WaterDepth = max(level_right - MaxBottom, 0.0)
                         endif
                         
                         !Critical Flow
                         !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
                         !m3/s = m * m * m/s
-                        CriticalFlow = WaterDepth * Me%ExtVar%DYY(i,j) * sqrt(Gravity * WaterDepth)
+                        CriticalFlow = WaterDepth * Me%DY * sqrt(Gravity * WaterDepth)
                         
                         !only limit if flow higher
                         if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
@@ -13295,7 +13290,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 !        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX")
 !        
 !        
-!    end subroutine DynamicWaveX
+!    end subroutine DynamicWaveXX
     
     !--------------------------------------------------------------------------
 
@@ -13307,7 +13302,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         real                                        :: Slope
-        real                                        :: level_bottom, level_top
+        real                                        :: level_bottom, level_top, waterColumn_bottom, waterColumn_top
+        real                                        :: topography_bottom, topography_top
         real                                        :: HydraulicRadius
         real                                        :: Friction
         real                                        :: Pressure
@@ -13324,7 +13320,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_bottom, level_top, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
-        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, di, WetPerimeter, dVol)
+        !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, di, WetPerimeter, dVol, &
+        !$OMP waterColumn_bottom, waterColumn_top, topography_bottom, topography_top)
         
         !Y
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
@@ -13332,8 +13329,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if (Me%ComputeFaceV(i, j) == Compute) then
             
-                level_bottom = Me%myWaterLevel(i-1, j)
-                level_top    = Me%myWaterLevel(i, j)
+                waterColumn_bottom = Me%myWaterColumn(i-1, j)
+                waterColumn_top = Me%myWaterColumn(i, j)
+                
+                topography_bottom = Me%ExtVar%Topography(i-1, j)
+                topography_top = Me%ExtVar%Topography(i, j)
+                
+                level_bottom  = waterColumn_bottom + topography_bottom
+                level_top = waterColumn_top + topography_top
                 
                 !!Slope
                 if (Me%AdjustSlope) then
@@ -13350,29 +13353,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !wet perimeter, first is bottom
                 WetPerimeter = Me%DX
                 
-                if ((Me%FaceWaterColumn == WCMaxBottom_) .and. (Me%CalculateCellMargins)) then
-                    !water Depth consistent with AreaV computed (only water above max bottom)
-                    WaterDepth = Me%AreaV(i,j) / Me%DX
-                    MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i-1, j))
+                !water Depth consistent with AreaV computed (only water above max bottom)
+                WaterDepth = Me%AreaV(i,j) / Me%DX
+                MaxBottom = max(topography_top, topography_bottom)
 
-                    !to check wich cell to use since areaV depends on higher water level
-                    if (level_bottom .gt. level_top) then
-                        di = -1
-                    else
-                        di = 0
-                    endif
+                !to check wich cell to use since areaV depends on higher water level
+                if (level_bottom .gt. level_top) then
+                    di = -1
+                else
+                    di = 0
+                endif
 
-                    !bottom Difference to adjacent cells (to check existence of “margins” on the side)
-                    Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
-                    Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
+                !bottom Difference to adjacent cells (to check existence of “margins” on the side)
+                Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
+                Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
 
-                    !if positive than there is a “margin” on the side and friction occurs at wet length
-                    if (Margin1 .gt. 0.0) then
-                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
-                    endif
-                    if (Margin2 .gt. 0.0) then
-                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin2)
-                    endif
+                !if positive than there is a “margin” on the side and friction occurs at wet length
+                if (Margin1 .gt. 0.0) then
+                    WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
+                endif
+                if (Margin2 .gt. 0.0) then
+                    WetPerimeter = WetPerimeter + min(WaterDepth, Margin2)
                 endif
                 
                 !m = m2 / m
@@ -13398,11 +13399,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             (HydraulicRadius ** (4./3.))
 
                 !Advection
-                if (Me%ActivePoints(i,j) + Me%ActivePoints(i-1,j) == 2) then
+                if (waterColumn_bottom > AlmostZero .and. waterColumn_top > AlmostZero) then
                     
                     !Face YV(i+1,j)
                     YTopAdv = 0.0
-                    if ((Me%ComputeFaceV(i, j) +  Me%ComputeFaceV(i+1, j) == 2)) then 
+                    if (Me%ComputeFaceV(i, j) +  Me%ComputeFaceV(i+1, j) == 2) then 
                         
                         if ((Me%FlowYOld(i, j) * Me%FlowYOld(i+1, j)) >= 0.0) then
                             
@@ -13498,22 +13499,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (abs(Me%lFlowY(i, j)) > Almostzero) then
                 
                     if (Me%LimitToCriticalFlow) then
-                    
-                        if (Me%FaceWaterColumn == WCMaxBottom_) then
-                            MaxBottom = max(Me%ExtVar%Topography(i, j), Me%ExtVar%Topography(i-1, j))
                                                             
-                            if (Me%lFlowY(i, j) > 0.0) then           
-                                WaterDepth = max(Me%MyWaterLevel(i-1,j) - MaxBottom, 0.0)
-                            else
-                                WaterDepth = max(Me%MyWaterLevel(i,j) - MaxBottom, 0.0)
-                            endif                
-                        elseif (Me%FaceWaterColumn == WCAverageBottom_) then
-                            if (Me%lFlowY(i, j) > 0.0) then           
-                                WaterDepth = Me%MyWaterColumn(i-1,j)
-                            else
-                                WaterDepth = Me%MyWaterColumn(i,j)
-                            endif                                        
-                        endif
+                        if (Me%lFlowY(i, j) > 0.0) then           
+                            WaterDepth = max(level_bottom - MaxBottom, 0.0)
+                        else
+                            WaterDepth = max(level_top - MaxBottom, 0.0)
+                        endif                
                         
                         !Critical Flow
                         !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
