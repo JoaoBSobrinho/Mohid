@@ -13398,7 +13398,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             (HydraulicRadius ** (4./3.))
 
                 !Advection
-                if ((Me%ActivePoints(i,j) == 1) + Me%ActivePoints(i-1,j) == 2) then
+                if (Me%ActivePoints(i,j) + Me%ActivePoints(i-1,j) == 2) then
                     
                     !Face YV(i+1,j)
                     YTopAdv = 0.0
