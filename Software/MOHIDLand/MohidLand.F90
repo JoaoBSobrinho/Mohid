@@ -326,7 +326,8 @@ program MohidLand
         !             default      = openmp_num_threads,                                 & 
         !             ClientModule = 'MOHIDLand',                                        &
         !             STAT         = STAT_CALL)
-        !if (STAT_CALL /= SUCCESS_) stop 'ReadKeywords - MohidLand - ERR050'        
+        !if (STAT_CALL /= SUCCESS_) stop 'ReadKeywords - MohidLand - ERR050'
+#ifdef _SEWERGEMSENGINECOUPLER_      
         !!!$  call omp_set_num_threads(openmp_num_threads)
 
         !$ call GetData(openmp_num_threads, ObjEnterData, iflag, keyword = 'OPENMP_NUM_THREADS',  &
@@ -349,7 +350,30 @@ program MohidLand
         !$       openmp_num_threads = omp_get_max_threads()
         !$       write(*,*)"OPENMP: Using the max number of threads available"
         !$    endif        
-        
+#else
+        !$ call GetData(openmp_num_threads, ObjEnterData, iflag, keyword = 'OPENMP_NUM_THREADS',  &
+        !$         SearchType   = FromFile,                                                      &
+        !$         ClientModule = 'MOHIDLand',                                                   &
+        !$         default      = 0,                                                             &
+        !$         STAT         = STAT_CALL)
+        !$ if (STAT_CALL /= SUCCESS_) stop 'ReadKeywords - MohidLand - ERR050' 
+        !$    write(*,*)
+        !$    write(*,*)"OPENMP: Max number of threads available is ", omp_get_max_threads()
+        !$    if ( openmp_num_threads .gt. 0 ) then
+        !$       write(*,*)"OPENMP: Number of threads requested is ", openmp_num_threads
+        !$       if (openmp_num_threads .gt. omp_get_max_threads()) then
+        !$        openmp_num_threads = omp_get_max_threads()
+        !$        write(*,*)"<Compilation Options Warning>"
+        !$       endif
+        !$       call omp_set_num_threads(openmp_num_threads)
+        !$       write(*,*)"OPENMP: Number of threads implemented is ", openmp_num_threads
+        !$    else
+        !$       openmp_num_threads = omp_get_max_threads() / 2
+        !$       write(*,*)"OPENMP: Using half of the max number of threads available"
+        !$    endif   
+
+#endif _SEWERGEMSENGINECOUPLER_ 
+
         !add the option to continue model in case of bathymetry verifications  
         !(geometry check and isolated cells check)
         !for runs on demand it is needed or the model wont run by itself
