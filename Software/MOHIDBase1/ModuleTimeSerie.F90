@@ -2429,7 +2429,7 @@ cd2 :       if (Me%Points) then
 
     end subroutine WriteTimeSerie1
 
-    !-------------------------------------------------------------------------- João Sobrinho
+    !--------------------------------------------------------------------------
     subroutine WriteTimeSerie1_R4(TimeSerieID, Data2D_4, STAT)
 
         !Arguments-------------------------------------------------------------

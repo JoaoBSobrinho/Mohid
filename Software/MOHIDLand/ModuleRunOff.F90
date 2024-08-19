@@ -8101,18 +8101,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_!, i, j
+        integer                                     :: STAT_, ready_
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
         integer                                     :: Niter, iter
         integer                                     :: n_restart
         logical                                     :: firstRestart
-        !real, dimension(6), target                  :: AuxTime
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
-!999 format(a25,1x,2i,1f30.18)
-!998 format(a25,1x,2f30.18)
         call Ready(RunOffID, ready_)
 
         if (ready_ .EQ. IDLE_ERR_) then
@@ -8167,18 +8164,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (associated(Me%InfiltrationRate)) then
                     call ModifyInfiltration
                 endif
-                !call ExtractDate   (Me%ExtVar%Now, AuxTime(1), AuxTime(2), AuxTime(3),          &
-                !                        AuxTime(4), AuxTime(5), AuxTime(6))
-                !if (AuxTime(6) > 29.6) then
-                !    write(*,*) "Tempo Entrada Modify ", AuxTime(5), AuxTime(6)
-                !endif
-                !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                !    if (Me%myWaterColumn(i, j) > 0.0) then
-                !        write(99,999) "Entrada Modify = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
-                !    endif
-                !enddo
-                !enddo
                 
                 !Updates Geometry
                 call ModifyGeometryAndMapping
@@ -8301,13 +8286,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
-                            !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                            !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                            !    if (Me%myWaterColumn(i, j) > 0.0) then
-                            !        write(99,999) "Saida UpdateWaterLevels = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
-                            !    endif
-                            !enddo
-                            !enddo
+                            
                             call CheckStability(Restart)
                     
                             if (Restart) then
@@ -8351,13 +8330,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     if (Me%Discharges) then
                         call ModifyWaterDischarges  (Me%CV%CurrentDT, UpdateWaterLevels = .true.)
                     endif
-                    !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                    !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                    !    if (Me%myWaterColumn(i, j) > 0.0) then
-                    !        write(99,999) "Saida UpdateWaterLevels = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
-                    !    endif
-                    !enddo
-                    !enddo
                 endif
                 
                 !Gets ExternalVars
@@ -8399,13 +8371,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%StormWaterModel) then
                     call ComputeStormWaterModel
                 endif
-                !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                !do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                !    if (Me%myWaterColumn(i, j) > 0.0) then
-                !        write(99,999) "Saida ComputeStormWaterModel = ", i, j, Me%myWaterColumn(i, j) * 1000000000.0
-                !    endif
-                !enddo
-                !enddo
+                
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
                 !because of resistance. However in both methods the area used is not consistent (regular faces flow
