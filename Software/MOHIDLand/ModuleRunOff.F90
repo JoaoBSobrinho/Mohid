@@ -770,6 +770,7 @@ Module ModuleRunOff
         integer, dimension(:,:), pointer            :: OpenPoints               => null() !Mask for gridcells above min watercolumn
         integer, dimension(:,:), pointer            :: ActivePoints             => null() !Mask for gridcells with water
         integer, dimension(:,:), pointer            :: ActivePoints_Left        => null() !Mask for gridcells with water
+        integer, dimension(:,:), pointer            :: DischargePoints           => null() !Mask for gridcells with discharge
         real,    dimension(:,:), pointer            :: OverLandCoefficient      => null() !Manning or Chezy
         real,    dimension(:,:), pointer            :: OverLandCoefficientDelta => null() !For erosion/deposition
         real,    dimension(:,:), pointer            :: OverLandCoefficientX     => null() !Manning or Chezy
@@ -4980,13 +4981,12 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         character(len=StringLength)                 :: DischargeName
         real                                        :: CoordinateX, CoordinateY
         logical                                     :: CoordinatesON, IgnoreOK
-        integer                                     :: Id, Jd, dn, DischargesNumber
+        integer                                     :: Id, Jd, dn, DischargesNumber, i
         integer                                     :: STAT_CALL
         type (T_Lines),   pointer                   :: LineX
         type (T_Polygon), pointer                   :: PolygonX
         integer, dimension(:),   pointer            :: VectorI, VectorJ, VectorK
         integer                                     :: SpatialEmission, nCells
-        !type (T_RunOffDischarges), pointer          :: NewDischargeCellSet, AuxDischargeCellSet
 
         call Construct_Discharges(Me%ObjDischarges, Me%ObjTime, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR01' 
@@ -5063,24 +5063,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                 allocate(VectorI(nCells), VectorJ(nCells))
                 VectorJ(nCells) = Jd
                 VectorI(nCells) = Id
-                
-                !call AlocateNewDischargeCellSet(NewDischargeCellSet)
-                !allocate (NewDischargeCellSet%VectorI(nCells))
-                !allocate (NewDischargeCellSet%VectorJ(nCells))
-                !NewDischargeCellSet%VectorI(:) = VectorI(:)
-                !NewDischargeCellSet%VectorJ(:) = VectorJ(:)
-                !
-                !!Insert New Instance into list and makes Current point to it
-                !if (.not. associated(Me%DischargeCells)) then
-                !    !Me%FirstDischargeCellSet => NewDischargeCellSet
-                !    Me%DischargeCells        => NewDischargeCellSet
-                !else
-                !    AuxDischargeCellSet      => Me%DischargeCells%Next
-                !    do while (associated(AuxDischargeCellSet))
-                !        AuxDischargeCellSet   => AuxDischargeCellSet%Next
-                !    enddo
-                !    AuxDischargeCellSet       => NewDischargeCellSet
-                !endif
 
             else
 
@@ -5112,31 +5094,16 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                     endif
                     
                 endif
-                
-                !call AlocateNewDischargeCellSet(NewDischargeCellSet)
-                !allocate (NewDischargeCellSet%VectorI(nCells))
-                !allocate (NewDischargeCellSet%VectorJ(nCells))
-                !NewDischargeCellSet%VectorI(:) = VectorI(:)
-                !NewDischargeCellSet%VectorJ(:) = VectorJ(:)
-                !
-                !!Insert New Instance into list and makes Current point to it
-                !if (.not. associated(Me%DischargeCells)) then
-                !    !Me%FirstDischargeCellSet => NewDischargeCellSet
-                !    Me%DischargeCells        => NewDischargeCellSet
-                !else
-                !    AuxDischargeCellSet      => Me%DischargeCells%Next
-                !    do while (associated(AuxDischargeCellSet))
-                !        AuxDischargeCellSet   => AuxDischargeCellSet%Next
-                !    enddo
-                !    AuxDischargeCellSet       => NewDischargeCellSet
-                !endif
 
             endif
                         
             
             call SetLocationCellsZ (Me%ObjDischarges, dn, nCells, VectorI, VectorJ, VectorK, STAT= STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR16' 
+            if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR16'
             
+            do i = 1, size(VectorI)
+                Me%DischargePoints(VectorI(i),VectorJ(i)) = 1
+            enddo
 
         enddo
         
@@ -5147,17 +5114,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
    
     end subroutine ConstructDischarges
     
-    !--------------------------------------------------------------------------
-    
-    subroutine AlocateNewDischargeCellSet (NewDischargeCellSet)
-    !Arguments-----------------------------------------------------------------
-    type (T_RunOffDischarges), pointer, intent(OUT)         :: NewDischargeCellSet
-    !Begin---------------------------------------------------------------------
-    
-    nullify (NewDischargeCellSet)
-    allocate (NewDischargeCellSet)
-    nullify  (NewDischargeCellSet%Next)
-    end subroutine AlocateNewDischargeCellSet
     
     !--------------------------------------------------------------------------
 
@@ -5406,6 +5362,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%OpenPoints           (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ActivePoints         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ActivePoints_Left    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        allocate(Me%DischargePoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceU          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5426,6 +5383,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%OpenPoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints_Left, Me%Size, 0)
+        call SetMatrixValue(Me%DischargePoints, Me%Size, 0)
         call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
         call SetMatrixValue(Me%Bottom_Y, Me%Size, 0.0)
         
@@ -8176,7 +8134,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
                     call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ActivePoints)
                     call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ActivePoints)
-                
+                    
                     !Set 1D River level in river boundary cells
                     !From External model or DN
                     if (Me%Use1D2DInteractionMapping) then
@@ -10812,7 +10770,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
 
         !Sets to 0
-        call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0, Me%ExtVar%BasinPoints)
+        call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0, Me%DischargePoints)
         
         !The discharge flow is controled using two basic rules:
         ! 1 - when the flow is negative can not remove more than the volume present in the cell;
@@ -11093,6 +11051,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         
                         !Updates Water Level
                         Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
+                        
+                        Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume + AuxFlowIJ * LocalDT
                     endif
                     if (ByPassON) then
 
@@ -16590,12 +16550,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%ActivePoints(i,j) == Compute) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / SumDTs
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / SumDTs
-                    DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
-                    Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / &
-                                                SumDTs
-                    sumDischarge = sumDischarge + DischargeVolume
-                    !Should discharges become a 1D array and this integration be done seperately as a single cell with a discharge
-                    ! will consume a lot of CPU in this function
+                    
+                    !if (Me%DischargePoints(i,j) == Compute) then
+                        DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
+                        Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / &
+                                                    SumDTs
+                        sumDischarge = sumDischarge + DischargeVolume
+                    !endif
                 endif
             enddo
             enddo
@@ -18013,6 +17974,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             call CalculateTotalStoredVolume
         endif
+        
         !Restart Output
         if (Me%Output%WriteRestartFile .and. .not. (Me%ExtVar%Now == Me%EndTime)) then
             if(Me%ExtVar%Now >= Me%OutPut%RestartOutTime(Me%OutPut%NextRestartOutput))then
