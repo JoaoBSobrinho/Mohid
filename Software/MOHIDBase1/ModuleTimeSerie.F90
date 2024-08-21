@@ -104,6 +104,7 @@ Module ModuleTimeSerie
     private :: WriteTimeSerie1
     private :: WriteTimeSerie3
     private :: WriteTimeSerie4
+    private :: WriteTimeSerie1_R4
 
     interface  WriteTimeSerie
         module procedure WriteTimeSerie1
