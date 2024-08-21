@@ -2261,8 +2261,13 @@ Module ModuleHDF5
             stop 'PrepareWrite - ModuleHDF5 - ERR03'
         endif
         !Sets the compression
+#ifdef _SEWERGEMSENGINECOUPLER_
         call h5pset_deflate_f(prp_id, 2, STAT_CALL) 
         if (STAT_CALL /= SUCCESS_) stop 'PrepareWrite - ModuleHDF5 - ERR04'
+#else
+        call h5pset_deflate_f(prp_id, 6, STAT_CALL) 
+        if (STAT_CALL /= SUCCESS_) stop 'PrepareWrite - ModuleHDF5 - ERR04'
+#endif _SEWERGEMSENGINECOUPLER_
 
         !Verifies if group exists, if not create it
         call CheckGroupExistence (FileID, GroupName)

@@ -577,13 +577,13 @@ Module ModuleRunOff
         character(Pathlength)                       :: MaxWaterLevelFile    = null_str
         character(Pathlength)                       :: TimeOfMaxWaterColumnFile = null_str
         real, dimension(:,:), pointer               :: MaxWaterColumn       => null()
-        real(4), dimension(:,:), pointer            :: MaxWaterColumn_R4       => null()
+        real(4), dimension(:,:), pointer            :: MaxWaterColumn_R4    => null()
         real, dimension(:,:), pointer               :: TimeOfMaxWaterColumn => null()        
 
         logical                                     :: WriteVelocityAtMaxWaterColumn  = .false.        
         character(Pathlength)                       :: VelocityAtMaxWaterColumnFile   = null_str
         real, dimension(:,:), pointer               :: VelocityAtMaxWaterColumn       => null()       
-        real(4), dimension(:,:), pointer            :: VelocityAtMaxWaterColumn_R4       => null()       
+        real(4), dimension(:,:), pointer            :: VelocityAtMaxWaterColumn_R4    => null()       
 
         logical                                     :: WriteMaxFloodRisk              = .false.        
         character(Pathlength)                       :: MaxFloodRiskFile               = null_str
@@ -616,6 +616,7 @@ Module ModuleRunOff
         type (T_Time)                               :: NextOutPutDisch    
         real                                        :: OutPutDischDT
         character(len=PathLength)                   :: TimeSerieLocationFile, DiscTimeSerieLocationFile
+        logical                                     :: UpdateWaterLevel_R4            = .false.
 
         
     end type T_OutPutRunOff
@@ -786,7 +787,6 @@ Module ModuleRunOff
         real(4),    dimension(:,:), pointer         :: FlowModulus_R4           => null()
         real,    dimension(:,:), pointer            :: VelocityModulus          => null()
         real(4),    dimension(:,:), pointer         :: VelocityModulus_R4       => null()
-        real(4),    dimension(:,:), pointer         :: MaxVelocityModulus_R4    => null()
         integer, dimension(:,:), pointer            :: LowestNeighborI          => null() !Lowest Neighbor in the surroundings
         integer, dimension(:,:), pointer            :: LowestNeighborJ          => null() !Lowest Neighbor in the surroundings       
         integer, dimension(:,:), pointer            :: DFourSinkPoint           => null() !Point which can't drain with in X/Y only
@@ -1061,6 +1061,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                         WorkSize = Me%WorkSize,                          &
                                         STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructRunOff - ModuleRunOff - ERR020'
+            
             call ReadDataFile
             
             call AllocateVariables
@@ -1784,7 +1785,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                      SearchType   = FromFile,                               &
                      Default      = .false.,                                &
                      STAT         = STAT_CALL)                                  
-        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR445'
+        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR446'
 #endif _SEWERGEMSENGINECOUPLER_
         !Output for restart
         call GetOutPutTime(Me%ObjEnterData,                                             &
@@ -5446,7 +5447,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%CenterVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
-            allocate (Me%MaxVelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxFlowModulus_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
             allocate (Me%Output%VelocityAtMaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5458,7 +5458,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%CenterVelocityY_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%FlowModulus_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%VelocityModulus_R4, Me%Size, ZeroValue)
-            call SetMatrixValue(Me%MaxVelocityModulus_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%Output%MaxFlowModulus_R4, Me%Size, ZeroValue)
             Aux = Me%MinimumWaterColumn
             call SetMatrixValue(Me%Output%MaxWaterColumn_R4, Me%Size, Aux)
@@ -18501,9 +18500,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         JLB = Me%WorkSize%JLB
         JUB = Me%WorkSize%JUB
 
-
+        Me%OutPut%UpdateWaterLevel_R4 = .true.
         if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
 
+            Me%OutPut%UpdateWaterLevel_R4 = .false.
             !Writes current time
             call ExtractDate   (Me%ExtVar%Now , AuxTime(1), AuxTime(2),         &
                                                 AuxTime(3), AuxTime(4),         &
@@ -18773,45 +18773,50 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: STAT_CALL
         
         !----------------------------------------------------------------------
-       
+        if (Me%OutPut%UpdateWaterLevel_R4) then
+            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
+            !Writes the Water Level
+            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
+        endif
+        
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%MyWaterLevel,                                   &
+                            Data2D_4 = Me%myWaterLevel_R4,                              &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR01'
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%MyWaterColumn,                                  &
+                            Data2D_4 = Me%MyWaterColumn_R4,                             &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterFlowX_R4,                                 &
+                            Data2D_4 = Me%CenterFlowX_R4,                               &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
 
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterFlowY_R4,                                 &
+                            Data2D_4 = Me%CenterFlowY_R4,                               &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
 
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%FlowModulus_R4,                                 &
+                            Data2D_4 = Me%FlowModulus_R4,                               &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterVelocityX_R4,                             &
+                            Data2D_4 = Me%CenterVelocityX_R4,                           &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
 
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterVelocityY_R4,                             &
+                            Data2D_4 = Me%CenterVelocityY_R4,                           &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
 
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%VelocityModulus_R4,                             &
+                            Data2D_4 = Me%VelocityModulus_R4,                           &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
      
@@ -18840,6 +18845,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
    
     end subroutine OutputTimeSeries_R4
+    
     !--------------------------------------------------------------------------
 
     subroutine ComputeBoxesWaterFluxes
@@ -19056,12 +19062,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%Output%TimeOfMaxWaterColumn(i,j) = ElapsedTime
                    
                 endif
-                if (Me%VelocityModulus_R4 (i, j) > Me%MaxVelocityModulus_R4 (i, j)) then
-                    Me%MaxVelocityModulus_R4 (i, j) = Me%VelocityModulus_R4 (i, j)
-                    FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
-                    
-                    Me%Output%MaxFloodRisk_R4(i,j) = max(Me%Output%MaxFloodRisk_R4(i,j), FloodRisk)
-                endif
+                
+                FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
+                Me%Output%MaxFloodRisk_R4(i,j) = max(Me%Output%MaxFloodRisk_R4(i,j), FloodRisk)
+                
             endif
         enddo
         enddo
