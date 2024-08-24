@@ -616,7 +616,7 @@ Module ModuleRunOff
         type (T_Time)                               :: NextOutPutDisch    
         real                                        :: OutPutDischDT
         character(len=PathLength)                   :: TimeSerieLocationFile, DiscTimeSerieLocationFile
-        logical                                     :: UpdateWaterLevel_R4            = .false.
+        logical                                     :: UpdateWaterLevel_R4            = .true.
 
         
     end type T_OutPutRunOff
@@ -8167,10 +8167,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                         if (Niter > 1) then                
                             call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
+                            call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
+                            call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
                         endif
                     
-                        call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
-                        call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
+                        !call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
+                        !call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
                 
                         if (firstRestart) then
                             !using Me%InitialFlowX and Me%InitialFlowY directly
@@ -8252,7 +8254,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             endif
 
                             call IntegrateFlow     (Me%CV%CurrentDT, SumDT)
-                        
+                            
                             call ReadUnLockExternalVar (StaticOnly = .false.)
                         
                             SumDT = SumDT + Me%CV%CurrentDT
@@ -14410,7 +14412,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Computes Effective flow and updates WaterLevel, WaterColumn and volumes. Writes results to inlets output file
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromToInlets")
         call FlowFromToInlets
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromToInlets")        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromToInlets")   
         !Gets flow to or from outfalls and updates volumes
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromToOutfalls")
         call FlowFromToOutfalls
@@ -14434,7 +14436,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         call OpenChannelFlow !Assuming ConstantGrid in sewergems
 
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "NumberOfCrossSections")
         do n = 1, Me%NumberOfCrossSections
             
             Me%TotalStormWaterVolume = Me%TotalStormWaterVolume  - Me%CrossSections(n)%Flow * Me%ExtVar%DT
@@ -14445,7 +14446,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR160'
                 
         enddo
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "NumberOfCrossSections")
         
         do n = 1, Me%NumberOfPonds
                 
@@ -14456,7 +14456,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR170'
 
         enddo
-        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryStormWater")
         !ModifyGeometryandMapping
         strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
         Aux_Y = AlmostZero_Double * Me%DY
@@ -14502,6 +14502,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !$OMP END DO
         !$OMP END PARALLEL
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryStormWater")
+        
         !Get SewerGEMS SWMM current total volume
         STAT_CALL = SewerGEMSEngine_getTotalVolume(Me%Total1DVolume)
         if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR180'
@@ -14510,7 +14512,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             Me%MaxTotal1DVolume         = Me%Total1DVolume
             Me%TimeOfMaxTotal1DVolume   = Me%ExtVar%Now - Me%BeginTime            
         endif
-
+        
         !Get SewerGEMS SWMM current time step 
         STAT_CALL = SewerGEMSEngine_getdt(dt)
         if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR190'
@@ -14528,7 +14530,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR200'
             endif
         endif
-
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeStormWaterModel")
 
 
@@ -14549,7 +14551,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         logical                     :: ActiveCell
 
         !--------------------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "OpenChannelFlow")
+        !if (MonitorPerformance) call StartWatch ("ModuleRunOff", "OpenChannelFlow")
         
         do n = 1, Me%NumberOfOpenChannelLinks
             
@@ -14767,7 +14769,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%ModifyGeometryStormWater(i+1,j  ) = 0
             endif
         enddo
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow")
+        !if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow")
     
 #endif _SEWERGEMSENGINECOUPLER_
     
@@ -16551,12 +16553,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / SumDTs
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / SumDTs
                     
-                    !if (Me%DischargePoints(i,j) == Compute) then
+                    if (Me%DischargePoints(i,j) == Compute) then
                         DischargeVolume = Me%lFlowDischarge(i, j) * LocalDT
                         Me%iFlowDischarge(i, j) = (Me%iFlowDischarge(i, j) * SumDT + DischargeVolume) / &
                                                     SumDTs
                         sumDischarge = sumDischarge + DischargeVolume
-                    !endif
+                    endif
                 endif
             enddo
             enddo

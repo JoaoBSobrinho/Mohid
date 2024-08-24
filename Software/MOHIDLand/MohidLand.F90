@@ -70,6 +70,7 @@ program MohidLand
     
     logical                             :: SyncDT               = .false.      !Sync modules at specified interval?
     real                                :: SyncDTInterval       = null_real    !interval to sync in seconds
+    integer                             :: SyncDTFactor         = 10         !factor to check whento start decresing timestep
     type(T_Time)                        :: NextSyncTime                        !time at wich all modules sync (for output)
                                                                                !use max dt as default
     
@@ -400,6 +401,14 @@ program MohidLand
 
             if (STAT_CALL /= SUCCESS_) stop 'ReadKeywords - MohidLand - ERR080'   
             
+            call GetData                (SyncDTFactor, ObjEnterData, iflag,     &
+                                            keyword      = 'SYNC_DT_FACTOR',    &
+                                            ClientModule = 'MOHIDLand',         &
+                                            default      =  10,                 &
+                                            STAT         = STAT_CALL)
+
+            if (STAT_CALL /= SUCCESS_) stop 'ReadKeywords - MohidLand - ERR080'  
+            
             !!DT needs to be multiple of duration
             !!Run period in seconds
             !DTaux = EndTime - BeginTime
@@ -470,7 +479,8 @@ program MohidLand
         !Local-----------------------------------------------------------------
         real                                        :: NewDT
         integer                                     :: STAT_CALL
-        real                                        :: CPUTime
+        real                                        :: CPUTime, DistanceToNextSync, DT_Sync
+        integer                                     :: multiple
 
         !Actualize the CurrentTime with Model time interval DT
         call ActualizeCurrentTime (TimeID    = ObjComputeTime,      &
@@ -537,8 +547,38 @@ program MohidLand
             !The split of difference to synctime in half makes that a lower next DT probably will make the model pass with no dt
             !reduction from Modules (but even increase) and in subsquent DT's the synctime will be surpassed with a DT not very 
             !different from the original (or in the order of half)
+            !if (SyncDT) then
+            !    
+            !    !if passed time to sync, cut dt to sync time
+            !    if (CurrentTime + DT >= NextSyncTime) then
+            !        DT = NextSyncTime - CurrentTime
+            !        NextSyncTime = NextSyncTime + SyncDTInterval
+            !    else
+            !        !to avoid that small timesteps are created when setting the dt to time to sync (previous if)
+            !        !in a proactive way
+            !        
+            !        !if next next dt will be very small, ignore it and increase this dt to next sync time (+1milisecond)
+            !        if ((NextSyncTime - CurrentTime + DT) < 0.001) then
+            !            DT = NextSyncTime - CurrentTime
+            !            NextSyncTime = NextSyncTime + SyncDTInterval
+            !
+            !        !verify if the remainder time to sync is not lower than current step, otherwise
+            !        !divide it by 2
+            !        else if ((NextSyncTime - CurrentTime + DT) < DT) then
+            !            DT = (NextSyncTime - CurrentTime) / 2.0
+            !            
+            !        elseif ((NextSyncTime - CurrentTime) < 2.0 * DT) then
+            !            
+            !            DT = (NextSyncTime - CurrentTime) / 2.0
+            !            
+            !        endif
+            !    endif
+            !    
+            !    
+            !endif
+            
             if (SyncDT) then
-                
+                DistanceToNextSync = NextSyncTime - CurrentTime
                 !if passed time to sync, cut dt to sync time
                 if (CurrentTime + DT >= NextSyncTime) then
                     DT = NextSyncTime - CurrentTime
@@ -551,19 +591,16 @@ program MohidLand
                     if ((NextSyncTime - CurrentTime + DT) < 0.001) then
                         DT = NextSyncTime - CurrentTime
                         NextSyncTime = NextSyncTime + SyncDTInterval
-
-                    !verify if the remainder time to sync is not lower than current step, otherwise
-                    !divide it by 2
-                    else if ((NextSyncTime - CurrentTime + DT) < DT) then
-                        DT = (NextSyncTime - CurrentTime) / 2.0
-                        
-                    elseif ((NextSyncTime - CurrentTime) < 2.0 * DT) then
-                        
-                        DT = (NextSyncTime - CurrentTime) / 2.0
-                        
+                    elseif (SyncDTFactor * DT >= DistanceToNextSync) then
+do1:                    do multiple = 1, SyncDTFactor
+                            DT_Sync = DistanceToNextSync / multiple
+                            if (DT_Sync <= DT ) then
+                                DT = DT_Sync
+                                exit do1
+                            endif
+                        enddo do1
                     endif
                 endif
-                
                 
             endif
             
