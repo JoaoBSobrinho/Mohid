@@ -2333,8 +2333,17 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                              STAT         = STAT_CALL)
                 if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR798'
 
-                Me%Output%FloodPeriodFile = trim(adjustl(Me%Output%FloodPeriodFile))//"FloodPeriod.dat"   
+                Me%Output%FloodPeriodFile = trim(adjustl(Me%Output%FloodPeriodFile))//"FloodPeriod.dat"
+                
+                
+                allocate(Me%Output%FloodPeriodWaterColumnLimits(1:1))
 
+                Me%Output%FloodPeriodWaterColumnLimits(1) = Me%Output%FloodPeriodWaterColumnLimit
+                
+                allocate (Me%Output%FloodPeriods(Me%Size%ILB:Me%Size%IUB, &
+                                                 Me%Size%JLB:Me%Size%JUB, &
+                                                 1:1)) 
+                Me%Output%FloodPeriods = 0.
             endif
 
         endif
@@ -17962,22 +17971,32 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
 
         if (Me%Compute) then
-            if (Me%Output%WriteMaxWaterColumn .or. Me%Output%WriteMaxFloodRisk) then
+            if (Me%Output%OutputFloodRisk) then
                 if (Me%OutPut%SinglePrecision) then
-                    call OutputFlooding_R4
+                    call OutputFloodingAll_R4
                 else
-                    call OutputFlooding
+                    call OutputFloodingAll
                 endif
                 
-            endif
+            else
             
-            if (Me%Output%WriteFloodPeriod) then            
-                call OutputFloodPeriod            
-            endif  
-
-            if (Me%Output%WriteFloodArrivalTime) then            
-                call OutputFloodArrivalTime            
-            endif              
+                if (Me%Output%WriteMaxWaterColumn .or. Me%Output%WriteMaxFloodRisk) then
+                    if (Me%OutPut%SinglePrecision) then
+                        call OutputFlooding_R4
+                    else
+                        call OutputFlooding
+                    endif
+                
+                endif
+            
+                if (Me%Output%WriteFloodPeriod) then            
+                    call OutputFloodPeriod            
+                endif  
+            
+                if (Me%Output%WriteFloodArrivalTime) then            
+                    call OutputFloodArrivalTime            
+                endif  
+            endif
             
             call CalculateTotalStoredVolume
         endif
@@ -18637,6 +18656,270 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine ComputeBoxesWaterFluxes
 
     !--------------------------------------------------------------------------
+    
+    subroutine OutputFloodingAll
+
+        !Locals----------------------------------------------------------------
+        integer                                 :: ILB,IUB, JLB, JUB, i, j, n
+        integer                                 :: STAT_CALL
+        real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
+        real, dimension(:,:), pointer           :: ChannelsTopArea
+        real                                    :: SumArea, WeightedVelocity, FloodRisk, ElapsedTime, FloodWaterColumnLimit
+        real                                    :: Sum, FloodRisk
+        real(8)                                 :: WaterColumn
+        integer                                 :: NFloodPeriodLimits
+        integer                                 :: CHUNK
+        integer, dimension(:,:), pointer        :: ComputePoints
+        !Begin-----------------------------------------------------------------
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFloodingAll")
+
+        !Begin-----------------------------------------------------------------
+
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        ElapsedTime = Me%ExtVar%Now - Me%BeginTime
+
+        FloodWaterColumnLimit = max(minval(Me%Output%FloodPeriodWaterColumnLimits), Me%Output%FloodArrivalWaterColumnLimit)
+        NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits(n), 1))
+        Sum   = 0.0
+        
+        if (FloodWaterColumnLimit > Me%MinimumWaterColumn) then
+            ComputePoints => Me%OpenPoints
+        else
+            ComputePoints => Me%ActivePoints
+        endif
+        
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (ComputePoints == BasinPoint) then
+                WaterColumn = Me%myWaterColumn(i, j)
+                
+                !Water Column of overland flow
+                if (WaterColumn > Me%Output%MaxWaterColumn(i, j)) then
+                    Me%Output%MaxWaterColumn(i, j) = WaterColumn
+                    
+                    !Velocity at MaxWater column
+                    Me%Output%VelocityAtMaxWaterColumn(i,j) =  Me%VelocityModulus (i, j)
+
+                    Me%Output%TimeOfMaxWaterColumn(i,j) = ElapsedTime
+                   
+                endif
+                
+                FloodRisk = WaterColumn * (Me%VelocityModulus (i, j) + Me%Output%FloodRiskVelCoef)
+                Me%Output%MaxFloodRisk(i,j) = max(Me%Output%MaxFloodRisk(i,j), FloodRisk)
+                    
+                do n = 1, NFloodPeriodLimits
+                    if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+                        Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+                    endif
+                enddo
+                    
+                if(WaterColumn > Me%Output%FloodArrivalWaterColumnLimit)then
+
+                    if (Me%GridIsConstant) then
+                        Sum = Sum + Me%GridCellArea
+                    else
+                        Sum = Sum + Me%ExtVar%GridCellArea(i,j)
+                    endif
+                        
+                    if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                        Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
+                    endif
+                endif
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+        
+        if (Me%ObjDrainageNetwork /= 0) then
+
+            call GetChannelsWaterLevel  (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR01' 
+            
+            call GetChannelsTopArea  (Me%ObjDrainageNetwork, ChannelsTopArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR02'              
+
+            call GetChannelsVelocity  (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR03'             
+            
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+       
+                !Water Column of River Network
+                if (Me%ExtVar%RiverPoints(i, j) == BasinPoint) then
+                    if (ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j) > Me%Output%MaxWaterColumn(i, j)) then
+                        Me%Output%MaxWaterColumn(i, j) = ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
+                        
+                        SumArea = Me%ExtVar%GridCellArea(i,j) + ChannelsTopArea(i,j)
+                        
+                        WeightedVelocity = (Me%VelocityModulus (i, j) * Me%ExtVar%GridCellArea(i,j) +   &
+                                            ChannelsVelocity(i,j) * ChannelsTopArea(i,j) ) / SumArea
+                        
+                        !weighted velocity with river
+                        Me%Output%VelocityAtMaxWaterColumn(i,j) = WeightedVelocity
+                        
+                        if ((Me%Output%MaxWaterColumn(i, j) *  (WeightedVelocity + Me%Output%FloodRiskVelCoef))     &
+                              > Me%Output%MaxFloodRisk(i,j)) then
+                            Me%Output%MaxFloodRisk(i,j) = Me%Output%MaxWaterColumn(i, j)                            &
+                                                          * (WeightedVelocity + Me%Output%FloodRiskVelCoef)
+                        endif
+                    endif                                        
+                    
+                endif
+
+            enddo
+            enddo
+
+            call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR04'
+
+            call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR05'
+
+            call UnGetDrainageNetwork  (Me%ObjDrainageNetwork, ChannelsTopArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR06'                
+            
+        endif
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFloodingAll")
+    end subroutine OutputFloodingAll
+    
+    !--------------------------------------------------------------------------
+
+    subroutine OutputFloodingAll_R4
+
+        !Locals----------------------------------------------------------------
+        integer                                 :: ILB,IUB, JLB, JUB, i, j
+        integer                                 :: STAT_CALL
+        real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
+        real, dimension(:,:), pointer           :: ChannelsTopArea
+        real                                    :: SumArea, WeightedVelocity, ElapsedTime, FloodWaterColumnLimit
+        real                                    :: Sum
+        real(4)                                 :: FloodRisk, WaterColumn
+        integer                                 :: NFloodPeriodLimits
+        integer                                 :: CHUNK
+        integer, dimension(:,:), pointer        :: ComputePoints
+
+        !Begin-----------------------------------------------------------------        
+        if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFloodingAll_R4")
+   
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        ElapsedTime = Me%ExtVar%Now - Me%BeginTime
+
+        FloodWaterColumnLimit = max(minval(Me%Output%FloodPeriodWaterColumnLimits), Me%Output%FloodArrivalWaterColumnLimit)
+        NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits(n), 1))
+        Sum   = 0.0
+        
+        if (FloodWaterColumnLimit > Me%MinimumWaterColumn) then
+            ComputePoints => Me%OpenPoints
+        else
+            ComputePoints => Me%ActivePoints
+        endif
+        
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (ComputePoints(i, j) == BasinPoint) then
+                WaterColumn = Me%myWaterColumn(i, j)
+                !Water Column of overland flow
+                if (WaterColumn > Me%Output%MaxWaterColumn_R4(i, j)) then
+                    Me%Output%MaxWaterColumn_R4(i, j) = WaterColumn
+                                                    
+                    !Velocity at MaxWater column
+                    Me%Output%VelocityAtMaxWaterColumn_R4(i,j) =  Me%VelocityModulus_R4 (i, j)
+                                    
+                    Me%Output%TimeOfMaxWaterColumn(i,j) = ElapsedTime
+                                                   
+                endif
+                                            
+                FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
+                Me%Output%MaxFloodRisk_R4(i,j) = max(Me%Output%MaxFloodRisk_R4(i,j), FloodRisk)
+                    
+                do n = 1, NFloodPeriodLimits
+                    if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+                        Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+                    endif
+                enddo
+                    
+                if(WaterColumn > Me%Output%FloodArrivalWaterColumnLimit)then
+
+                    if (Me%GridIsConstant) then
+                        Sum = Sum + Me%GridCellArea
+                    else
+                        Sum = Sum + Me%ExtVar%GridCellArea(i,j)
+                    endif
+                        
+                    if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                        Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
+                    endif
+                endif                      
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+
+        if (Me%ObjDrainageNetwork /= 0) then
+
+            call GetChannelsWaterLevel  (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll_R4 - ModuleRunOff - ERR01' 
+            
+            call GetChannelsTopArea  (Me%ObjDrainageNetwork, ChannelsTopArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll_R4 - ModuleRunOff - ERR02'              
+
+            call GetChannelsVelocity  (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll_R4 - ModuleRunOff - ERR03'             
+            
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+       
+                !Water Column of River Network
+                if (Me%ExtVar%RiverPoints(i, j) == BasinPoint) then
+                    if (ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j) > Me%Output%MaxWaterColumn_R4(i, j)) then
+                        Me%Output%MaxWaterColumn_R4(i, j) = ChannelsWaterLevel(i, j) - Me%ExtVar%Topography(i, j)
+                        
+                        SumArea = Me%ExtVar%GridCellArea(i,j) + ChannelsTopArea(i,j)
+                        
+                        WeightedVelocity = (Me%VelocityModulus_R4 (i, j) * Me%ExtVar%GridCellArea(i,j) +   &
+                                            ChannelsVelocity(i,j) * ChannelsTopArea(i,j) ) / SumArea
+                        
+                        !weighted velocity with river
+                        Me%Output%VelocityAtMaxWaterColumn_R4(i,j) = WeightedVelocity
+                        
+                        if ((Me%Output%MaxWaterColumn_R4(i, j) *  (WeightedVelocity + Me%Output%FloodRiskVelCoef))     &
+                              > Me%Output%MaxFloodRisk_R4(i,j)) then
+                            Me%Output%MaxFloodRisk_R4(i,j) = Me%Output%MaxWaterColumn_R4(i, j)                            &
+                                                          * (WeightedVelocity + Me%Output%FloodRiskVelCoef)
+                        endif
+                    endif                                        
+                    
+                endif
+
+            enddo
+            enddo
+
+            call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll_R4 - ModuleRunOff - ERR04'
+
+            call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll_R4 - ModuleRunOff - ERR05'
+
+            call UnGetDrainageNetwork  (Me%ObjDrainageNetwork, ChannelsTopArea, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll_R4 - ModuleRunOff - ERR06'                
+            
+        endif
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunoff", "OutputFloodingAll_R4")
+    end subroutine OutputFloodingAll_R4
+
+    !-----------------------------------------------------------------------------
 
     subroutine OutputFlooding
 
@@ -18651,13 +18934,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Begin-----------------------------------------------------------------        
         if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFlooding")
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
-
-        !Begin-----------------------------------------------------------------
-
    
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
@@ -18665,8 +18941,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = JLB, JUB
-        do i = ILB, IUB
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
    
             if (Me%OpenPoints(i, j) == BasinPoint) then
                 WaterColumn = Me%myWaterColumn(i, j)
@@ -18705,8 +18981,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             call GetChannelsVelocity  (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR03'             
             
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
        
                 !Water Column of River Network
                 if (Me%ExtVar%RiverPoints(i, j) == BasinPoint) then
@@ -18762,22 +19038,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Begin-----------------------------------------------------------------        
         if (MonitorPerformance) call StartWatch ("ModuleRunoff", "OutputFlooding_R4")
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
 
-        !Begin-----------------------------------------------------------------
-
-   
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         
         ElapsedTime = Me%ExtVar%Now - Me%BeginTime
         
         !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = JLB, JUB
-        do i = ILB, IUB
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if (Me%OpenPoints(i, j) == BasinPoint) then
                 WaterColumn = Me%myWaterColumn(i, j)
                 !Water Column of overland flow
@@ -18811,8 +19080,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             call GetChannelsVelocity  (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputFlooding - ModuleRunOff - ERR03'             
             
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
        
                 !Water Column of River Network
                 if (Me%ExtVar%RiverPoints(i, j) == BasinPoint) then
