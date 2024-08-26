@@ -954,6 +954,8 @@ Module ModuleRunOff
         logical                                     :: CheckGlobalMass
         logical                                     :: GridIsRotated = .false.
         logical                                     :: GridIsConstant = .false.
+        logical                                     :: HasInfiltration = .false.
+        logical                                     :: HasRainFall = .false.
         real                                        :: DX                       = null_real
         real                                        :: DY                       = null_real
         real                                        :: GridCellArea             = null_real
@@ -7938,6 +7940,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             Me%RainFall => RainFall
             Me%CellHasRain => CellHasRain
+            Me%HasRainFall = .true.
             
             STAT_ = SUCCESS_
         else               
@@ -7968,6 +7971,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             Me%InfiltrationRate => Infiltration
             if (.not. associated(Me%CellHasRain)) Me%CellHasRain => CellHasRain
+            
+            Me%HasInfiltration = .true.
             
             STAT_ = SUCCESS_
         else               
@@ -8090,12 +8095,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%Discharges) call ModifyWaterDischarges  (Me%ExtVar%DT)
                 
                 !Apply rain. Needs to be done here so that all source and sinks are added at the same instant in time
-                if (associated(Me%RainFall)) then
+                if (Me%HasRainFall) then
                     call ModifyRainFall
                 endif
                 
                 !Apply infiltration
-                if (associated(Me%InfiltrationRate)) then
+                if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
                 !StormWaterModel
@@ -8114,11 +8119,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
             else !other models, no changes
                 
-                if (associated(Me%RainFall)) then
+                if (Me%HasRainFall) then
                     call ModifyRainFall
                 endif
                 !Apply infiltration
-                if (associated(Me%InfiltrationRate)) then
+                if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
                 
@@ -11143,7 +11148,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP PARALLEL PRIVATE(I,J)
         if (Me%GridIsConstant) then
             
-            if (associated(Me%InfiltrationRate)) then !Don't need to update volume and water level. This will be done in Modify Infiltration
+            if (Me%HasInfiltration) then !Don't need to update volume and water level. This will be done in Modify Infiltration
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
@@ -11169,7 +11174,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
             
         else
-            if (associated(Me%InfiltrationRate)) then !Don't need to update volume and water level. This will be done in Modify Infiltration
+            if (Me%HasInfiltration) then !Don't need to update volume and water level. This will be done in Modify Infiltration
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
@@ -11197,7 +11202,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END PARALLEL
         
         nullify (Me%RainFall)
-        if (.not. associated(Me%InfiltrationRate)) nullify (Me%CellHasRain)
+        if (.not. Me%HasInfiltration) nullify (Me%CellHasRain)
         
        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall")
     end subroutine ModifyRainFall
