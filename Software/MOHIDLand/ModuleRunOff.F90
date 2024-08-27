@@ -11211,6 +11211,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END PARALLEL
         
         nullify (Me%RainFall)
+        Me%HasRainFall = .false.
         if (.not. Me%HasInfiltration) nullify (Me%CellHasRain)
         
        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall")
@@ -11282,6 +11283,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         nullify (Me%CellHasRain)
         nullify (Me%InfiltrationRate)
+        Me%HasInfiltration = .false.
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyInfiltration")
     end subroutine ModifyInfiltration
     
@@ -17381,15 +17383,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
     subroutine ComputeCenterValues_R4 
-
+    
         !Arguments-------------------------------------------------------------
-
+    
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK
         real(4)                                     :: FlowX, FlowY, VelocityX, VelocityY
-
+        real(4)                                     :: FlowX_right, FlowX_Center, FlowY_top, FlowY_Center
+    
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues_R4")
             
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
@@ -17400,24 +17403,30 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         JUB = Me%WorkSize%JUB
             
         if(.not. Me%ExtVar%Distortion) then
-
+    
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
-
+    
             if (Me%GridIsRotated) then
-                !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY, VelocityX, VelocityY)
+                !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowX_Center,FlowY,FlowY_top,FlowY_Center,VelocityX,VelocityY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%OpenPoints(i,j) == BasinPoint) then
-                            FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                            FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
-                                
-                            VelocityX = FlowX / ((Me%AreaU(i,j) + Me%AreaU(i,j+1)) / 2)
-                            VelocityY = FlowX / ((Me%AreaV(i,j) + Me%AreaV(i+1,j)) / 2)
+                            
+                            FlowX = Me%iFlowX(i, j)
+                            FlowX_right = Me%iFlowX(i, j+1)
+                            FlowY = Me%iFlowY(i, j)
+                            FlowY_top = Me%iFlowY(i+1, j)
+                            
+                            FlowX_Center = (FlowX + FlowX_right) / 2.0
+                            FlowY_Center = (FlowY + FlowY_top) / 2.0
                     
-                            Me%CenterFlowX_R4(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
-                            Me%CenterFlowY_R4(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
+                            Me%CenterFlowX_R4(i, j) = FlowX_Center * Me%GridCosAngleX + FlowY_Center * Me%GridCosAngleY
+                            Me%CenterFlowY_R4(i, j) = FlowX_Center * Me%GridSinAngleX + FlowY_Center * Me%GridSinAngleY
+                            
+                            VelocityX = (FlowX / Me%AreaU(i,j) + FlowX_right / Me%AreaU(i,j+1)) / 2.0
+                            VelocityY = (FlowY / Me%AreaV(i,j) + FlowY_top / Me%AreaV(i+1,j)) / 2.0
                             
                             Me%CenterVelocityX_R4 (i, j) = VelocityX * Me%GridCosAngleX + VelocityY * Me%GridCosAngleY
                             Me%CenterVelocityY_R4 (i, j) = VelocityX * Me%GridSinAngleX + VelocityY * Me%GridSinAngleY
@@ -17428,22 +17437,28 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Me%CenterVelocityY_R4(i, j) = 0.0
                         end if
                     endif
-
+    
                 enddo
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowY,FlowY_top)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = JLB, JUB
                 do i = ILB, IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%OpenPoints(i,j) == BasinPoint) then
-                            Me%CenterFlowX_R4(i, j) = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                            Me%CenterFlowY_R4(i, j) = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
-                            Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ((Me%AreaU(i,j) + Me%AreaU(i,j+1)) / 2)
-                            Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ((Me%AreaV(i,j) + Me%AreaV(i+1,j)) / 2)
+                            
+                            FlowX = Me%iFlowX(i, j)
+                            FlowX_right = Me%iFlowX(i, j+1)
+                            FlowY = Me%iFlowY(i, j)
+                            FlowY_top = Me%iFlowY(i+1, j)
+                            
+                            Me%CenterFlowX_R4(i, j) = (FlowX + FlowX_right) / 2.0
+                            Me%CenterFlowY_R4(i, j) = (FlowY + FlowY_top) / 2.0
+                            Me%CenterVelocityX_R4 (i, j) = (FlowX / Me%AreaU(i,j) + FlowX_right / Me%AreaU(i,j+1)) / 2.0
+                            Me%CenterVelocityY_R4 (i, j) = (FlowY / Me%AreaV(i,j) + FlowY_top / Me%AreaV(i+1,j)) / 2.0
                         else
                             Me%CenterFlowX_R4(i, j) = 0.0
                             Me%CenterFlowY_R4(i, j) = 0.0
@@ -17457,7 +17472,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END PARALLEL
             endif
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
-
+    
         else
             !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
@@ -17486,9 +17501,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         endif
-
+    
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")
-
+    
         if(Me%Output%WriteMaxFlowModulus) then
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
@@ -17530,8 +17545,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END PARALLEL
         endif
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")
-
-
+    
+    
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues_R4")
         
     end subroutine ComputeCenterValues_R4
