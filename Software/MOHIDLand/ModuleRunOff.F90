@@ -956,6 +956,7 @@ Module ModuleRunOff
         logical                                     :: GridIsConstant = .false.
         logical                                     :: HasInfiltration = .false.
         logical                                     :: HasRainFall = .false.
+        logical                                     :: Restarted = .true.
         real                                        :: DX                       = null_real
         real                                        :: DY                       = null_real
         real                                        :: GridCellArea             = null_real
@@ -17566,7 +17567,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                        FlowX = (FlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                        FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
                         FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
                     
                         Me%CenterFlowX_R4(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
