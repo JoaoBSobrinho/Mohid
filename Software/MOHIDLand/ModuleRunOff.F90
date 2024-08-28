@@ -11065,6 +11065,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !Updates Water Column
                         Me%myWaterColumn  (i, j)    = Me%myWaterVolume (i, j) / Me%ExtVar%GridCellArea(i, j)
                         
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1
+                        endif
                         !Updates Water Level
                         Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
                         
@@ -11072,6 +11075,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
                     if (ByPassON) then
 
+                        if (AuxFlowIJ /= 0.0) Me%Compute = .true. !turn flag on so compute nexdt gets called
+                        
                         Me%lFlowDischarge(ib, jb)     = Me%lFlowDischarge(ib, jb) - AuxFlowIJ
 
                         !Updates Water Volume
@@ -11081,7 +11086,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         if (present(UpdateWaterLevels)) then
                             !Updates Water Column
                             Me%myWaterColumn  (ib, jb)    = Me%myWaterVolume (ib, jb) / Me%ExtVar%GridCellArea(ib, jb)
-                        
+                            if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                Me%OpenPoints(i,j) = 1
+                            endif
                             !Updates Water Level
                             Me%myWaterLevel (ib, jb)      = Me%myWaterColumn (ib, jb) + Me%ExtVar%Topography(ib, jb)
                         endif
@@ -18679,7 +18686,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
-        real                                    :: SumArea, WeightedVelocity, FloodRisk, ElapsedTime, FloodWaterColumnLimit
+        real                                    :: SumArea, WeightedVelocity, ElapsedTime, FloodWaterColumnLimit
         real                                    :: Sum, FloodRisk
         real(8)                                 :: WaterColumn
         integer                                 :: NFloodPeriodLimits
@@ -18696,7 +18703,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         ElapsedTime = Me%ExtVar%Now - Me%BeginTime
 
         FloodWaterColumnLimit = max(minval(Me%Output%FloodPeriodWaterColumnLimits), Me%Output%FloodArrivalWaterColumnLimit)
-        NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits(n), 1))
+        NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits), 1)
         Sum   = 0.0
         
         if (FloodWaterColumnLimit > Me%MinimumWaterColumn) then
@@ -18705,11 +18712,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             ComputePoints => Me%ActivePoints
         endif
         
-        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, n)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:Sum)
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if (ComputePoints == BasinPoint) then
+            if (ComputePoints(i,j) == BasinPoint) then
                 WaterColumn = Me%myWaterColumn(i, j)
                 
                 !Water Column of overland flow
@@ -18750,7 +18757,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
         
-        
+        Me%Output%TotalFloodedArea = Sum
+
+        if(Me%Output%TotalFloodedArea > Me%Output%MaxTotalFloodedArea)then
+            Me%Output%MaxTotalFloodedArea       = Me%Output%TotalFloodedArea
+            Me%Output%TimeOfMaxTotalFloodedArea = Me%ExtVar%Now - Me%BeginTime
+        endif
+            
         if (Me%ObjDrainageNetwork /= 0) then
 
             call GetChannelsWaterLevel  (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
@@ -18789,7 +18802,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
             enddo
             enddo
-
+        
             call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsVelocity, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputFloodingAll - ModuleRunOff - ERR04'
 
@@ -18809,7 +18822,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFloodingAll_R4
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j
+        integer                                 :: ILB,IUB, JLB, JUB, i, j, n
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
@@ -18827,8 +18840,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         ElapsedTime = Me%ExtVar%Now - Me%BeginTime
 
-        FloodWaterColumnLimit = max(minval(Me%Output%FloodPeriodWaterColumnLimits), Me%Output%FloodArrivalWaterColumnLimit)
-        NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits(n), 1))
+        FloodWaterColumnLimit = min(minval(Me%Output%FloodPeriodWaterColumnLimits), Me%Output%FloodArrivalWaterColumnLimit)
+        NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits), 1)
         Sum   = 0.0
         
         if (FloodWaterColumnLimit > Me%MinimumWaterColumn) then
@@ -18837,8 +18850,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             ComputePoints => Me%ActivePoints
         endif
         
-        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, n)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:Sum)
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if (ComputePoints(i, j) == BasinPoint) then
@@ -18880,7 +18893,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        Me%Output%TotalFloodedArea = Sum
 
+        if(Me%Output%TotalFloodedArea > Me%Output%MaxTotalFloodedArea)then
+            Me%Output%MaxTotalFloodedArea       = Me%Output%TotalFloodedArea
+            Me%Output%TimeOfMaxTotalFloodedArea = Me%ExtVar%Now - Me%BeginTime
+        endif
+        
         if (Me%ObjDrainageNetwork /= 0) then
 
             call GetChannelsWaterLevel  (Me%ObjDrainageNetwork, ChannelsWaterLevel, STAT = STAT_CALL)
