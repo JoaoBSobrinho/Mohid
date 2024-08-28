@@ -9696,18 +9696,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     !$OMP END DO
     !$OMP END PARALLEL
     
-    ! Ou seja, do ciclo anterior v�m as c�lulas que t�m de ser verificadas. Esta matriz � alterada agora, e antes do ciclo que mete as velocidades a 0    
-    
-    ! Aqui entra ciclo que verifica as c�lulas de descarga e mete o nulifyvelocity a 0
-    !DischargeCellSet => Me%DischargeCells
-    !do while (associated(DischargeCellSet))
-    !    do n = 1, size(DischargeCellSet%VectorI)
-    !        i = DischargeCellSet%VectorI(n)
-    !        j = DischargeCellSet%VectorJ(n)
-    !        Me%CheckNullifyVelocity(i,j) = .false.
-    !    enddo
-    !    DischargeCellSet => DischargeCellSet%Next
-    !enddo
     
     !Currently only nulifying velocities normal to a wall
     !$OMP PARALLEL PRIVATE(i,j)
@@ -9849,7 +9837,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             tau_u = 1000.0 * Friction_Coef * velocityU * velMod !abs made on update
                             tau_v = 1000.0 * Friction_Coef * velocityV * velMod !abs made on update
                     
-                            !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto � s� para mobile bed                                                             
+                            !tau_mod = sqrt(tau_u**2.0 + tau_v**2.0) !tau magnitude !Acho que isto  s para mobile bed                                                             
                             velocityU = sign(max(abs(velocityU) - abs(aux2*(1/waterColumn)*(tau_u)), 0.d0),velocityU) !Update and conversion to primitive
                             velocityV = sign(max(abs(velocityV) - abs(aux2*(1/waterColumn)*(tau_v)), 0.d0),velocityV) !Update and conversion to primitive
                         end if
@@ -11780,11 +11768,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         dj = 0
                     endif
                    
-                    !Bottom Difference to adjacent cells (to check existence of �margins� on the side)
+                    !Bottom Difference to adjacent cells (to check existence of margins on the side)
                     Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
                     Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
 
-                    !if positive than there is a �margin� on the side and friction occurs at wet length
+                    !if positive than there is a margin on the side and friction occurs at wet length
                     !If not basin points than result will be negative.
                     if (Margin1 .gt. 0.0) then
                         WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
@@ -11893,11 +11881,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         di = 0
                     endif
 
-                    !Bottom Difference to adjacent cells (to check existence of �margins� on the side)
+                    !Bottom Difference to adjacent cells (to check existence of margins on the side)
                     Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
                     Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
 
-                    !if positive than there is a �margin� on the side and friction occurs at wet length
+                    !if positive than there is a margin on the side and friction occurs at wet length
                     if (Margin1 .gt. 0.0) then
                         WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
                     endif
@@ -12185,11 +12173,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     dj = 0
                 endif
                     
-                !bottom Difference to adjacent cells (to check existence of �margins� on the side)
+                !bottom Difference to adjacent cells (to check existence of margins on the side)
                 Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
                 Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
 
-                !if positive, than there is a �margin� on the side and friction occurs at wet length
+                !if positive, than there is a margin on the side and friction occurs at wet length
                 if (Margin1 .gt. 0.0) then
                     WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
                 endif
@@ -12428,11 +12416,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         dj = 0
                     endif
                     
-                    !bottom Difference to adjacent cells (to check existence of �margins� on the side)
+                    !bottom Difference to adjacent cells (to check existence of margins on the side)
                     Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
                     Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
     
-                    !if positive, than there is a �margin� on the side and friction occurs at wet length
+                    !if positive, than there is a margin on the side and friction occurs at wet length
                     if (Margin1 .gt. 0.0) then
                         WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
                     endif
@@ -12760,11 +12748,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 !                        dj = 0
 !                    endif
 !                    
-!                    !bottom Difference to adjacent cells (to check existence of �margins� on the side)
+!                    !bottom Difference to adjacent cells (to check existence of margins on the side)
 !                    Margin1 = Me%ExtVar%Topography(i+1, j + dj) - MaxBottom
 !                    Margin2 = Me%ExtVar%Topography(i-1, j + dj) - MaxBottom
 !
-!                    !if positive, than there is a �margin� on the side and friction occurs at wet length
+!                    !if positive, than there is a margin on the side and friction occurs at wet length
 !                    if (Margin1 .gt. 0.0) then
 !                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
 !                    endif
@@ -13103,11 +13091,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     di = 0
                 endif
 
-                !bottom Difference to adjacent cells (to check existence of �margins� on the side)
+                !bottom Difference to adjacent cells (to check existence of margins on the side)
                 Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
                 Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
 
-                !if positive than there is a �margin� on the side and friction occurs at wet length
+                !if positive than there is a margin on the side and friction occurs at wet length
                 if (Margin1 .gt. 0.0) then
                     WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
                 endif
@@ -13366,11 +13354,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         di = 0
                     endif
 
-                    !bottom Difference to adjacent cells (to check existence of �margins� on the side)
+                    !bottom Difference to adjacent cells (to check existence of margins on the side)
                     Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
                     Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
 
-                    !if positive than there is a �margin� on the side and friction occurs at wet length
+                    !if positive than there is a margin on the side and friction occurs at wet length
                     if (Margin1 .gt. 0.0) then
                         WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
                     endif
@@ -13679,11 +13667,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 !                        di = 0
 !                    endif
 !
-!                    !bottom Difference to adjacent cells (to check existence of �margins� on the side)
+!                    !bottom Difference to adjacent cells (to check existence of margins on the side)
 !                    Margin1 = Me%ExtVar%Topography(i + di,j+1) - MaxBottom
 !                    Margin2 = Me%ExtVar%Topography(i + di,j-1) - MaxBottom
 !
-!                    !if positive than there is a �margin� on the side and friction occurs at wet length
+!                    !if positive than there is a margin on the side and friction occurs at wet length
 !                    if (Margin1 .gt. 0.0) then
 !                        WetPerimeter = WetPerimeter + min(WaterDepth, Margin1)
 !                    endif
