@@ -6930,11 +6930,21 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             (ready_ .EQ. READ_LOCK_ERR_)) then
 
             call Read_Lock(mRUNOFF_, Me%InstanceID)
-            FlowX => Me%iFlowX
-
+            
+            if (Me%Restarted) then
+                FlowX => Me%iFlowX
+            else
+                FlowX => Me%lFlowX
+            endif
+            
             call Read_Lock(mRUNOFF_, Me%InstanceID)
-            FlowY => Me%iFlowY
-
+            
+            if (Me%Restarted) then
+                FlowY => Me%iFlowY
+            else
+                FlowY => Me%lFlowY
+            endif
+            
             STAT_ = SUCCESS_
         else 
             STAT_ = ready_
@@ -7211,7 +7221,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             (ready_ .EQ. READ_LOCK_ERR_)) then
 
             call Read_Lock(mRUNOFF_, Me%InstanceID)
-            FlowDischarge => Me%iFlowDischarge
+            if (Me%Restarted) then
+                FlowDischarge => Me%iFlowDischarge
+            else
+                FlowDischarge => Me%lFlowDischarge
+            endif
+            
 
             STAT_ = SUCCESS_
         else 
@@ -8137,8 +8152,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
                     !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
-                    call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ActivePoints)
-                    call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ActivePoints)
+                    if (Me%Restarted) then
+                        call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ActivePoints)
+                    else
+                        call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%lFlowX, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%lFlowY, Me%ActivePoints)
+                    endif
                     
                     !Set 1D River level in river boundary cells
                     !From External model or DN
@@ -8174,6 +8194,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
                             call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
                             call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
+                            Me%Restarted = .true.
+                        else
+                            Me%Restarted  = .false.
                         endif
                     
                         !call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
@@ -8360,16 +8383,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !with a free drop to boundary level (that can be much lower than topography)
                 if (Me%ImposeBoundaryValue) then
                     call Modify_Boundary_Condition
-                endif
-                
-                if (Niter == 1) then
-                    !No restart was needed, so no integrateflow was not needed and lFlow has the flow
-                    Me%iFlowX => Me%lFlowX
-                    Me%iFlowY => Me%lFlowY
-                    Me%iFlowDischarge => Me%lFlowDischarge
-                    if (Me%ObjDrainageNetwork /= 0) then
-                        Me%iFlowToChannels => Me%lFlowToChannels
-                    endif
                 endif
                 
                 if (Me%Compute) then
@@ -15224,7 +15237,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: InletInflow, FlowEnteringCell
         real                                        :: AverageCellLength, y0, dH1, dH2, SqrtGravity, ConstantCellLength
         integer                                     :: n, iStage
-
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
 
         !Local-----------------------------------------------------------------
         ILB = Me%WorkSize%ILB
@@ -15235,6 +15248,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         SqrtGravity = sqrt(Gravity)
         ConstantCellLength = 0.0
         if (Me%GridIsConstant) ConstantCellLength = (Me%DY + Me%DX) / 2
+        
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
         
         do n = 1, Me%NumberOfInlets
                 
@@ -15247,10 +15268,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%Inlets(n)%FlowEnteringCell = 0.0
 
                 !Compute flow entering grid cell 
-                if(Me%iFlowX(i,j)   > 0.0) FlowEnteringCell = FlowEnteringCell + Me%iFlowX(i,  j  )
-                if(Me%iFlowX(i,j+1) < 0.0) FlowEnteringCell = FlowEnteringCell - Me%iFlowX(i,  j+1)
-                if(Me%iFlowY(i,j)   > 0.0) FlowEnteringCell = FlowEnteringCell + Me%iFlowY(i,  j  )
-                if(Me%iFlowY(i+1,j) < 0.0) FlowEnteringCell = FlowEnteringCell - Me%iFlowY(i+1,j  )
+                if(iFlowX(i,j)   > 0.0) FlowEnteringCell = FlowEnteringCell + iFlowX(i,  j  )
+                if(iFlowX(i,j+1) < 0.0) FlowEnteringCell = FlowEnteringCell - iFlowX(i,  j+1)
+                if(iFlowY(i,j)   > 0.0) FlowEnteringCell = FlowEnteringCell + iFlowY(i,  j  )
+                if(iFlowY(i+1,j) < 0.0) FlowEnteringCell = FlowEnteringCell - iFlowY(i+1,j  )
 
                     
                 if(Me%Inlets(n)%TypeOf == Weir_)then
@@ -15347,7 +15368,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
             
         enddo
-        
+        nullify (iFlowX, iflowY)
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine ComputeInletsPotentialFlow
         
@@ -15416,8 +15437,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine setHeadWalls_SewerGems
 #ifdef _SEWERGEMSENGINECOUPLER_
         !--------------------------------------------------------------------------
-        integer                     :: STAT_CALL, n, i, j
+        integer                                     :: STAT_CALL, n, i, j
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !Begin---------------------------------------------------------------------
+        
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
+        
         do n = 1, Me%NumberOfHeadwalls
             
             !I and J of the headwall node location
@@ -15426,10 +15457,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
             if (Me%ActivePoints(i,j) == Compute) then
                 !Compute flow entering grid cell 
-                if(Me%iFlowX(i,j)   > 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell + Me%iFlowX(i,  j  )
-                if(Me%iFlowX(i,j+1) < 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell - Me%iFlowX(i,  j+1)
-                if(Me%iFlowY(i,j)   > 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell + Me%iFlowY(i,  j  )
-                if(Me%iFlowY(i+1,j) < 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell - Me%iFlowY(i+1,j  )
+                if(iFlowX(i,j)   > 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell + iFlowX(i,  j  )
+                if(iFlowX(i,j+1) < 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell - iFlowX(i,  j+1)
+                if(iFlowY(i,j)   > 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell + iFlowY(i,  j  )
+                if(iFlowY(i+1,j) < 0.0) Me%Headwalls(n)%FlowEnteringCell = Me%Headwalls(n)%FlowEnteringCell - iFlowY(i+1,j  )
             else
                 Me%Headwalls(n)%FlowEnteringCell = 0.0
             endif
@@ -15441,6 +15472,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             STAT_CALL = SewerGEMSEngine_setHeadwallWaterDepth(Me%Headwalls(n)%SWMM_ID, Me%myWaterColumn (i, j))
             if (STAT_CALL /= SUCCESS_) stop 'setHeadWalls_SewerGems - ModuleRunOff - ERR20'
         enddo
+        nullify (iFlowX, iflowY)
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine setHeadWalls_SewerGems
     
@@ -17247,15 +17279,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK
         real                                        :: FlowX, FlowY
-        
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
+        !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues")
             
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
        
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
         
         if(.not. Me%ExtVar%Distortion) then
 
@@ -17264,14 +17300,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
 
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                         if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                            FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                            FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                            FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                            FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
                     
                             Me%CenterFlowX(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
                             Me%CenterFlowY(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
@@ -17298,12 +17334,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                            Me%CenterFlowX(i, j) = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                            Me%CenterFlowY(i, j) = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                            Me%CenterFlowX(i, j) = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                            Me%CenterFlowY(i, j) = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
                             Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
                             Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
                         else
@@ -17329,13 +17365,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
 
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     
-                    FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                    FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                    FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                    FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
                     
                     Me%CenterFlowX(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
                     Me%CenterFlowY(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
@@ -17368,8 +17404,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if(Me%Output%WriteMaxFlowModulus) then
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
 
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
@@ -17395,8 +17431,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
 
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
@@ -17417,6 +17453,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         endif
+        
+        nullify (iFlowX, iflowY)
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
 
 
@@ -17435,16 +17473,20 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real(4)                                     :: FlowX, FlowY, VelocityX, VelocityY
         real(4)                                     :: FlowX_right, FlowX_Center, FlowY_top, FlowY_Center
-    
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
+        !Begin----------------------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues_R4")
             
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-       
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
-            
+        
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
+        
         if(.not. Me%ExtVar%Distortion) then
     
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
@@ -17452,15 +17494,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowX_Center,FlowY,FlowY_top,FlowY_Center,VelocityX,VelocityY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%OpenPoints(i,j) == BasinPoint) then
                             
-                            FlowX = Me%iFlowX(i, j)
-                            FlowX_right = Me%iFlowX(i, j+1)
-                            FlowY = Me%iFlowY(i, j)
-                            FlowY_top = Me%iFlowY(i+1, j)
+                            FlowX = iFlowX(i, j)
+                            FlowX_right = iFlowX(i, j+1)
+                            FlowY = iFlowY(i, j)
+                            FlowY_top = iFlowY(i+1, j)
                             
                             FlowX_Center = (FlowX + FlowX_right) / 2.0
                             FlowY_Center = (FlowY + FlowY_top) / 2.0
@@ -17488,15 +17530,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowY,FlowY_top)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = JLB, JUB
-                do i = ILB, IUB
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%OpenPoints(i,j) == BasinPoint) then
                             
-                            FlowX = Me%iFlowX(i, j)
-                            FlowX_right = Me%iFlowX(i, j+1)
-                            FlowY = Me%iFlowY(i, j)
-                            FlowY_top = Me%iFlowY(i+1, j)
+                            FlowX = iFlowX(i, j)
+                            FlowX_right = iFlowX(i, j+1)
+                            FlowY = iFlowY(i, j)
+                            FlowY_top = iFlowY(i+1, j)
                             
                             Me%CenterFlowX_R4(i, j) = (FlowX + FlowX_right) / 2.0
                             Me%CenterFlowY_R4(i, j) = (FlowY + FlowY_top) / 2.0
@@ -17519,13 +17561,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
-                        FlowX = (Me%iFlowX(i, j) + Me%iFlowX(i, j+1)) / 2.0
-                        FlowY = (Me%iFlowY(i, j) + Me%iFlowY(i+1, j)) / 2.0
+                        FlowX = (FlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                        FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
                     
                         Me%CenterFlowX_R4(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
                         Me%CenterFlowY_R4(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
@@ -17550,8 +17592,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if(Me%Output%WriteMaxFlowModulus) then
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     if (Me%OpenPoints(i,j) == BasinPoint) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
@@ -17570,8 +17612,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                     if (Me%OpenPoints(i,j) == BasinPoint) then
                         Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
@@ -17591,7 +17633,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues_R4")
-        
+        nullify (iFlowX, iflowY)
     end subroutine ComputeCenterValues_R4
 
     !--------------------------------------------------------------------------
@@ -17610,11 +17652,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: CurrentDT, Distance_Courant, totalVel
         real                                        :: velface, celerity, waterColumn, waterColumn_NE
         integer, dimension(2,2)                     :: strideJ
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !----------------------------------------------------------------------
     
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeNextDT")
-    
-    
+        
         call GetVariableDT(Me%ObjTime, VariableDT, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleRunOff -  ERR010'
     
@@ -17626,6 +17668,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         totalVel = 0.0
         
         strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
+        
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
         
         if (VariableDT) then
             if (Me%Compute) then
@@ -17660,9 +17710,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                             aux = (waterColumn + waterColumn_NE) / 2
                                         
                                             if (nx == 1) then
-                                                velFace = Me%iFlowX(i, j) / (aux * Me%DY)
+                                                velFace = iFlowX(i, j) / (aux * Me%DY)
                                             else
-                                                velFace = Me%iFlowY(i, j) / (aux * Me%DX)
+                                                velFace = iFlowY(i, j) / (aux * Me%DX)
                                             endif
                                             !VelFace + celerity
                                             celerity = sqrt(Gravity * aux)
@@ -17706,9 +17756,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                             aux = (waterColumn + waterColumn_NE) / 2
                                         
                                             if (nx == 1) then
-                                                velFace = Me%iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
+                                                velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
                                             else
-                                                velFace = Me%iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
+                                                velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
                                             endif
                                             !VelFace + celerity
                                             celerity = sqrt(Gravity * aux)
@@ -18443,13 +18493,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                 :: STAT_CALL, CHUNK, i, j
         real, dimension(:,:), pointer           :: WaterVolume
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !----------------------------------------------------------------------
        
         if (MonitorPerformance) call StartWatch ("ModuleRunoff", "ComputeBoxesWaterFluxes")
         
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
+        
         call BoxDif(Me%ObjBoxDif,                                                    &
-                    Me%iFlowX,                                                       &
-                    Me%iFlowY,                                                       &
+                    iFlowX,                                                       &
+                    iFlowY,                                                       &
                     'runoff_water',                                                  &
                     Me%ExtVar%BasinPoints,                                           &
                     STAT = STAT_CALL)
