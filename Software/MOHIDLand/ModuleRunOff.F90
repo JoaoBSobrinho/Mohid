@@ -617,6 +617,7 @@ Module ModuleRunOff
         real                                        :: OutPutDischDT
         character(len=PathLength)                   :: TimeSerieLocationFile, DiscTimeSerieLocationFile
         logical                                     :: UpdateWaterLevel_R4            = .true.
+        integer                                     :: TimeSerieNumber                = 0
 
         
     end type T_OutPutRunOff
@@ -6659,6 +6660,8 @@ ifactivepoint:  if(Me%ExtVar%BasinPoints(Me%NodesI(n), Me%NodesJ(n)) == 1) then
         !Corrects if necessary the cell of the time serie based in the time serie coordinates
         call GetNumberOfTimeSeries(Me%ObjTimeSerie, TimeSerieNumber, STAT  = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ConstructTimeSeries - ModuleRunoff - ERR050'
+        
+        Me%Output%TimeSerieNumber = TimeSerieNumber
 
         do dn = 1, TimeSerieNumber
 
@@ -17488,16 +17491,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         WriteTimeSerie = .false.
         
         !Check hdf output
-        if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
-            WriteHdf = .true.
+        if (Me%OutPut%Yes) then
+            if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+                WriteHdf = .true.
+            endif
         endif
+        if (Me%Output%TimeSerieNumber > 0) then
+            !check timeserie output
+            call GetTimeSerieNextOutput(Me%ObjTimeSerie, 1, NextOutput, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ComputeCenterValues_R4 - ModuleRunOff - ERR010'
         
-        !check timeserie output
-        call GetTimeSerieNextOutput(Me%ObjTimeSerie, 1, NextOutput, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'ComputeCenterValues_R4 - ModuleRunOff - ERR010'
-        
-        if (Me%ExtVar%Now >= NextOutput) then
-            WriteTimeSerie = .true.
+            if (Me%ExtVar%Now >= NextOutput) then
+                WriteTimeSerie = .true.
+            endif
         endif
         
         ComputeEverything = .false.
@@ -18500,72 +18506,72 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                 :: STAT_CALL
         
         !----------------------------------------------------------------------
-       
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%MyWaterLevel,                                   &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR01'
+        if (Me%Output%TimeSerieNumber > 0) then
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%MyWaterLevel,                                   &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR01'
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%MyWaterColumn,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%MyWaterColumn,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%CenterFlowX,                                    &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%CenterFlowX,                                    &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
 
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%CenterFlowY,                                    &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%CenterFlowY,                                    &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
 
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%FlowModulus,                                    &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%FlowModulus,                                    &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%CenterVelocityX,                                &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%CenterVelocityX,                                &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
 
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%CenterVelocityY,                                &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%CenterVelocityY,                                &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
 
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D = Me%VelocityModulus,                                &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D = Me%VelocityModulus,                                &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
      
-        if (Me%Use1D2DInteractionMapping) then
+            if (Me%Use1D2DInteractionMapping) then
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%NodeRiverLevel,                             &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR20'
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%NodeRiverLevel,                             &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR20'
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%MarginRiverlevel,                           &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR30'
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%MarginRiverlevel,                           &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR30'
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%MarginFlowToChannels,                       &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR40'
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%MarginFlowToChannels,                       &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR40'
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%iFlowToChannels,                            &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR50'            
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%iFlowToChannels,                            &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR50'            
             
+            endif
         endif
-   
     end subroutine OutputTimeSeries
     
     !--------------------------------------------------------------------------
@@ -18577,88 +18583,89 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !----------------------------------------------------------------------
         
         !check timeserie output
-        call GetTimeSerieNextOutput(Me%ObjTimeSerie, 1, NextOutput, STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries_R4 - ModuleRunOff - ERR010'
+        if (Me%Output%TimeSerieNumber > 0) then
+            call GetTimeSerieNextOutput(Me%ObjTimeSerie, 1, NextOutput, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries_R4 - ModuleRunOff - ERR010'
         
-        if (Me%ExtVar%Now >= NextOutput) then
-            if (Me%OutPut%UpdateWaterLevel_R4) then
-                call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
-                !Writes the Water Level
-                call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
-            endif 
-        endif
+            if (Me%ExtVar%Now >= NextOutput) then
+                if (Me%OutPut%UpdateWaterLevel_R4) then
+                    call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
+                    !Writes the Water Level
+                    call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
+                endif 
+            endif
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%myWaterLevel_R4,                              &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR01'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%myWaterLevel_R4,                              &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR01'
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%MyWaterColumn_R4,                             &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%MyWaterColumn_R4,                             &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterFlowX_R4,                               &
-                            MapMatrix = Me%OpenPoints,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%CenterFlowX_R4,                               &
+                                MapMatrix = Me%OpenPoints,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
 
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterFlowY_R4,                               &
-                            MapMatrix = Me%OpenPoints,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%CenterFlowY_R4,                               &
+                                MapMatrix = Me%OpenPoints,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
 
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%FlowModulus_R4,                               &
-                            MapMatrix = Me%OpenPoints,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%FlowModulus_R4,                               &
+                                MapMatrix = Me%OpenPoints,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterVelocityX_R4,                           &
-                            MapMatrix = Me%OpenPoints,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%CenterVelocityX_R4,                           &
+                                MapMatrix = Me%OpenPoints,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
 
         
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%CenterVelocityY_R4,                           &
-                            MapMatrix = Me%OpenPoints,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%CenterVelocityY_R4,                           &
+                                MapMatrix = Me%OpenPoints,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
 
-        call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                            Data2D_4 = Me%VelocityModulus_R4,                           &
-                            MapMatrix = Me%OpenPoints,                                  &
-                            STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
+            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                Data2D_4 = Me%VelocityModulus_R4,                           &
+                                MapMatrix = Me%OpenPoints,                                  &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
      
-        if (Me%Use1D2DInteractionMapping) then
+            if (Me%Use1D2DInteractionMapping) then
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%NodeRiverLevel,                             &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR20'
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%NodeRiverLevel,                             &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR20'
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%MarginRiverlevel,                           &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR30'
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%MarginRiverlevel,                           &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR30'
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%MarginFlowToChannels,                       &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR40'
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%MarginFlowToChannels,                       &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR40'
             
-            call WriteTimeSerie(Me%ObjTimeSerie,                                        &
-                                Data2D = Me%iFlowToChannels,                            &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR50'            
+                call WriteTimeSerie(Me%ObjTimeSerie,                                        &
+                                    Data2D = Me%iFlowToChannels,                            &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR50'            
             
+            endif
         endif
-   
     end subroutine OutputTimeSeries_R4
     
     !--------------------------------------------------------------------------
