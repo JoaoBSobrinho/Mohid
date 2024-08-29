@@ -17484,6 +17484,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues_R4")
         
+        WriteHdf = .false.
+        WriteTimeSerie = .false.
+        
         !Check hdf output
         if (Me%ExtVar%Now >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
             WriteHdf = .true.
@@ -18570,12 +18573,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                 :: STAT_CALL
-        
+        type (T_Time)                           :: NextOutput
         !----------------------------------------------------------------------
-        if (Me%OutPut%UpdateWaterLevel_R4) then
-            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
-            !Writes the Water Level
-            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
+        
+        !check timeserie output
+        call GetTimeSerieNextOutput(Me%ObjTimeSerie, 1, NextOutput, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries_R4 - ModuleRunOff - ERR010'
+        
+        if (Me%ExtVar%Now >= NextOutput) then
+            if (Me%OutPut%UpdateWaterLevel_R4) then
+                call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
+                !Writes the Water Level
+                call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
+            endif 
         endif
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
@@ -18590,32 +18600,38 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                             Data2D_4 = Me%CenterFlowX_R4,                               &
+                            MapMatrix = Me%OpenPoints,                                  &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
 
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                             Data2D_4 = Me%CenterFlowY_R4,                               &
+                            MapMatrix = Me%OpenPoints,                                  &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
 
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                             Data2D_4 = Me%FlowModulus_R4,                               &
+                            MapMatrix = Me%OpenPoints,                                  &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                             Data2D_4 = Me%CenterVelocityX_R4,                           &
+                            MapMatrix = Me%OpenPoints,                                  &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
 
         
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                             Data2D_4 = Me%CenterVelocityY_R4,                           &
+                            MapMatrix = Me%OpenPoints,                                  &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR07'
 
         call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                             Data2D_4 = Me%VelocityModulus_R4,                           &
+                            MapMatrix = Me%OpenPoints,                                  &
                             STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR08'
      

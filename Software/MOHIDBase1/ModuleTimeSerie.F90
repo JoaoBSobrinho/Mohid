@@ -2431,12 +2431,13 @@ cd2 :       if (Me%Points) then
     end subroutine WriteTimeSerie1
 
     !--------------------------------------------------------------------------
-    subroutine WriteTimeSerie1_R4(TimeSerieID, Data2D_4, STAT)
+    subroutine WriteTimeSerie1_R4(TimeSerieID, Data2D_4, MapMatrix, STAT)
 
         !Arguments-------------------------------------------------------------
-        integer                                           :: TimeSerieID
-        real(4), dimension(:, :), pointer, intent(IN)     :: Data2D_4
-        integer, optional, intent(OUT)                    :: STAT
+        integer                                                 :: TimeSerieID
+        real(4), dimension(:, :), pointer, intent(IN)           :: Data2D_4
+        integer, dimension(:, :), pointer, optional, intent(IN) :: MapMatrix
+        integer, optional, intent(OUT)                          :: STAT
 
         !Local-----------------------------------------------------------------
         integer                                     :: ready_ , STAT_        
@@ -2480,8 +2481,12 @@ cd2 :       if (Me%Points) then
                     
                     else
 
-                         DataValue = Data2D_4   (i, j)
-
+                        if (present(MapMatrix)) then
+                            DataValue = Data2D_4   (i, j) * MapMatrix(i, j)
+                        else
+                            DataValue = Data2D_4   (i, j)
+                        endif
+                        
                          DataValue = DataValue * factor_
 
 
