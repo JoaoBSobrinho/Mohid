@@ -681,6 +681,7 @@ Module ModuleRunOff
         logical                                     :: CheckDecreaseOnly            = .false.        
         logical                                     :: CorrectDischarge             = .false.
         logical                                     :: CorrectDischargeByPass       = .true.   !Default true Paulo suggestion
+        logical                                     :: CheckCorrectDischarges       = .false.  !flag for storing old watervolume matrix
     end type T_Converge
 
     type     T_FromTimeSerieRunOff
@@ -5000,6 +5001,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         type (T_Polygon), pointer                   :: PolygonX
         integer, dimension(:),   pointer            :: VectorI, VectorJ, VectorK
         integer                                     :: SpatialEmission, nCells
+        logical                                     :: ByPassON
 
         call Construct_Discharges(Me%ObjDischarges, Me%ObjTime, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR01' 
@@ -5008,6 +5010,13 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR02' 
 
         do dn = 1, DischargesNumber
+            
+            call GetByPassON(Me%ObjDischarges, dn, ByPassON, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR02a'
+            
+            if ((.not. ByPassON .and. Me%CV%CorrectDischarge) .or. (ByPassON .and. Me%CV%CorrectDischargeByPass)) then
+                Me%CheckCorrectDischarges = .true.
+            endif
 
             call GetDischargesGridLocalization(Me%ObjDischarges, dn,            &
                                                CoordinateX   = CoordinateX,     &
@@ -8237,7 +8246,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             call ReadLockExternalVar (StaticOnly = .false.)
 
                             !Stores WaterVolume for convergence test
-                            if (iter > 1) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
+                            if (Me%CheckCorrectDischarges .or. Me%CV%Stabilize) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                             if (firstRestart) then
                                 call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
