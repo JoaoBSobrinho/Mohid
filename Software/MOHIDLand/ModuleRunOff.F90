@@ -12237,45 +12237,25 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 Me%lFlowX(i, j) = (Me%FlowXOld(i, j) + Pressure + Advection) / (1.0 + Friction)
                 
-                if (abs(Me%lFlowX(i, j)) > Almostzero) then
-
-                    if (Me%LimitToCriticalFlow) then                  
-                        if (Me%lFlowX(i, j) .gt. 0.0) then           
-                            WaterDepth = max(level_left - MaxBottom, 0.0)
-                        else
-                            WaterDepth = max(level_right - MaxBottom, 0.0)
-                        endif
-                        
-                        !Critical Flow
-                        !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
-                        !m3/s = m * m * m/s
-                        CriticalFlow = WaterDepth * Me%DY * sqrt(Gravity * WaterDepth)
-                        
-                        !only limit if flow higher
-                        if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
-                            if (Me%lFlowX(i, j) > 0) then
-                                Me%lFlowX(i, j) = CriticalFlow
-                            else
-                                Me%lFlowX(i, j) = -1.0 * CriticalFlow
-                            endif
-                        endif
-                
+                if (abs(Me%lFlowX(i, j)) > Almostzero) then             
+                    if (Me%lFlowX(i, j) .gt. 0.0) then           
+                        WaterDepth = max(level_left - MaxBottom, 0.0)
                     else
-                        !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
-                        if (Me%lFlowX(i, j) .lt. 0.0) then
-                            if (abs(Me%lFlowX(i, j))* LocalDT .gt. Me%myWaterVolumePred(i,j)) then
-                                Me%lFlowX(i, j) = - Me%myWaterVolumePred(i,j) / LocalDT
-                            endif
-                        elseif (Me%lFlowX(i, j) .gt. 0.0) then
-                            if (Me%lFlowX(i, j)* LocalDT .gt. Me%myWaterVolumePred(i,j-1)) then
-                                Me%lFlowX(i, j) =  Me%myWaterVolumePred(i,j-1) / LocalDT
-                            endif
-                        endif 
-                    
-                        !m3 = m3 + (-m3/s * s)
-                        Me%myWaterVolumePred(i,j  ) = Me%myWaterVolumePred(i,j  ) + (Me%lFlowX(i, j) * LocalDT)
-                        Me%myWaterVolumePred(i,j-1) = Me%myWaterVolumePred(i,j-1) - (Me%lFlowX(i, j) * LocalDT) 
-                                   
+                        WaterDepth = max(level_right - MaxBottom, 0.0)
+                    endif
+                        
+                    !Critical Flow
+                    !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
+                    !m3/s = m * m * m/s
+                    CriticalFlow = WaterDepth * Me%DY * sqrt(Gravity * WaterDepth)
+                        
+                    !only limit if flow higher
+                    if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
+                        if (Me%lFlowX(i, j) > 0) then
+                            Me%lFlowX(i, j) = CriticalFlow
+                        else
+                            Me%lFlowX(i, j) = -1.0 * CriticalFlow
+                        endif
                     endif
                 
                     dVol = Me%lFlowX(i, j) * LocalDT
@@ -13063,12 +13043,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 !FRICTION - semi-implicit -----------------------------------------------
                 !   -    =  (s * m.s-2  * m3.s-1 * (s.m(-1/3))^2) / (m2 * m(4/3)) = m(10/3) / m(10/3)
-                !Friction = LocalDT * Gravity * abs(Me%FlowYOld(i, j)) * Me%OverlandCoefficientY(i,j) ** 2. &
-                !         / ( Me%AreaV(i, j) * HydraulicRadius ** (4./3.) ) 
-                
-                !Friction = LocalDT * Gravity * &
-                !           sqrt(Me%FlowXOld(i, j)**2. + Me%FlowYOld(i, j)**2.) * Me%OverlandCoefficientY(i,j)** 2. / &
-                !           ( Me%AreaV(i, j) * HydraulicRadius ** (4./3.) ) 
                 Friction = LocalDT * Gravity * &
                             Me%VelModFaceV(i,j) * Me%OverlandCoefficientY(i,j)** 2. / &
                             (HydraulicRadius ** (4./3.))
@@ -13172,43 +13146,25 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%lFlowY(i, j) = (Me%FlowYOld(i, j) + Pressure + Advection) / (1.0 + Friction)
                 
                 if (abs(Me%lFlowY(i, j)) > Almostzero) then
-                
-                    if (Me%LimitToCriticalFlow) then
                                                             
-                        if (Me%lFlowY(i, j) > 0.0) then           
-                            WaterDepth = max(level_bottom - MaxBottom, 0.0)
-                        else
-                            WaterDepth = max(level_top - MaxBottom, 0.0)
-                        endif                
-                        
-                        !Critical Flow
-                        !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
-                        !m3/s = m * m * m/s
-                        CriticalFlow = WaterDepth * Me%DX * sqrt(Gravity * WaterDepth)
-                        
-                        !only limit if flow higher
-                        if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
-                            if (Me%lFlowY(i, j) > 0) then
-                                Me%lFlowY(i, j) = CriticalFlow
-                            else
-                                Me%lFlowY(i, j) = -1.0 * CriticalFlow
-                            endif
-                        endif
-                
+                    if (Me%lFlowY(i, j) > 0.0) then           
+                        WaterDepth = max(level_bottom - MaxBottom, 0.0)
                     else
-                        if (Me%lFlowY(i, j) .lt. 0.0) then
-                            if ( abs(Me%lFlowY(i, j))* LocalDT  .gt. Me%myWaterVolumePred(i,j)) then
-                                Me%lFlowY(i, j) = - Me%myWaterVolumePred(i,j)  / LocalDT
-                            endif
-                        elseif (Me%lFlowY(i, j) .gt. 0.0) then
-                            if ( Me%lFlowY(i, j)* LocalDT .gt. Me%myWaterVolumePred(i-1,j)) then
-                                Me%lFlowY(i, j) =  Me%myWaterVolumePred(i-1,j) / LocalDT
-                            endif
-                        endif                
-                    
-                        Me%myWaterVolumePred(i  ,j) = Me%myWaterVolumePred(i,  j) + (Me%lFlowY(i, j) * LocalDT)                        
-                        Me%myWaterVolumePred(i-1,j) = Me%myWaterVolumePred(i-1,j) - (Me%lFlowY(i, j) * LocalDT) 
-                    
+                        WaterDepth = max(level_top - MaxBottom, 0.0)
+                    endif                
+                        
+                    !Critical Flow
+                    !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
+                    !m3/s = m * m * m/s
+                    CriticalFlow = WaterDepth * Me%DX * sqrt(Gravity * WaterDepth)
+                        
+                    !only limit if flow higher
+                    if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
+                        if (Me%lFlowY(i, j) > 0) then
+                            Me%lFlowY(i, j) = CriticalFlow
+                        else
+                            Me%lFlowY(i, j) = -1.0 * CriticalFlow
+                        endif
                     endif
                     
                     dVol = Me%lFlowY(i, j) * LocalDT
