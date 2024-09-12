@@ -1357,6 +1357,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
         !Adjusts Slope according to
         !http://www.hkh-friend.net.np/rhdc/training/lectures/HEGGEN/Tc_3.pdf
+        !https://cedb.asce.org/CEDBsearch/record.jsp?dockey=0066989#:~:text=Drainage%20criteria%20in%20Albuquerque%20have%20evolved%20from%20textbook,with%20a%20modified%20HYMO%20model%20for%20large%20watersheds.
+        !https://documents.cabq.gov/planning/development-process-manual/chapter-22-introduction-section-1.pdf
         call GetData(Me%AdjustSlope,                                            &
                      Me%ObjEnterData, iflag,                                    &
                      SearchType   = FromFile,                                   &
@@ -5015,7 +5017,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR02a'
             
             if ((.not. ByPassON .and. Me%CV%CorrectDischarge) .or. (ByPassON .and. Me%CV%CorrectDischargeByPass)) then
-                Me%CheckCorrectDischarges = .true.
+                Me%CV%CheckCorrectDischarges = .true.
             endif
 
             call GetDischargesGridLocalization(Me%ObjDischarges, dn,            &
@@ -8246,7 +8248,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             call ReadLockExternalVar (StaticOnly = .false.)
 
                             !Stores WaterVolume for convergence test
-                            if (Me%CheckCorrectDischarges .or. Me%CV%Stabilize) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
+                            if (Me%CV%CheckCorrectDischarges .or. Me%CV%Stabilize) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                             if (firstRestart) then
                                 call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
@@ -17082,6 +17084,24 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !--------------------------------------------------------------------------
     
     subroutine ImposeBoundaryValue_v2_1D
+        !Arguments-------------------------------------------------------------
+        !Local-----------------------------------------------------------------
+        !Begin------------------------------------------------------------------------------
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ImposeBoundaryValue_v2_1D")
+        
+        if (Me%GridIsConstant) then
+            call ImposeBoundaryValue_v2_1D_CG
+        else
+            call ImposeBoundaryValue_v2_1D_VG
+        endif
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ImposeBoundaryValue_v2_1D")
+    end subroutine ImposeBoundaryValue_v2_1D
+    
+    !--------------------------------------------------------------------------
+    
+    subroutine ImposeBoundaryValue_v2_1D_VG
     
         !Arguments-------------------------------------------------------------
 
@@ -17089,23 +17109,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: i, j, n
         integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
+        real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
 
         !Routes water outside the watershed if water is higher then a given treshold values
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
+        BoundaryFlowVolume = 0.0
+        TotalBoundaryInflowVolume = 0.0
+        TotalBoundaryOutflowVolume = 0.0
         
-        Me%BoundaryFlowVolume = 0.0
+        !$OMP PARALLEL PRIVATE(i,j,n,WaterLevelBoundaryValue,dVol, OldVolume)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
         
         do n = 1, size(Me%WaterLevelBoundaryValue_1D)
-            
-            i = Me%BoundaryCells_I(n)
-            j = Me%BoundaryCells_J(n)
-            WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
-            
             if (Me%BoundaryCells_1D(n)  == BasinPoint) then
+                i = Me%BoundaryCells_I(n)
+                j = Me%BoundaryCells_J(n)
                 if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
+                    WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
                     if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
                         
                         !Necessary Variation in height
@@ -17130,14 +17149,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         dVol = Me%myWaterVolume(i, j) - OldVolume
 
                         if(dVol > 0.0)then
-                            Me%TotalBoundaryInflowVolume    = Me%TotalBoundaryInflowVolume + dVol
+                            TotalBoundaryInflowVolume    = TotalBoundaryInflowVolume + dVol
                         else
-                            Me%TotalBoundaryOutflowVolume   = Me%TotalBoundaryOutflowVolume + dVol
+                            TotalBoundaryOutflowVolume   = TotalBoundaryOutflowVolume + dVol
                         endif
                     
                         !m3 = m3 + (m3 - m3)
                         !Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + (OldVolume - Me%myWaterVolume(i, j))
-                        Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + dVol
+                        BoundaryFlowVolume  = BoundaryFlowVolume + dVol
                     
                         !m3/s = m3 / s - always negative exiting runoff
                         if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
@@ -17145,13 +17164,95 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 endif
             endif
         enddo
-
-        Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + Me%BoundaryFlowVolume
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+        Me%TotalBoundaryInflowVolume = Me%TotalBoundaryInflowVolume + TotalBoundaryInflowVolume
+        Me%TotalBoundaryOutflowVolume = Me%TotalBoundaryOutflowVolume + TotalBoundaryOutflowVolume
+        Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + BoundaryFlowVolume
+        
         if (.not. Me%Compute) then
-            if (Me%BoundaryFlowVolume /= 0.0) Me%Compute = .true.
+            if (BoundaryFlowVolume /= 0.0) Me%Compute = .true.
         endif
     
-    end subroutine ImposeBoundaryValue_v2_1D       
+    end subroutine ImposeBoundaryValue_v2_1D_VG      
+    !--------------------------------------------------------------------------
+    
+    subroutine ImposeBoundaryValue_v2_1D_CG
+    
+        !Arguments-------------------------------------------------------------
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, n
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
+        real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
+
+        !Routes water outside the watershed if water is higher then a given treshold values
+        BoundaryFlowVolume = 0.0
+        TotalBoundaryInflowVolume = 0.0
+        TotalBoundaryOutflowVolume = 0.0
+        
+        !$OMP PARALLEL PRIVATE(i,j,n,WaterLevelBoundaryValue,dVol, OldVolume)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
+        
+        do n = 1, size(Me%WaterLevelBoundaryValue_1D)
+            if (Me%BoundaryCells_1D(n)  == BasinPoint) then
+                i = Me%BoundaryCells_I(n)
+                j = Me%BoundaryCells_J(n)
+                if (Me%ExtVar%BasinPoints(i, j)  == BasinPoint) then
+                    WaterLevelBoundaryValue = Me%WaterLevelBoundaryValue_1D(n)
+                    if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
+                        
+                        !Necessary Variation in height
+                        Me%myWaterLevel (i, j) = max(WaterLevelBoundaryValue, Me%ExtVar%Topography (i, j))
+
+                        !Updates Water Column
+                        Me%myWaterColumn(i, j) = Me%myWaterLevel (i, j) - Me%ExtVar%Topography (i, j)
+                        
+                        if (Me%myWaterColumn(i, j) > AlmostZero) then
+                            Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                            if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                Me%OpenPoints(i,j) = 1 !For use in output routines
+                            endif
+                        endif
+                        
+                        OldVolume              = Me%myWaterVolume(i, j)
+                        
+                        !m3 = m * m2
+                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
+                    
+                        !Updates Volume and BoundaryFlowVolume
+                        dVol = Me%myWaterVolume(i, j) - OldVolume
+
+                        if(dVol > 0.0)then
+                            TotalBoundaryInflowVolume    = TotalBoundaryInflowVolume + dVol
+                        else
+                            TotalBoundaryOutflowVolume   = TotalBoundaryOutflowVolume + dVol
+                        endif
+                    
+                        !m3 = m3 + (m3 - m3)
+                        !Me%BoundaryFlowVolume  = Me%BoundaryFlowVolume + (OldVolume - Me%myWaterVolume(i, j))
+                        BoundaryFlowVolume  = BoundaryFlowVolume + dVol
+                    
+                        !m3/s = m3 / s - always negative exiting runoff
+                        if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = (Me%myWaterVolume(i, j) - OldVolume) / Me%ExtVar%DT
+                    endif
+                endif
+            endif
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+        Me%TotalBoundaryInflowVolume = Me%TotalBoundaryInflowVolume + TotalBoundaryInflowVolume
+        Me%TotalBoundaryOutflowVolume = Me%TotalBoundaryOutflowVolume + TotalBoundaryOutflowVolume
+        Me%TotalBoundaryFlowVolume  = Me%TotalBoundaryFlowVolume + BoundaryFlowVolume
+        
+        if (.not. Me%Compute) then
+            if (BoundaryFlowVolume /= 0.0) Me%Compute = .true.
+        endif
+    
+    end subroutine ImposeBoundaryValue_v2_1D_CG     
     !--------------------------------------------------------------------------
     
     subroutine Modify_Boundary_Condition
