@@ -17106,7 +17106,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, n
+        integer                                     :: i, j, n, CHUNK
         integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
@@ -17115,6 +17115,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         BoundaryFlowVolume = 0.0
         TotalBoundaryInflowVolume = 0.0
         TotalBoundaryOutflowVolume = 0.0
+        
+        CHUNK = ChunkJ
         
         !$OMP PARALLEL PRIVATE(i,j,n,WaterLevelBoundaryValue,dVol, OldVolume)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
@@ -17183,7 +17185,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, n
+        integer                                     :: i, j, n, CHUNK
         integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
@@ -17192,6 +17194,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         BoundaryFlowVolume = 0.0
         TotalBoundaryInflowVolume = 0.0
         TotalBoundaryOutflowVolume = 0.0
+        
+        CHUNK = ChunkJ
         
         !$OMP PARALLEL PRIVATE(i,j,n,WaterLevelBoundaryValue,dVol, OldVolume)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:BoundaryFlowVolume,TotalBoundaryInflowVolume,TotalBoundaryOutflowVolume)
