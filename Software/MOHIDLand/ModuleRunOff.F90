@@ -12099,13 +12099,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 level_left  = waterColumn_left + topography_left
                 level_right = waterColumn_right + topography_right
-                !!Slope
-                if (Me%AdjustSlope) then
-                    Slope           = AdjustSlope((level_left - level_right) / Me%DX)
-                else
-                    Slope           = (level_left - level_right) / Me%DX
-                endif
-                 
+                
+                Slope           = (level_left - level_right) / Me%DX 
                 !!Hydraulic Radius
                 !wet perimeter, first is bottom
                 WetPerimeter = Me%DY
@@ -12996,16 +12991,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 level_top = waterColumn_top + topography_top
                 
                 !!Slope
-                if (Me%AdjustSlope) then
-                    Slope           = AdjustSlope((level_bottom - level_top) / Me%DY)
-                else
-                    Slope           = (level_bottom - level_top) / Me%DY
-                endif
+                Slope           = (level_bottom - level_top) / Me%DY
                 
                 !!Hydraulic Radius
-!                Direction = "Y"
-!                !This function produced an overhead with openmp so it was abandoned
-!                HydraulicRadius = HydraulicRadius(i,j,Direction,level_bottom,level_top)
                 
                 !wet perimeter, first is bottom
                 WetPerimeter = Me%DX
