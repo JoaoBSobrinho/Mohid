@@ -14369,7 +14369,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR170'
 
         enddo
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryStormWater")
+        
         !ModifyGeometryandMapping
         strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
         Aux_Y = AlmostZero_Double * Me%DY
