@@ -14309,52 +14309,32 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeStormWaterModel")
 
         !Compute inlet potential flow
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeInletsPotentialFlow")
         call ComputeInletsPotentialFlow
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeInletsPotentialFlow")
         
         !Sets Inlet Potential Flow and Node Surcharge Depth (MOHIDLand WaterColumn) in SWMM model
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setInlets_SewerGems")
         call setInlets_SewerGems
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setInlets_SewerGems")
         !Sets Manholes Node Surcharge Depth (MOHIDLand WaterColumn) in SWMM model
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setManholes_SewerGems")
         call setManholes_SewerGems
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setManholes_SewerGems")
         !Sets Outfalls Water level (MOHIDLand WaterLevel) in SWMM model
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setOutFalls_SewerGems")
         call setOutFalls_SewerGems
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setOutFalls_SewerGems")
         !Sets HeadWalls Water level (MOHIDLand WaterLevel) in SWMM model and updates FlowEnteringCell
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setHeadWalls_SewerGems")
         call setHeadWalls_SewerGems
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setHeadWalls_SewerGems")
 
         !------------------Run SewerGEMS SWMM engine time step-----------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SewerGEMSEngine_step_imposed_dt")
         STAT_CALL = SewerGEMSEngine_step_imposed_dt(elapsedTime, Me%ExtVar%DT)
         if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR60'
         !------------------Run SewerGEMS SWMM engine time step-----------------------------------------
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SewerGEMSEngine_step_imposed_dt")
         !Gets outflow coming from SWMM manhole and adds it to the MOHIDLand Cell
         !Updates WaterLevel, WaterColumn and volumes
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromManholes")
         call FlowFromManholes
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromManholes")
         !Gets flow from or to SWMM inlets
         !Computes Effective flow and updates WaterLevel, WaterColumn and volumes. Writes results to inlets output file
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromToInlets")
-        call FlowFromToInlets
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromToInlets")   
+        call FlowFromToInlets 
         !Gets flow to or from outfalls and updates volumes
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromToOutfalls")
         call FlowFromToOutfalls
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromToOutfalls")
         !Gets flow from or to SWMM HeadWalls
         !Computes Effective flow and updates WaterLevel, WaterColumn and volumes. Writes results to headwall output file
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "FlowFromHeadWalls")
         call FlowFromHeadWalls
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "FlowFromHeadWalls")
         !set the flow at each cross section node to zero before computing open channel links
         !each open channel link will contribute with flow for its main node link (a cross-section)
         do xn = 1, Me%NumberOfCrossSections
@@ -14435,7 +14415,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !$OMP END DO
         !$OMP END PARALLEL
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryStormWater")
         
         !Get SewerGEMS SWMM current total volume
         STAT_CALL = SewerGEMSEngine_getTotalVolume(Me%Total1DVolume)
