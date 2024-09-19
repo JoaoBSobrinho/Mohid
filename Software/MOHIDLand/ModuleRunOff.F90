@@ -704,6 +704,9 @@ Module ModuleRunOff
         integer                                     :: nCells               = null_int
         integer, dimension(:), allocatable          :: I
         integer, dimension(:), allocatable          :: J
+        integer, dimension(:), allocatable          :: BoundaryFaceU
+        integer, dimension(:), allocatable          :: BoundaryFaceV
+        real, dimension(:), allocatable             :: FacesFactor
     end type T_BoundaryLine
 
     type T_RunOffDischarges
@@ -4142,9 +4145,13 @@ do4:            do di = -1, 1
         !Local-----------------------------------------------------------------
         integer                                      :: CHUNK, i, j, di, dj, k, n1, index
         real                                         :: Sum
-        integer                                      :: STAT_CALL, n, line, NumberOfBoundaryCells
+        integer                                      :: STAT_CALL, n, line, NumberOfBoundaryCells, nFaces
         integer, dimension(:),   pointer             :: VectorI, VectorJ, VectorK
         logical                                      :: FoundCell
+        logical                                      :: IsBoundaryTopLeft, IsBoundaryTopRight
+        logical                                      :: IsBoundaryBottomLeft, IsBoundaryBottomRight
+        logical                                      :: IsBoundaryTop, IsBoundaryBottom
+        logical                                      :: IsBoundaryLeft, IsBoundaryRight
         !Begin-----------------------------------------------------------------
 
    
@@ -4229,12 +4236,12 @@ do6:                do k = 1, NumberOfBoundaryCells
                     enddo do6
                 
                     if (FoundCell) then
-                        Me%BoundaryCells_1D(index) = 1
+                        Me%BoundaryCells_1D(index) = 0 !BoundaryLineCell takes priority
                     else
                         !Add it to the list. Need to set boundarycell to 1 as the default is 0
                         Me%BoundaryCells_I(n1) = i
                         Me%BoundaryCells_J(n1) = j
-                        Me%BoundaryCells_1D(n1) = 1
+                        Me%BoundaryCells_1D(n1) = 0 !BoundaryLineCell takes priority
                         n1 = n1+1
                     endif
 
@@ -4250,6 +4257,113 @@ do7:                    do k = 1, NumberOfBoundaryCells
                     endif
                 enddo
             enddo
+            
+            !Find boundary faces U and V
+            do line = 1, Me%NumberOfBoundaryLines
+                do n = 1, Me%BoundaryLines(line)%nCells
+                    nFaces = 0
+                    i = Me%BoundaryLines(line)%I(n)
+                    j = Me%BoundaryLines(line)%J(n)
+                    
+                    IsBoundaryTopLeft     = IsBoundaryLineCell(line, i+1, j-1)
+                    IsBoundaryTopRight    = IsBoundaryLineCell(line, i+1, j+1)
+                    IsBoundaryBottomLeft  = IsBoundaryLineCell(line, i-1, j-1)
+                    IsBoundaryBottomRight = IsBoundaryLineCell(line, i-1, j+1)
+                    
+                    IsBoundaryTop         = IsBoundaryLineCell(line, i+1, j  )
+                    IsBoundaryBottom      = IsBoundaryLineCell(line, i-1, j  )
+                    IsBoundaryLeft        = IsBoundaryLineCell(line, i  , j-1)
+                    IsBoundaryRight       = IsBoundaryLineCell(line, i  , j+1)
+                
+                    !Condition 1 :
+                    !BoundaryFaceU
+                    !CheckLeft
+                    if (Me%ExtVar%BasinPoints(i,j-1) == 0) then
+                        !Boundary to the left
+                        !Condition 2 : Diagonal top and bottom or top lefts and rights
+                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                            IsBoundaryBottom     .or. IsBoundaryTop        .or. &
+                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                           !current cell face needs flow to cross it so boundarycellface = 1
+                            Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
+                           nFaces = nFaces + 1
+                        endif
+                    !CheckRight
+                    elseif (Me%ExtVar%BasinPoints(i,j+1) == 0) then
+                        !Boundary to the left
+                        !Condition 2 : Diagonal top
+                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                            IsBoundaryBottom     .or. IsBoundaryTop        .or. &
+                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                           !current cell face needs flow to cross it so boundarycellface = 1
+                           nFaces = nFaces + 1
+                           Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
+                        endif
+                    endif
+                    
+                    !Condition 1 :
+                    !BoundaryFaceV
+                    !CheckTop
+                    if (Me%ExtVar%BasinPoints(i+1,j) == 0) then
+                        !Boundary to the top
+                        !Condition 2 : Diagonal top and bottom or top lefts or rights
+                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                            IsBoundaryLeft       .or. IsBoundaryRight      .or. &
+                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                           !current cell face needs flow to cross it so boundarycellface = 1
+                           !Me%BoundaryLines(line)%nFaces(n) = Me%BoundaryLines(line)%nFaces(n) + 1
+                           nFaces = nFaces + 1 !Usando isto passaria a usar um factor que pode ser ou 1 ou hipotenusa
+                           Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
+                        endif
+                    !CheckBottom
+                    elseif (Me%ExtVar%BasinPoints(i-1,j) == 0) then
+                        !Boundary to bottom
+                        !Condition 2 : Diagonal top and bottom or top lefts or rights
+                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                            IsBoundaryLeft       .or. IsBoundaryRight      .or. &
+                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                           !current cell face needs flow to cross it so boundarycellface = 1
+                           !Me%BoundaryLines(line)%nFaces(n) = Me%BoundaryLines(line)%nFaces(n) + 1
+                           nFaces = nFaces + 1 !Usando isto passaria a usar um factor que pode ser ou 1 ou hipotenusa
+                           Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
+                        endif
+                    endif
+
+                    if (nFaces == 0) then
+                        Me%BoundaryLines(line)%FacesFactor(n) = 2
+                        Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
+                        Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
+                    else
+                        Me%BoundaryLines(line)%FacesFactor(n) = nFaces
+                    endif
+                    !if (nFaces == 2) then
+                        !if (Me%GridIsConstant) then
+                        !    Me%BoundaryLines(line)%FacesFactor(n) = (Me%DX + Me%DY) / sqrt(Me%DX**2 + Me%DY**2)
+                        !else
+                        !    Me%BoundaryLines(line)%FacesFactor(n) = &
+                        !        (Me%ExtVar%DZX(i, j) + Me%ExtVar%DZY(i, j)) / &
+                        !        sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
+                        !endif
+                    !else
+                        !Check if factor should be 0 (boundary line near boundary covered interior cells as well)
+                        !which creates a triangule of cells that will generate uneven flows
+                        !Check top and left
+                        !if ((IsBoundaryTop    .and. IsBoundaryLeft ) .or. &
+                        !    (IsBoundaryBottom .and. IsBoundaryLeft ) .or. &
+                        !    (IsBoundaryTop    .and. IsBoundaryRight) .or. &
+                        !    (IsBoundaryBottom .and. IsBoundaryRight)) then
+                        !    Me%BoundaryLines(line)%FacesFactor(n) = 0.0
+                        !    Me%BoundaryLines(line)%BoundaryFaceU(n) = 0
+                        !    Me%BoundaryLines(line)%BoundaryFaceV(n) = 0
+                        !else
+                        !    !Check for interior cell
+                        !    Me%BoundaryLines(line)%FacesFactor(n) = 1.0
+                        !endif
+                    !endif
+                enddo
+            enddo
+            
+            
         end if        
         
     end subroutine ConstructWaterLevelBoundaryConditions_2
@@ -4312,6 +4426,11 @@ do4:            do di = -1, 1
                 
                 allocate(Me%BoundaryLines(line)%I(1:Me%BoundaryLines(line)%nCells))
                 allocate(Me%BoundaryLines(line)%J(1:Me%BoundaryLines(line)%nCells))
+                allocate(Me%BoundaryLines(line)%FacesFactor(1:Me%BoundaryLines(line)%nCells))
+                allocate(Me%BoundaryLines(line)%BoundaryFaceU(1:Me%BoundaryLines(line)%nCells))
+                allocate(Me%BoundaryLines(line)%BoundaryFaceV(1:Me%BoundaryLines(line)%nCells))
+                Me%BoundaryLines(line)%BoundaryFaceU = 0
+                Me%BoundaryLines(line)%BoundaryFaceV = 0
                 
                 do n = 1, Me%BoundaryLines(line)%nCells
 
@@ -4329,6 +4448,27 @@ do4:            do di = -1, 1
         end if 
         
     end subroutine NumberOfBoundaryCellsToAllocate
+    !--------------------------------------------------------------------------   
+    
+    
+    logical function IsBoundaryLineCell(LineID, Cell_I, Cell_J)
+        !Arguments-------------------------------------------------------------
+        integer, intent(IN)             :: LineID, Cell_I, Cell_J
+        !Locals----------------------------------------------------------------
+        integer                         :: BoundaryCell
+        !Begin-----------------------------------------------------------------
+        
+        IsBoundaryLineCell = .false.
+        do BoundaryCell = 1, Me%BoundaryLines(LineID)%nCells
+            
+            if (Me%BoundaryLines(LineID)%I(BoundaryCell) == Cell_I .and. &
+                Me%BoundaryLines(LineID)%J(BoundaryCell) == Cell_J) then
+                
+                IsBoundaryLineCell = .true.
+            endif
+        enddo
+    end function IsBoundaryLineCell
+    
     !--------------------------------------------------------------------------   
 
     subroutine ReadBoundaryConditions
@@ -4665,6 +4805,7 @@ do2:        do
 do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
                             if (i == Me%BoundaryCells_I(k) .and. j == Me%BoundaryCells_J(k)) then
                                 Me%WaterLevelBoundaryValue_1D(k) = WaterLevelValue
+                                Me%BoundaryLines(nLine)%WaterLevelValue = WaterLevelValue
                                 exit do1
                             endif
                         enddo do1
@@ -5328,9 +5469,10 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%lFlowToChannels, Me%Size, 0.0)   !model can run without DNet
         endif
         
-        
-        allocate(Me%iFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)   !model can run without BC
+        if (Me%CheckGlobalMass) then
+            allocate(Me%iFlowBoundary    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)   !model can run without BC
+        endif
 
         if (Me%Discharges) then
             allocate(Me%lFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -16726,8 +16868,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, n
-        integer                                     :: CHUNK, NonComputeFaces
+        integer                                     :: i, j, n, line
+        integer                                     :: CHUNK, NonComputeFaces, BoundaryFaceU, BoundaryFaceV
         real                                        :: dh
         real(8)                                     :: dVol, MaxFlow
         real                                        :: WaveHeight, Celerity, minHeight
@@ -16832,6 +16974,87 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        !BoundaryLines
+        if(Me%HasBoundaryLines)then
+            do line = 1, Me%NumberOfBoundaryLines
+                WaterLevelBoundaryValue = Me%BoundaryLines(line)%WaterLevelValue
+                do n = 1, Me%BoundaryLines(line)%nCells
+                    i = Me%BoundaryLines(line)%I(n)
+                    j = Me%BoundaryLines(line)%J(n)
+                    if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
+                        BoundaryFaceU = Me%BoundaryLines(line)%BoundaryFaceU(n)
+                        BoundaryFaceV = Me%BoundaryLines(line)%BoundaryFaceV(n)
+                        if (BoundaryFaceU + BoundaryFaceV > 0) then
+                            dh = Me%myWaterLevel (i, j) - WaterLevelBoundaryValue
+                    
+                            if (abs(dh) > Me%MinimumWaterColumn) then
+                            
+                                Topography = Me%ExtVar%Topography (i, j)
+                                !celerity is limited by water column on the flow direction (higher level)
+                                WaveHeight = max(Me%myWaterLevel(i, j), WaterLevelBoundaryValue) - Topography
+                    
+                                ![m/s] = [m/s2 * m]^1/2 = [m/s]
+                                Celerity = sqrt(Gravity * WaveHeight)
+
+                                !U direction - use middle area because in closed faces does not exist AreaU
+                                !if dh negative, minimum is dh, if positive minimum is dh until boundary
+                                !level is lower than terrain and wave height is used (water column)
+                                !dh negative flow positive (entering runoff)
+                                minHeight = min(dh, WaveHeight)
+                            
+                                ![m3/s]           =      [m]           *   [m]     * [m/s]
+                                BoundaryFlowAux_U = Me%DY * minHeight * Celerity * BoundaryFaceU
+                            
+                                ![m3/s]           =      [m]           *         [m]         * [m/s]
+                                BoundaryFlowAux_V = Me%DX * minHeight * Celerity * BoundaryFaceV
+                            
+                                iFlowBoundary = - BoundaryFlowAux_U - BoundaryFlowAux_V
+                    
+                                !m3/s = m * m2 / s
+                                MaxFlow = - minHeight *  Me%GridCellArea / Me%ExtVar%DT
+                                
+                                if (abs(iFlowBoundary) > abs(MaxFlow)) then
+                                    iFlowBoundary = MaxFlow
+                                endif                    
+                    
+                                !dVol
+                                dVol = iFlowBoundary * Me%ExtVar%DT
+                            
+                                if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = iFlowBoundary
+                        
+                                !Updates Water Volume
+                                Me%myWaterVolume (i, j) = max(Me%myWaterVolume (i, j) + dVol, 0.0)
+
+                                BoundaryFlowVolume     = BoundaryFlowVolume + dVol                            
+
+                                if(dVol > 0.0)then
+                                    TotalBoundaryInflowVolume    = TotalBoundaryInflowVolume + dVol
+                                else
+                                    TotalBoundaryOutflowVolume   = TotalBoundaryOutflowVolume + dVol
+                                endif
+                        
+                                !Updates Water Column
+                                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / Me%GridCellArea
+                            
+                                if (Me%myWaterColumn(i, j) > AlmostZero) then
+                                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                        Me%OpenPoints(i,j) = 1 !For use in output routines
+                                    endif
+                                    !Updates Water Level
+                                    Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
+                                else
+                                    Me%OpenPoints(i,j) = 0
+                                    Me%myWaterLevel (i, j) = Topography
+                                endif
+
+                            endif
+                        endif
+                    endif
+                enddo
+            enddo
+        endif
         
         Me%TotalBoundaryInflowVolume = Me%TotalBoundaryInflowVolume + TotalBoundaryInflowVolume
         Me%TotalBoundaryOutflowVolume = Me%TotalBoundaryOutflowVolume + TotalBoundaryOutflowVolume
@@ -20456,7 +20679,7 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 deallocate (Me%iFlowToChannels)
                 if (Me%ObjDrainageNetwork /= 0) deallocate (Me%lFlowToChannels)
                 
-                deallocate (Me%iFlowBoundary)
+                if(Me%CheckGlobalMass)   deallocate (Me%iFlowBoundary)
                 if (Me%RouteDFourPoints) deallocate (Me%iFlowRouteDFour)
 
                 if (Me%HasRunOffProperties) then
