@@ -12234,32 +12234,56 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 Me%lFlowX(i, j) = (Me%FlowXOld(i, j) + Pressure + Advection) / (1.0 + Friction)
                 
-                if (abs(Me%lFlowX(i, j)) > Almostzero) then             
-                    if (Me%lFlowX(i, j) .gt. 0.0) then           
-                        WaterDepth = max(level_left - MaxBottom, 0.0)
-                    else
-                        WaterDepth = max(level_right - MaxBottom, 0.0)
-                    endif
-                        
-                    !Critical Flow
-                    !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
-                    !m3/s = m * m * m/s
-                    CriticalFlow = WaterDepth * Me%DY * sqrt(Gravity * WaterDepth)
-                        
-                    !only limit if flow higher
-                    if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
-                        if (Me%lFlowX(i, j) > 0) then
-                            Me%lFlowX(i, j) = CriticalFlow
+                if (abs(Me%lFlowX(i, j)) > Almostzero) then
+                    if (Me%LimitToCriticalFlow) then
+                        if (Me%lFlowX(i, j) .gt. 0.0) then           
+                            WaterDepth = max(level_left - MaxBottom, 0.0)
                         else
-                            Me%lFlowX(i, j) = -1.0 * CriticalFlow
+                            WaterDepth = max(level_right - MaxBottom, 0.0)
                         endif
-                    endif
+                        
+                        !Critical Flow
+                        !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
+                        !m3/s = m * m * m/s
+                        CriticalFlow = WaterDepth * Me%DY * sqrt(Gravity * WaterDepth)
+                        
+                        !only limit if flow higher
+                        if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
+                            if (Me%lFlowX(i, j) > 0) then
+                                Me%lFlowX(i, j) = CriticalFlow
+                            else
+                                Me%lFlowX(i, j) = -1.0 * CriticalFlow
+                            endif
+                        endif
                 
-                    dVol = Me%lFlowX(i, j) * LocalDT
-                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
+                        dVol = Me%lFlowX(i, j) * LocalDT
+                        Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
                     
-                    Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels       
-                    Me%ActivePoints_Left(i,j) = 1
+                        Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels       
+                        Me%ActivePoints_Left(i,j) = 1
+                    else
+                        !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
+                        if (Me%lFlowX(i, j) .lt. 0.0) then
+                            if (abs(Me%lFlowX(i, j))* LocalDT .gt. Me%myWaterVolumePred(i,j)) then
+                                Me%lFlowX(i, j) = - Me%myWaterVolumePred(i,j) / LocalDT
+                            endif
+                        elseif (Me%lFlowX(i, j) .gt. 0.0) then
+                            if (Me%lFlowX(i, j)* LocalDT .gt. Me%myWaterVolumePred(i,j-1)) then
+                                Me%lFlowX(i, j) =  Me%myWaterVolumePred(i,j-1) / LocalDT
+                            endif
+                        endif 
+                    
+                        dVol = Me%lFlowX(i, j) * LocalDT
+                        !m3 = m3 + (-m3/s * s)
+                        Me%myWaterVolumePred(i,j  ) = Me%myWaterVolumePred(i,j  ) + dVol
+                        Me%myWaterVolumePred(i,j-1) = Me%myWaterVolumePred(i,j-1) - dVol
+                        
+                        Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
+                    
+                        Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels       
+                        Me%ActivePoints_Left(i,j) = 1
+                    endif
+                    
                 else
                     Me%lFlowX(i, j) = 0.0
                     Me%ActivePoints_Left(i,j) = 0
@@ -13136,33 +13160,58 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%lFlowY(i, j) = (Me%FlowYOld(i, j) + Pressure + Advection) / (1.0 + Friction)
                 
                 if (abs(Me%lFlowY(i, j)) > Almostzero) then
+                    
+                    if(Me%LimitToCriticalFlow) then
                                                             
-                    if (Me%lFlowY(i, j) > 0.0) then           
-                        WaterDepth = max(level_bottom - MaxBottom, 0.0)
-                    else
-                        WaterDepth = max(level_top - MaxBottom, 0.0)
-                    endif                
-                        
-                    !Critical Flow
-                    !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
-                    !m3/s = m * m * m/s
-                    CriticalFlow = WaterDepth * Me%DX * sqrt(Gravity * WaterDepth)
-                        
-                    !only limit if flow higher
-                    if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
-                        if (Me%lFlowY(i, j) > 0) then
-                            Me%lFlowY(i, j) = CriticalFlow
+                        if (Me%lFlowY(i, j) > 0.0) then           
+                            WaterDepth = max(level_bottom - MaxBottom, 0.0)
                         else
-                            Me%lFlowY(i, j) = -1.0 * CriticalFlow
+                            WaterDepth = max(level_top - MaxBottom, 0.0)
+                        endif                
+                        
+                        !Critical Flow
+                        !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
+                        !m3/s = m * m * m/s
+                        CriticalFlow = WaterDepth * Me%DX * sqrt(Gravity * WaterDepth)
+                        
+                        !only limit if flow higher
+                        if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
+                            if (Me%lFlowY(i, j) > 0) then
+                                Me%lFlowY(i, j) = CriticalFlow
+                            else
+                                Me%lFlowY(i, j) = -1.0 * CriticalFlow
+                            endif
                         endif
+                    
+                        dVol = Me%lFlowY(i, j) * LocalDT
+                        Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
+                        Me%myWaterVolume (i-1, j) = Me%myWaterVolume (i-1, j) - dVol
+                    
+                        Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels        
+                        Me%ActivePoints(i-1,j) = 1
+                    else
+                        
+                        if (Me%lFlowY(i, j) .lt. 0.0) then
+                            if ( abs(Me%lFlowY(i, j))* LocalDT  .gt. Me%myWaterVolumePred(i,j)) then
+                                Me%lFlowY(i, j) = - Me%myWaterVolumePred(i,j)  / LocalDT
+                            endif
+                        elseif (Me%lFlowY(i, j) .gt. 0.0) then
+                            if ( Me%lFlowY(i, j)* LocalDT .gt. Me%myWaterVolumePred(i-1,j)) then
+                                Me%lFlowY(i, j) =  Me%myWaterVolumePred(i-1,j) / LocalDT
+                            endif
+                        endif                
+                    
+                        dVol = Me%lFlowY(i, j) * LocalDT
+                        Me%myWaterVolumePred(i  ,j) = Me%myWaterVolumePred(i,  j) + dVol                      
+                        Me%myWaterVolumePred(i-1,j) = Me%myWaterVolumePred(i-1,j) - dVol
+                        
+                        Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
+                        Me%myWaterVolume (i-1, j) = Me%myWaterVolume (i-1, j) - dVol
+                    
+                        Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels        
+                        Me%ActivePoints(i-1,j) = 1
                     endif
                     
-                    dVol = Me%lFlowY(i, j) * LocalDT
-                    Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
-                    Me%myWaterVolume (i-1, j) = Me%myWaterVolume (i-1, j) - dVol
-                    
-                    Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels        
-                    Me%ActivePoints(i-1,j) = 1
                 else
                     Me%lFlowY(i, j) = 0.0
                 endif
@@ -17974,8 +18023,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         Me%CV%CurrentDT          = Me%CV%NextDT / Me%CV%NextNiteration
     
         if (Me%StormWaterModel) then
-            if (Me%StormWaterModelDT < Me%CV%NextDT) then        
+            if (Me%StormWaterModelDT < Me%CV%NextDT) then
+                write(*,*) "DT from MOHID = ", Me%CV%NextDT
                 Me%CV%NextDT = Me%StormWaterModelDT
+                write(*,*) "DT from SWMM = ", Me%StormWaterModelDT
             endif
         end if
     
