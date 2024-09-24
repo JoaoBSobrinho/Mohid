@@ -17394,7 +17394,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, n, CHUNK
-        integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
 
@@ -17473,7 +17472,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, n, CHUNK
-        integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: OldVolume, dVol, WaterLevelBoundaryValue
         real                                        :: TotalBoundaryInflowVolume, TotalBoundaryOutflowVolume, BoundaryFlowVolume
 
@@ -17583,7 +17581,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
-        integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK
         real                                        :: FlowX, FlowY
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
@@ -17776,7 +17773,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
-        integer                                     :: ILB, IUB, JLB, JUB
         integer                                     :: CHUNK, STAT_CALL
         real(4)                                     :: FlowX, FlowY, VelocityX, VelocityY
         real(4)                                     :: FlowX_right, FlowX_Center, FlowY_top, FlowY_Center
@@ -19180,7 +19176,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFloodingAll
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j, n
+        integer                                 :: i, j, n
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
@@ -19320,7 +19316,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFloodingAll_R4
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j, n
+        integer                                 :: i, j, n
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
@@ -19457,7 +19453,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFlooding
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j
+        integer                                 :: i, j
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
@@ -19561,7 +19557,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFlooding_R4
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j
+        integer                                 :: i, j
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
