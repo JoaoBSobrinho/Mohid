@@ -17091,8 +17091,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, n
-        integer                                     :: CHUNK, NonComputeFaces
+        integer                                     :: i, j, n, line
+        integer                                     :: CHUNK, NonComputeFaces, BoundaryFaceU, BoundaryFaceV
         real                                        :: dh
         real(8)                                     :: dVol, MaxFlow
         real                                        :: WaveHeight, Celerity, minHeight
@@ -17200,6 +17200,87 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
+        
+        !BoundaryLines
+        if(Me%HasBoundaryLines)then
+            do line = 1, Me%NumberOfBoundaryLines
+                WaterLevelBoundaryValue = Me%BoundaryLines(line)%WaterLevelValue
+                do n = 1, Me%BoundaryLines(line)%nCells
+                    i = Me%BoundaryLines(line)%I(n)
+                    j = Me%BoundaryLines(line)%J(n)
+                    if (Me%AllowBoundaryInflow .or. Me%myWaterLevel (i, j) > WaterLevelBoundaryValue) then
+                        BoundaryFaceU = Me%BoundaryLines(line)%BoundaryFaceU(n)
+                        BoundaryFaceV = Me%BoundaryLines(line)%BoundaryFaceV(n)
+                        if (BoundaryFaceU + BoundaryFaceV > 0) then
+                            dh = Me%myWaterLevel (i, j) - WaterLevelBoundaryValue
+                    
+                            if (abs(dh) > Me%MinimumWaterColumn) then
+                            
+                                Topography = Me%ExtVar%Topography (i, j)
+                                !celerity is limited by water column on the flow direction (higher level)
+                                WaveHeight = max(Me%myWaterLevel(i, j), WaterLevelBoundaryValue) - Topography
+                    
+                                ![m/s] = [m/s2 * m]^1/2 = [m/s]
+                                Celerity = sqrt(Gravity * WaveHeight)
+
+                                !U direction - use middle area because in closed faces does not exist AreaU
+                                !if dh negative, minimum is dh, if positive minimum is dh until boundary
+                                !level is lower than terrain and wave height is used (water column)
+                                !dh negative flow positive (entering runoff)
+                                minHeight = min(dh, WaveHeight)
+                            
+                                ![m3/s]           =      [m]           *   [m]     * [m/s]
+                                BoundaryFlowAux_U = Me%DY * minHeight * Celerity * BoundaryFaceU
+                            
+                                ![m3/s]           =      [m]           *         [m]         * [m/s]
+                                BoundaryFlowAux_V = Me%DX * minHeight * Celerity * BoundaryFaceV
+                            
+                                iFlowBoundary = - BoundaryFlowAux_U - BoundaryFlowAux_V
+                    
+                                !m3/s = m * m2 / s
+                                MaxFlow = - minHeight *  Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%DT
+                                
+                                if (abs(iFlowBoundary) > abs(MaxFlow)) then
+                                    iFlowBoundary = MaxFlow
+                                endif                    
+                    
+                                !dVol
+                                dVol = iFlowBoundary * Me%ExtVar%DT
+                            
+                                if (Me%CheckGlobalMass) Me%iFlowBoundary(i, j) = iFlowBoundary
+                        
+                                !Updates Water Volume
+                                Me%myWaterVolume (i, j) = max(Me%myWaterVolume (i, j) + dVol, 0.0)
+
+                                BoundaryFlowVolume     = BoundaryFlowVolume + dVol                            
+
+                                if(dVol > 0.0)then
+                                    TotalBoundaryInflowVolume    = TotalBoundaryInflowVolume + dVol
+                                else
+                                    TotalBoundaryOutflowVolume   = TotalBoundaryOutflowVolume + dVol
+                                endif
+                        
+                                !Updates Water Column
+                                Me%myWaterColumn  (i, j)   = Me%myWaterVolume (i, j)  / Me%ExtVar%GridCellArea(i, j)
+                            
+                                if (Me%myWaterColumn(i, j) > AlmostZero) then
+                                    Me%ActivePoints(i,j) = 1 !For use in modifygeometryAndMapping
+                                    if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                                        Me%OpenPoints(i,j) = 1 !For use in output routines
+                                    endif
+                                    !Updates Water Level
+                                    Me%myWaterLevel (i, j)     = Me%myWaterColumn (i, j)  + Topography
+                                else
+                                    Me%OpenPoints(i,j) = 0
+                                    Me%myWaterLevel (i, j) = Topography
+                                endif
+
+                            endif
+                        endif
+                    endif
+                enddo
+            enddo
+        endif
         
         Me%TotalBoundaryInflowVolume = Me%TotalBoundaryInflowVolume + TotalBoundaryInflowVolume
         Me%TotalBoundaryOutflowVolume = Me%TotalBoundaryOutflowVolume + TotalBoundaryOutflowVolume
