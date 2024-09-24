@@ -4236,12 +4236,21 @@ do6:                do k = 1, NumberOfBoundaryCells
                     enddo do6
                 
                     if (FoundCell) then
-                        Me%BoundaryCells_1D(index) = 0 !BoundaryLineCell takes priority
+                        if (Me%BoundaryMethod == ComputeFlow_) then
+                            Me%BoundaryCells_1D(index) = 0 !BoundaryLineCell takes priority
+                        else
+                            Me%BoundaryCells_1D(index) = 1
+                        endif
                     else
                         !Add it to the list. Need to set boundarycell to 1 as the default is 0
                         Me%BoundaryCells_I(n1) = i
                         Me%BoundaryCells_J(n1) = j
-                        Me%BoundaryCells_1D(n1) = 0 !BoundaryLineCell takes priority
+                        if (Me%BoundaryMethod == ComputeFlow_) then
+                            Me%BoundaryCells_1D(n1) = 0 !BoundaryLineCell takes priority
+                        else
+                            Me%BoundaryCells_1D(n1) = 1
+                        endif
+                        
                         n1 = n1+1
                     endif
 
@@ -4258,111 +4267,67 @@ do7:                    do k = 1, NumberOfBoundaryCells
                 enddo
             enddo
             
-            !Find boundary faces U and V
-            do line = 1, Me%NumberOfBoundaryLines
-                do n = 1, Me%BoundaryLines(line)%nCells
-                    nFaces = 0
-                    i = Me%BoundaryLines(line)%I(n)
-                    j = Me%BoundaryLines(line)%J(n)
+           if (Me%BoundaryMethod == ComputeFlow_) then
+               
+                !Find boundary faces U and V
+                do line = 1, Me%NumberOfBoundaryLines
+                    do n = 1, Me%BoundaryLines(line)%nCells
+                        nFaces = 0
+                        i = Me%BoundaryLines(line)%I(n)
+                        j = Me%BoundaryLines(line)%J(n)
                     
-                    IsBoundaryTopLeft     = IsBoundaryLineCell(line, i+1, j-1)
-                    IsBoundaryTopRight    = IsBoundaryLineCell(line, i+1, j+1)
-                    IsBoundaryBottomLeft  = IsBoundaryLineCell(line, i-1, j-1)
-                    IsBoundaryBottomRight = IsBoundaryLineCell(line, i-1, j+1)
+                        IsBoundaryTopLeft     = IsBoundaryLineCell(line, i+1, j-1)
+                        IsBoundaryTopRight    = IsBoundaryLineCell(line, i+1, j+1)
+                        IsBoundaryBottomLeft  = IsBoundaryLineCell(line, i-1, j-1)
+                        IsBoundaryBottomRight = IsBoundaryLineCell(line, i-1, j+1)
                     
-                    IsBoundaryTop         = IsBoundaryLineCell(line, i+1, j  )
-                    IsBoundaryBottom      = IsBoundaryLineCell(line, i-1, j  )
-                    IsBoundaryLeft        = IsBoundaryLineCell(line, i  , j-1)
-                    IsBoundaryRight       = IsBoundaryLineCell(line, i  , j+1)
+                        IsBoundaryTop         = IsBoundaryLineCell(line, i+1, j  )
+                        IsBoundaryBottom      = IsBoundaryLineCell(line, i-1, j  )
+                        IsBoundaryLeft        = IsBoundaryLineCell(line, i  , j-1)
+                        IsBoundaryRight       = IsBoundaryLineCell(line, i  , j+1)
                 
-                    !Condition 1 :
-                    !BoundaryFaceU
-                    !CheckLeft
-                    if (Me%ExtVar%BasinPoints(i,j-1) == 0) then
-                        !Boundary to the left
-                        !Condition 2 : Diagonal top and bottom or top lefts and rights
-                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
-                            IsBoundaryBottom     .or. IsBoundaryTop        .or. &
-                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
-                           !current cell face needs flow to cross it so boundarycellface = 1
-                            Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
-                           nFaces = nFaces + 1
+                        !Condition 1 :
+                        !BoundaryFaceU
+                        !CheckLeft
+                        if (Me%ExtVar%BasinPoints(i,j-1) == 0) then
+                            !Boundary to the left
+                            if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                                IsBoundaryBottom     .or. IsBoundaryTop        .or. &
+                                IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                                Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
+                            endif
+                        !CheckRight
+                        elseif (Me%ExtVar%BasinPoints(i,j+1) == 0) then
+                            !Boundary to the left
+                            if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                                IsBoundaryBottom     .or. IsBoundaryTop        .or. &
+                                IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                                Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
+                            endif
                         endif
-                    !CheckRight
-                    elseif (Me%ExtVar%BasinPoints(i,j+1) == 0) then
-                        !Boundary to the left
-                        !Condition 2 : Diagonal top
-                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
-                            IsBoundaryBottom     .or. IsBoundaryTop        .or. &
-                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
-                           !current cell face needs flow to cross it so boundarycellface = 1
-                           nFaces = nFaces + 1
-                           Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
-                        endif
-                    endif
                     
-                    !Condition 1 :
-                    !BoundaryFaceV
-                    !CheckTop
-                    if (Me%ExtVar%BasinPoints(i+1,j) == 0) then
-                        !Boundary to the top
-                        !Condition 2 : Diagonal top and bottom or top lefts or rights
-                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
-                            IsBoundaryLeft       .or. IsBoundaryRight      .or. &
-                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
-                           !current cell face needs flow to cross it so boundarycellface = 1
-                           !Me%BoundaryLines(line)%nFaces(n) = Me%BoundaryLines(line)%nFaces(n) + 1
-                           nFaces = nFaces + 1 !Usando isto passaria a usar um factor que pode ser ou 1 ou hipotenusa
-                           Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
+                        !Condition 1 :
+                        !BoundaryFaceV
+                        !CheckTop
+                        if (Me%ExtVar%BasinPoints(i+1,j) == 0) then
+                            !Boundary to the top
+                            if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                                IsBoundaryLeft       .or. IsBoundaryRight      .or. &
+                                IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                                Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
+                            endif
+                        !CheckBottom
+                        elseif (Me%ExtVar%BasinPoints(i-1,j) == 0) then
+                            !Boundary to bottom
+                            if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
+                                IsBoundaryLeft       .or. IsBoundaryRight      .or. &
+                                IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
+                                Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
+                            endif
                         endif
-                    !CheckBottom
-                    elseif (Me%ExtVar%BasinPoints(i-1,j) == 0) then
-                        !Boundary to bottom
-                        !Condition 2 : Diagonal top and bottom or top lefts or rights
-                        if (IsBoundaryTopLeft    .or. IsBoundaryTopRight   .or. &
-                            IsBoundaryLeft       .or. IsBoundaryRight      .or. &
-                            IsBoundaryBottomLeft .or. IsBoundaryBottomRight) then
-                           !current cell face needs flow to cross it so boundarycellface = 1
-                           !Me%BoundaryLines(line)%nFaces(n) = Me%BoundaryLines(line)%nFaces(n) + 1
-                           nFaces = nFaces + 1 !Usando isto passaria a usar um factor que pode ser ou 1 ou hipotenusa
-                           Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
-                        endif
-                    endif
-
-                    if (nFaces == 0) then
-                        Me%BoundaryLines(line)%FacesFactor(n) = 2
-                        Me%BoundaryLines(line)%BoundaryFaceU(n) = 1
-                        Me%BoundaryLines(line)%BoundaryFaceV(n) = 1
-                    else
-                        Me%BoundaryLines(line)%FacesFactor(n) = nFaces
-                    endif
-                    !if (nFaces == 2) then
-                        !if (Me%GridIsConstant) then
-                        !    Me%BoundaryLines(line)%FacesFactor(n) = (Me%DX + Me%DY) / sqrt(Me%DX**2 + Me%DY**2)
-                        !else
-                        !    Me%BoundaryLines(line)%FacesFactor(n) = &
-                        !        (Me%ExtVar%DZX(i, j) + Me%ExtVar%DZY(i, j)) / &
-                        !        sqrt ((Me%ExtVar%DZX(i, j)**2.0) + (Me%ExtVar%DZY(i, j)**2.0))
-                        !endif
-                    !else
-                        !Check if factor should be 0 (boundary line near boundary covered interior cells as well)
-                        !which creates a triangule of cells that will generate uneven flows
-                        !Check top and left
-                        !if ((IsBoundaryTop    .and. IsBoundaryLeft ) .or. &
-                        !    (IsBoundaryBottom .and. IsBoundaryLeft ) .or. &
-                        !    (IsBoundaryTop    .and. IsBoundaryRight) .or. &
-                        !    (IsBoundaryBottom .and. IsBoundaryRight)) then
-                        !    Me%BoundaryLines(line)%FacesFactor(n) = 0.0
-                        !    Me%BoundaryLines(line)%BoundaryFaceU(n) = 0
-                        !    Me%BoundaryLines(line)%BoundaryFaceV(n) = 0
-                        !else
-                        !    !Check for interior cell
-                        !    Me%BoundaryLines(line)%FacesFactor(n) = 1.0
-                        !endif
-                    !endif
+                    enddo
                 enddo
-            enddo
-            
+            endif
             
         end if        
         
@@ -4426,11 +4391,13 @@ do4:            do di = -1, 1
                 
                 allocate(Me%BoundaryLines(line)%I(1:Me%BoundaryLines(line)%nCells))
                 allocate(Me%BoundaryLines(line)%J(1:Me%BoundaryLines(line)%nCells))
-                allocate(Me%BoundaryLines(line)%FacesFactor(1:Me%BoundaryLines(line)%nCells))
-                allocate(Me%BoundaryLines(line)%BoundaryFaceU(1:Me%BoundaryLines(line)%nCells))
-                allocate(Me%BoundaryLines(line)%BoundaryFaceV(1:Me%BoundaryLines(line)%nCells))
-                Me%BoundaryLines(line)%BoundaryFaceU = 0
-                Me%BoundaryLines(line)%BoundaryFaceV = 0
+                
+                if (Me%BoundaryMethod == ComputeFlow_) then
+                    allocate(Me%BoundaryLines(line)%BoundaryFaceU(1:Me%BoundaryLines(line)%nCells))
+                    allocate(Me%BoundaryLines(line)%BoundaryFaceV(1:Me%BoundaryLines(line)%nCells))
+                    Me%BoundaryLines(line)%BoundaryFaceU = 0
+                    Me%BoundaryLines(line)%BoundaryFaceV = 0
+                endif
                 
                 do n = 1, Me%BoundaryLines(line)%nCells
 
