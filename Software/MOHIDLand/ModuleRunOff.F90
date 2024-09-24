@@ -18214,9 +18214,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
         if (Me%StormWaterModel) then
             if (Me%StormWaterModelDT < Me%CV%NextDT) then
-                write(*,*) "DT from MOHID = ", Me%CV%NextDT
+                !write(*,*) "DT from MOHID = ", Me%CV%NextDT
                 Me%CV%NextDT = Me%StormWaterModelDT
-                write(*,*) "DT from SWMM = ", Me%StormWaterModelDT
+                !write(*,*) "DT from SWMM = ", Me%StormWaterModelDT
             endif
         end if
     
