@@ -715,6 +715,14 @@ Module ModuleRunOff
         type(T_RunOffDischarges), pointer                 :: Next                 => null()
     end type T_RunOffDischarges
     
+    type T_LocalWorkSize
+        integer, dimension(:), allocatable           :: CurrentILB
+        integer, dimension(:), allocatable           :: CurrentIUB
+        integer                                      :: CurrentJLB = null_int
+        integer                                      :: CurrentJUB = null_int
+    end type T_LocalWorkSize
+    
+    
   
     type  T_RunOff
         integer                                     :: InstanceID               = 0
@@ -948,6 +956,8 @@ Module ModuleRunOff
         type(T_BankGridPoint    ), pointer          :: LastBankGridPoint         => null()
         integer                                     :: BankGridPointNumber     = 0
         type(BankGridPointPtr_class), dimension(:), allocatable :: BankGridPointArray
+        
+        type(T_LocalWorkSize)                       :: CurrentWorkSize
         
         logical                                     :: Use1D2DInteractionMapping = .false.
         real                                        :: Transition_depth_1D2D = 0.005 !distance from SWMM to topography
@@ -5628,7 +5638,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValueAllocatable(Me%ModifyGeometryStormWater, Me%Size, 0)
         endif
         
-        
+        allocate(Me%CurrentWorkSize%CurrentILB(Me%WorkSize%JLB:Me%WorkSize%JUB))
+        allocate(Me%CurrentWorkSize%CurrentIUB(Me%WorkSize%JLB:Me%WorkSize%JUB))
 
     end subroutine AllocateVariables
 
@@ -8275,6 +8286,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ModifyInfiltration
                 endif
                 
+                call SetWorkSize
+                
                 !Updates Geometry
                 call ModifyGeometryAndMapping
                 
@@ -8282,15 +8295,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 if (Me%Compute) then
                     !Stores initial values = from basin
-                    call SetMatrixValue(Me%myWaterColumnOld, Me%Size, Me%myWaterColumn, Me%ActivePoints)
+                    call SetMatrixValue_Dynamic(Me%myWaterColumnOld, Me%CurrentWorkSize, Me%myWaterColumn, Me%ActivePoints)
                     !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
             
                     if (Me%Restarted) then
-                        call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%iFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%iFlowY, Me%ActivePoints)
+                        call SetMatrixValue_Dynamic(Me%InitialFlowX,     Me%CurrentWorkSize, Me%iFlowX, Me%ActivePoints)
+                        call SetMatrixValue_Dynamic(Me%InitialFlowY,     Me%CurrentWorkSize, Me%iFlowY, Me%ActivePoints)
                     else
-                        call SetMatrixValue(Me%InitialFlowX,     Me%Size, Me%lFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%Size, Me%lFlowY, Me%ActivePoints)
+                        call SetMatrixValue_Dynamic(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
+                        call SetMatrixValue_Dynamic(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
                     endif
                     
                     !Set 1D River level in river boundary cells
@@ -8325,22 +8338,19 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                         if (Niter > 1) then                
                             call WriteDTLog_ML ('ModuleRunOff', Niter, Me%CV%CurrentDT)
-                            call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
-                            call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
+                            call SetMatrixValue_Dynamic(Me%iFlowX, Me%CurrentWorkSize, dble(0.0), Me%ActivePoints)
+                            call SetMatrixValue_Dynamic(Me%iFlowY, Me%CurrentWorkSize, dble(0.0), Me%ActivePoints)
                             Me%Restarted = .true.
                         else
                             Me%Restarted  = .false.
                         endif
-                    
-                        !call SetMatrixValue(Me%iFlowX, Me%Size, dble(0.0), Me%ActivePoints)
-                        !call SetMatrixValue(Me%iFlowY, Me%Size, dble(0.0), Me%ActivePoints)
                 
                         if (firstRestart) then
                             !using Me%InitialFlowX and Me%InitialFlowY directly
                         else
                             call LocalWaterColumn (Me%myWaterColumnOld)
-                            call SetMatrixValue(Me%lFlowX, Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                            call SetMatrixValue(Me%lFlowY, Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                            call SetMatrixValue_Dynamic(Me%lFlowX, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                            call SetMatrixValue_Dynamic(Me%lFlowY, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                             if (Me%CheckGlobalMass) call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                             if (Me%RouteDFourPoints) call SetMatrixValue(Me%iFlowRouteDFour, Me%Size, 0.0, Me%ExtVar%BasinPoints)
                         endif
@@ -8360,15 +8370,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             if (Me%CV%CheckCorrectDischarges .or. Me%CV%Stabilize) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                             if (firstRestart) then
-                                call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                                call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                                call SetMatrixValue_Dynamic(Me%FlowXOld, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                                call SetMatrixValue_Dynamic(Me%FlowYOld, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                                 firstRestart = .false.
                             else
                                 !Updates Geometry
                                 call ModifyGeometryAndMapping
                                 
-                                call SetMatrixValue(Me%FlowXOld,         Me%Size, Me%lFlowX, Me%ActivePoints)
-                                call SetMatrixValue(Me%FlowYOld,         Me%Size, Me%lFlowY, Me%ActivePoints)
+                                call SetMatrixValue_Dynamic(Me%FlowXOld, Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
+                                call SetMatrixValue_Dynamic(Me%FlowYOld, Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
                             endif
 
                     
@@ -8462,7 +8472,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%Use1D2DInteractionMapping) then
                     !it will use mapping for any model (DN or SWMM or other)
                     Me%Compute = .true.
-                    call OverLandChannelInteraction_6_NewMapping            
+                    call OverLandChannelInteraction_6_NewMapping
+                    call SetWorkSize
                 else            
                     if (Me%ObjDrainageNetwork /= 0) then
                 
@@ -8489,6 +8500,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             !Calculates flow from channels to land -> First ever implement approach
                             call FlowFromChannels
                         endif
+                        call SetWorkSize
                     endif
                 endif
             
@@ -8507,6 +8519,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     elseif (Me%RouteDFourMethod == Celerity_) then
                         call RouteDFourPoints_v3
                     endif
+                    call SetWorkSize
                 endif
 
                 !Boundary Condition
@@ -10925,7 +10938,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
 
         !Sets to 0
-        call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0, Me%DischargePoints)
+        call SetMatrixValue_Dynamic(Me%lFlowDischarge, Me%CurrentWorkSize, 0.0, Me%DischargePoints)
         
         !The discharge flow is controled using two basic rules:
         ! 1 - when the flow is negative can not remove more than the volume present in the cell;
@@ -11199,6 +11212,28 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume(i, j)      = Me%myWaterVolume(i, j) + AuxFlowIJ * LocalDT
 
                     Me%ActivePoints(i,j)   = 1
+                    
+                    Me%CurrentWorkSize%CurrentILB(j) = min(Me%CurrentWorkSize%CurrentILB(j), i-1)
+                    if (Me%CurrentWorkSize%CurrentILB(j) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%CurrentILB(j) == 0) then
+                        Me%CurrentWorkSize%CurrentILB(j) = Me%WorkSize%ILB
+                    endif
+                    
+                    Me%CurrentWorkSize%CurrentIUB(j) = max(Me%CurrentWorkSize%CurrentIUB(j), i+1)
+                    if (Me%CurrentWorkSize%CurrentIUB(j) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%CurrentIUB(j) == Me%WorkSize%IUB + 1) then
+                        Me%CurrentWorkSize%CurrentIUB(j) = Me%WorkSize%IUB
+                    endif
+                    
+                    Me%CurrentWorkSize%CurrentJLB = min(Me%CurrentWorkSize%CurrentJLB, j-1)
+                    Me%CurrentWorkSize%CurrentJUB = max(Me%CurrentWorkSize%CurrentJUB, j+1)
+                    
+                    if (Me%CurrentWorkSize%CurrentJLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%CurrentJLB < Me%WorkSize%JLB) then
+                        Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JLB
+                    endif
+                    
+                    if (Me%CurrentWorkSize%CurrentJUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%CurrentJUB > Me%WorkSize%JUB) then
+                        Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JUB
+                    endif
+        
                     if (present(UpdateWaterLevels)) then
                         if (AuxFlowIJ /= 0.0) Me%Compute = .true. !turn flag on so compute nexdt gets called
                         !Updates Water Column
@@ -11222,6 +11257,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterVolume(ib, jb)      = Me%myWaterVolume(ib, jb) - AuxFlowIJ * LocalDT
 
                         Me%ActivePoints(ib,jb)   = 1
+                        
+                        Me%CurrentWorkSize%CurrentILB(jb) = min(Me%CurrentWorkSize%CurrentILB(jb), ib-1)
+                        if (Me%CurrentWorkSize%CurrentILB(jb) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%CurrentILB(jb) == 0) then
+                            Me%CurrentWorkSize%CurrentILB(jb) = Me%WorkSize%ILB
+                        endif
+                    
+                        Me%CurrentWorkSize%CurrentIUB(jb) = max(Me%CurrentWorkSize%CurrentIUB(jb), ib+1)
+                        if (Me%CurrentWorkSize%CurrentIUB(jb) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%CurrentIUB(jb) == Me%WorkSize%IUB + 1) then
+                            Me%CurrentWorkSize%CurrentIUB(jb) = Me%WorkSize%IUB
+                        endif
+                    
+                        Me%CurrentWorkSize%CurrentJLB = min(Me%CurrentWorkSize%CurrentJLB, jb-1)
+                        Me%CurrentWorkSize%CurrentJUB = max(Me%CurrentWorkSize%CurrentJUB, jb+1)
+                    
+                        if (Me%CurrentWorkSize%CurrentJLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%CurrentJLB < Me%WorkSize%JLB) then
+                            Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JLB
+                        endif
+                    
+                        if (Me%CurrentWorkSize%CurrentJUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%CurrentJUB > Me%WorkSize%JUB) then
+                            Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JUB
+                        endif
                         if (present(UpdateWaterLevels)) then
                             !Updates Water Column
                             Me%myWaterColumn  (ib, jb)    = Me%myWaterVolume (ib, jb) / Me%ExtVar%GridCellArea(ib, jb)
@@ -11527,8 +11583,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             if (Me%GridIsConstant) then
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
-                do j = JLB, JUB
-                do i = ILB, IUB
+                do j = Me%CurrentWorkSize%CurrentJLB, Me%CurrentWorkSize%CurrentJUB
+                do i = Me%CurrentWorkSize%CurrentILB(j), Me%CurrentWorkSize%CurrentIUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == 1) then
                         
                         do c = 1, size(strideJ,1)
@@ -11575,8 +11631,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END DO
             else
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
-                do j = JLB, JUB
-                do i = ILB, IUB
+                do j = Me%CurrentWorkSize%CurrentJLB, Me%CurrentWorkSize%CurrentJUB
+                do i = Me%CurrentWorkSize%CurrentILB(j), Me%CurrentWorkSize%CurrentIUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == 1) then
                         
                         do c = 1, size(strideJ,1)
@@ -11810,6 +11866,51 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !
     !end subroutine ModifyGeometryAndMapping
 
+    subroutine SetWorkSize
+        !Arguments-------------------------------------------------------------
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, di, dj, c
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: WCA
+        integer                                     :: CHUNK, Sum
+        integer, dimension(2,2)                     :: strideJ
+        integer, dimension(:), allocatable          :: Imin, Imax
+        integer                                     :: Jmin, Jmax
+    
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
+    
+        Me%CurrentWorkSize%CurrentILB = Me%WorkSize%IUB + 1
+        Me%CurrentWorkSize%CurrentIUB = Me%WorkSize%ILB - 1
+        Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JUB + 1
+        Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JLB - 1
+        
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ActivePoints(i,j) == 1) then
+                Me%CurrentWorkSize%CurrentILB(j) = min(Me%CurrentWorkSize%CurrentILB(j), i-1)
+                Me%CurrentWorkSize%CurrentIUB(j) = max(Me%CurrentWorkSize%CurrentIUB(j), i+1)
+                Me%CurrentWorkSize%CurrentJLB = min(Me%CurrentWorkSize%CurrentJLB, j-1)
+                Me%CurrentWorkSize%CurrentJUB = max(Me%CurrentWorkSize%CurrentJUB, j+1)
+            endif
+        enddo
+        enddo    
+        !$OMP END DO
+        !$OMP END PARALLEL
+    
+        where (Me%CurrentWorkSize%CurrentILB == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%CurrentILB == 0) Me%CurrentWorkSize%CurrentILB = Me%WorkSize%ILB
+        where (Me%CurrentWorkSize%CurrentIUB == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%CurrentIUB == Me%WorkSize%IUB + 1) Me%CurrentWorkSize%CurrentIUB = Me%WorkSize%IUB
+        
+        if (Me%CurrentWorkSize%CurrentJLB == Me%WorkSize%JUB + 1) Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JLB
+        Me%CurrentWorkSize%CurrentJLB = max(Me%CurrentWorkSize%CurrentJLB, Me%WorkSize%JLB)
+        if (Me%CurrentWorkSize%CurrentJUB == Me%WorkSize%JLB - 1) Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JUB
+        Me%CurrentWorkSize%CurrentJUB = min(Me%CurrentWorkSize%CurrentJUB, Me%WorkSize%JUB)
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
+    end subroutine SetWorkSize
     
     !------------------------------------------------------------------------------
 
@@ -14527,6 +14628,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR170'
 
         enddo
+        
+        call SetWorkSize
         
         !ModifyGeometryandMapping
         strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
@@ -17571,6 +17674,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
     endif
     
+    call SetWorkSize
+    
     end subroutine Modify_Boundary_Condition
 
     !--------------------------------------------------------------------------
@@ -18776,7 +18881,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             !Writes Flow values
             !Writes the Water Column - should be on runoff
-            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
+            call SetMatrixValue_Dynamic(Me%MyWaterColumn_R4, Me%CurrentWorkSize, Me%myWaterColumn, Me%OpenPoints)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water column",          &
                                   "water column", "m",                          &
                                   Array2D      = Me%MyWaterColumn_R4,           &
@@ -18785,7 +18890,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR040'
             
             !Writes the Water Level
-            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
+            call SetMatrixValue_Dynamic(Me%myWaterLevel_R4, Me%CurrentWorkSize, Me%myWaterLevel, Me%OpenPoints)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water level",           &
                                   "water level", "m",                           &
                                   Array2D      = Me%MyWaterLevel_R4,            &
@@ -19021,9 +19126,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
             if (Me%ExtVar%Now >= NextOutput) then
                 if (Me%OutPut%UpdateWaterLevel_R4) then
-                    call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%OpenPoints)
+                    call SetMatrixValue_Dynamic(Me%MyWaterColumn_R4, Me%CurrentWorkSize, Me%myWaterColumn, Me%OpenPoints)
                     !Writes the Water Level
-                    call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%OpenPoints)
+                    call SetMatrixValue_Dynamic(Me%myWaterLevel_R4, Me%CurrentWorkSize, Me%myWaterLevel, Me%OpenPoints)
                 endif 
             endif
         

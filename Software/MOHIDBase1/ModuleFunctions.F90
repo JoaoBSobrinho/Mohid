@@ -70,6 +70,7 @@ Module ModuleFunctions
     public  :: SetMatrixValueAllocatable
     public  :: SetMatrixValueAllocatableV2
     public  :: SetMatrixValueAllocatable_jik
+    public  :: SetMatrixValue_Dynamic
     public  :: GetPointer
     public  :: AddMAtrixtimesScalar
     public  :: AddMatrixtimesScalarDivByMatrix
@@ -509,6 +510,10 @@ Module ModuleFunctions
     interface SetMatrixValueAllocatable_jik
         module procedure SetMatrixValues3D_R_FromMatrixAllocatable_jik
     end interface SetMatrixValueAllocatable_jik
+    
+    interface SetMatrixValue_Dynamic
+        module procedure SetMatrixValue_Dynamic_R4_Alloc_Constant
+    end interface SetMatrixValue_Dynamic
     
     interface SumMatrixes_jik_V2
         module procedure SumMatrixes_jik_V2_R8R4
