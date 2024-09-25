@@ -8286,7 +8286,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
-                if (Me%Instant < 250) then
+                if (Me%Instant < 1000) then
                     Me%Instant = Me%Instant + 1
                     write(99,997) "Depois de ModifyInfiltration", Me%Instant
                     do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8409,7 +8409,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 #ifdef _SEWERGEMSENGINECOUPLER_                                    
                                     call DynamicWaveXX_2    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                     
-                                    if (Me%Instant < 250) then
+                                    if (Me%Instant < 1000) then
                                         write(99,998) "Depois de DynamicWaveXX_2"
                             
                                         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8422,7 +8422,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     endif
                                     call DynamicWaveYY_2    (Me%CV%CurrentDT)
                                     
-                                    if (Me%Instant < 250) then
+                                    if (Me%Instant < 1000) then
                                         write(99,998) "Depois de DynamicWaveYY_2"
                             
                                         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8452,7 +8452,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
                             
-                            if (Me%Instant < 250) then
+                            if (Me%Instant < 1000) then
                                 write(99,998) "Depois de UpdateWaterLevels"
                             
                                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8555,7 +8555,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ComputeStormWaterModel
                 endif
                 
-                if (Me%Instant < 250) then
+                if (Me%Instant < 1000) then
                     write(99,998) "Depois de ComputeStormWaterModel"
                             
                     do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8589,7 +8589,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call Modify_Boundary_Condition
                 endif
                 
-                if (Me%Instant < 250) then
+                if (Me%Instant < 1000) then
                     write(99,998) "Depois de Modify_Boundary_Condition"
                             
                     do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8610,12 +8610,12 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     endif
                 endif
                 
-                if (Me%Instant < 250) then
+                if (Me%Instant < 1000) then
                     write(99,996) "Current DT = ", Me%CV%CurrentDT
                 endif
                 call ComputeNextDT (Niter)
                 
-                if (Me%Instant < 250) then
+                if (Me%Instant < 1000) then
                     write(99,996) "new DT = ", Me%CV%NextDT
                 endif
                 call Outputs
