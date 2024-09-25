@@ -966,6 +966,7 @@ Module ModuleRunOff
         real                                        :: DX                       = null_real
         real                                        :: DY                       = null_real
         real                                        :: GridCellArea             = null_real
+        integer                                     :: Instant = 0
         
         
         type(T_RunOff), pointer                     :: Next                 => null()
@@ -5631,6 +5632,11 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         
         allocate(Me%CurrentWorkSize%ILB(Me%WorkSize%JLB:Me%WorkSize%JUB))
         allocate(Me%CurrentWorkSize%IUB(Me%WorkSize%JLB:Me%WorkSize%JUB))
+        
+        Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
+        Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
+        Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
+        Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
 
     end subroutine AllocateVariables
 
@@ -8213,7 +8219,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_
+        integer                                     :: STAT_, ready_, i, j
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
@@ -8268,6 +8274,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call ReadUnLockExternalVar (StaticOnly = .true.)
                 
             else !other models, no changes
+999 format(a20,1x,2i,1x,1f20.6)
+996 format(a20,1x,1f20.6)
+998 format(a20)
+997 format(a20,1x,1i)
                 
                 if (Me%HasRainFall) then
                     call ModifyRainFall
@@ -8276,6 +8286,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
+                Me%Instant = Me%Instant + 1
+                write(99,997) "Depois de ModifyInfiltration", Me%Instant
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterVolume(i,j) > 0.0) then
+                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
+                    endif
+                enddo
+                enddo
                 
                 call SetWorkSize
                 
@@ -8388,7 +8407,25 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     call ComputeFaceVelocityModulus
 #ifdef _SEWERGEMSENGINECOUPLER_                                    
                                     call DynamicWaveXX_2    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
+                                    write(99,998) "Depois de DynamicWaveXX_2"
+                            
+                                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                        if (Me%myWaterVolume(i,j) > 0.0) then
+                                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
+                                        endif
+                                    enddo
+                                    enddo
                                     call DynamicWaveYY_2    (Me%CV%CurrentDT)
+                                    write(99,998) "Depois de DynamicWaveYY_2"
+                            
+                                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                        if (Me%myWaterVolume(i,j) > 0.0) then
+                                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
+                                        endif
+                                    enddo
+                                    enddo
 #else
                                     call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                     call DynamicWaveYY    (Me%CV%CurrentDT)
@@ -8407,6 +8444,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
+                            
+                            write(99,998) "Depois de UpdateWaterLevels"
+                            
+                            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                if (Me%myWaterVolume(i,j) > 0.0) then
+                                    write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
+                                endif
+                            enddo
+                            enddo
                             
                             call CheckStability(Restart)
                     
@@ -8499,6 +8546,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ComputeStormWaterModel
                 endif
                 
+                write(99,998) "Depois de ComputeStormWaterModel"
+                            
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterVolume(i,j) > 0.0) then
+                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
+                    endif
+                enddo
+                enddo
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
                 !because of resistance. However in both methods the area used is not consistent (regular faces flow
@@ -8522,6 +8578,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call Modify_Boundary_Condition
                 endif
                 
+                write(99,998) "Depois de Modify_Boundary_Condition"
+                            
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterVolume(i,j) > 0.0) then
+                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
+                    endif
+                enddo
+                enddo
+                
                 if (Me%Compute) then
                     !Calculates center flow and velocities (for output and next DT)
                     if (Me%OutPut%SinglePrecision) then
@@ -8531,7 +8597,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     endif
                 endif
                 
+                write(99,996) "Current DT = ", Me%CV%CurrentDT
+                
                 call ComputeNextDT (Niter)
+                
+                write(99,996) "new DT = ", Me%CV%NextDT
                 
                 call Outputs
 
@@ -11205,23 +11275,23 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%ActivePoints(i,j)   = 1
                     
                     Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
-                    if (Me%CurrentWorkSize%ILB(j) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB(j) == 0) then
+                    if (Me%CurrentWorkSize%ILB(j) > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB(j) < Me%WorkSize%ILB) then
                         Me%CurrentWorkSize%ILB(j) = Me%WorkSize%ILB
                     endif
                     
                     Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
-                    if (Me%CurrentWorkSize%IUB(j) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB(j) == Me%WorkSize%IUB + 1) then
+                    if (Me%CurrentWorkSize%IUB(j) < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB(j) > Me%WorkSize%IUB) then
                         Me%CurrentWorkSize%IUB(j) = Me%WorkSize%IUB
                     endif
                     
                     Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, j-1)
                     Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, j+1)
                     
-                    if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
+                    if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
                         Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
                     endif
                     
-                    if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
+                    if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
                         Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
                     endif
         
@@ -11892,13 +11962,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
     
-        where (Me%CurrentWorkSize%ILB == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB == 0) Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
-        where (Me%CurrentWorkSize%IUB == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB == Me%WorkSize%IUB + 1) Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
+        where (Me%CurrentWorkSize%ILB > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB < Me%WorkSize%ILB) Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
+        where (Me%CurrentWorkSize%IUB < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB > Me%WorkSize%IUB) Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
         
-        if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1) Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
-        Me%CurrentWorkSize%JLB = max(Me%CurrentWorkSize%JLB, Me%WorkSize%JLB)
-        if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1) Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
-        Me%CurrentWorkSize%JUB = min(Me%CurrentWorkSize%JUB, Me%WorkSize%JUB)
+        if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
+        if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
     end subroutine SetWorkSize
