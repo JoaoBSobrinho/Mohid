@@ -2038,6 +2038,13 @@ Module ModuleGlobalData
         integer                 :: JLB            = null_int
         integer                 :: JUB            = null_int
     end type T_Size2D
+    
+    type T_LocalWorkSize
+        integer, dimension(:), allocatable           :: ILB
+        integer, dimension(:), allocatable           :: IUB
+        integer                                      :: JLB = null_int
+        integer                                      :: JUB = null_int
+    end type T_LocalWorkSize
 
 #ifdef _USE_CUDA
     ! Bind this type to C if CUDA is used

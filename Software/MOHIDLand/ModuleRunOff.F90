@@ -42,7 +42,7 @@ Module ModuleRunOff
     use ModuleHDF5
     use ModuleFunctions         ,only : TimeToString, SetMatrixValue, ChangeSuffix,      &
                                         CHUNK_J, LinearInterpolation, InterpolateValueInTime, &
-                                        SetMatrixValueAllocatable
+                                        SetMatrixValueAllocatable, SetMatrixValue_Dynamic
     use ModuleHorizontalGrid    ,only : GetHorizontalGridSize, GetHorizontalGrid,        &
                                         UnGetHorizontalGrid, WriteHorizontalGrid,        &
                                         GetGridCellArea, GetXYCellZ,                     &
@@ -714,15 +714,6 @@ Module ModuleRunOff
         integer, dimension(:), allocatable          :: VectorJ                         ! 1D array with J of all discharge cells
         type(T_RunOffDischarges), pointer                 :: Next                 => null()
     end type T_RunOffDischarges
-    
-    type T_LocalWorkSize
-        integer, dimension(:), allocatable           :: CurrentILB
-        integer, dimension(:), allocatable           :: CurrentIUB
-        integer                                      :: CurrentJLB = null_int
-        integer                                      :: CurrentJUB = null_int
-    end type T_LocalWorkSize
-    
-    
   
     type  T_RunOff
         integer                                     :: InstanceID               = 0
@@ -5638,8 +5629,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValueAllocatable(Me%ModifyGeometryStormWater, Me%Size, 0)
         endif
         
-        allocate(Me%CurrentWorkSize%CurrentILB(Me%WorkSize%JLB:Me%WorkSize%JUB))
-        allocate(Me%CurrentWorkSize%CurrentIUB(Me%WorkSize%JLB:Me%WorkSize%JUB))
+        allocate(Me%CurrentWorkSize%ILB(Me%WorkSize%JLB:Me%WorkSize%JUB))
+        allocate(Me%CurrentWorkSize%IUB(Me%WorkSize%JLB:Me%WorkSize%JUB))
 
     end subroutine AllocateVariables
 
@@ -11213,25 +11204,25 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                     Me%ActivePoints(i,j)   = 1
                     
-                    Me%CurrentWorkSize%CurrentILB(j) = min(Me%CurrentWorkSize%CurrentILB(j), i-1)
-                    if (Me%CurrentWorkSize%CurrentILB(j) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%CurrentILB(j) == 0) then
-                        Me%CurrentWorkSize%CurrentILB(j) = Me%WorkSize%ILB
+                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
+                    if (Me%CurrentWorkSize%ILB(j) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB(j) == 0) then
+                        Me%CurrentWorkSize%ILB(j) = Me%WorkSize%ILB
                     endif
                     
-                    Me%CurrentWorkSize%CurrentIUB(j) = max(Me%CurrentWorkSize%CurrentIUB(j), i+1)
-                    if (Me%CurrentWorkSize%CurrentIUB(j) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%CurrentIUB(j) == Me%WorkSize%IUB + 1) then
-                        Me%CurrentWorkSize%CurrentIUB(j) = Me%WorkSize%IUB
+                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
+                    if (Me%CurrentWorkSize%IUB(j) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB(j) == Me%WorkSize%IUB + 1) then
+                        Me%CurrentWorkSize%IUB(j) = Me%WorkSize%IUB
                     endif
                     
-                    Me%CurrentWorkSize%CurrentJLB = min(Me%CurrentWorkSize%CurrentJLB, j-1)
-                    Me%CurrentWorkSize%CurrentJUB = max(Me%CurrentWorkSize%CurrentJUB, j+1)
+                    Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, j-1)
+                    Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, j+1)
                     
-                    if (Me%CurrentWorkSize%CurrentJLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%CurrentJLB < Me%WorkSize%JLB) then
-                        Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JLB
+                    if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
+                        Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
                     endif
                     
-                    if (Me%CurrentWorkSize%CurrentJUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%CurrentJUB > Me%WorkSize%JUB) then
-                        Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JUB
+                    if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
+                        Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
                     endif
         
                     if (present(UpdateWaterLevels)) then
@@ -11258,25 +11249,25 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                         Me%ActivePoints(ib,jb)   = 1
                         
-                        Me%CurrentWorkSize%CurrentILB(jb) = min(Me%CurrentWorkSize%CurrentILB(jb), ib-1)
-                        if (Me%CurrentWorkSize%CurrentILB(jb) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%CurrentILB(jb) == 0) then
-                            Me%CurrentWorkSize%CurrentILB(jb) = Me%WorkSize%ILB
+                        Me%CurrentWorkSize%ILB(jb) = min(Me%CurrentWorkSize%ILB(jb), ib-1)
+                        if (Me%CurrentWorkSize%ILB(jb) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB(jb) == 0) then
+                            Me%CurrentWorkSize%ILB(jb) = Me%WorkSize%ILB
                         endif
                     
-                        Me%CurrentWorkSize%CurrentIUB(jb) = max(Me%CurrentWorkSize%CurrentIUB(jb), ib+1)
-                        if (Me%CurrentWorkSize%CurrentIUB(jb) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%CurrentIUB(jb) == Me%WorkSize%IUB + 1) then
-                            Me%CurrentWorkSize%CurrentIUB(jb) = Me%WorkSize%IUB
+                        Me%CurrentWorkSize%IUB(jb) = max(Me%CurrentWorkSize%IUB(jb), ib+1)
+                        if (Me%CurrentWorkSize%IUB(jb) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB(jb) == Me%WorkSize%IUB + 1) then
+                            Me%CurrentWorkSize%IUB(jb) = Me%WorkSize%IUB
                         endif
                     
-                        Me%CurrentWorkSize%CurrentJLB = min(Me%CurrentWorkSize%CurrentJLB, jb-1)
-                        Me%CurrentWorkSize%CurrentJUB = max(Me%CurrentWorkSize%CurrentJUB, jb+1)
+                        Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, jb-1)
+                        Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, jb+1)
                     
-                        if (Me%CurrentWorkSize%CurrentJLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%CurrentJLB < Me%WorkSize%JLB) then
-                            Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JLB
+                        if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
+                            Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
                         endif
                     
-                        if (Me%CurrentWorkSize%CurrentJUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%CurrentJUB > Me%WorkSize%JUB) then
-                            Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JUB
+                        if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
+                            Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
                         endif
                         if (present(UpdateWaterLevels)) then
                             !Updates Water Column
@@ -11583,8 +11574,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             if (Me%GridIsConstant) then
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
-                do j = Me%CurrentWorkSize%CurrentJLB, Me%CurrentWorkSize%CurrentJUB
-                do i = Me%CurrentWorkSize%CurrentILB(j), Me%CurrentWorkSize%CurrentIUB(j)
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == 1) then
                         
                         do c = 1, size(strideJ,1)
@@ -11631,8 +11622,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END DO
             else
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
-                do j = Me%CurrentWorkSize%CurrentJLB, Me%CurrentWorkSize%CurrentJUB
-                do i = Me%CurrentWorkSize%CurrentILB(j), Me%CurrentWorkSize%CurrentIUB(j)
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == 1) then
                         
                         do c = 1, size(strideJ,1)
@@ -11881,33 +11872,33 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
     
-        Me%CurrentWorkSize%CurrentILB = Me%WorkSize%IUB + 1
-        Me%CurrentWorkSize%CurrentIUB = Me%WorkSize%ILB - 1
-        Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JUB + 1
-        Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JLB - 1
+        Me%CurrentWorkSize%ILB = Me%WorkSize%IUB + 1
+        Me%CurrentWorkSize%IUB = Me%WorkSize%ILB - 1
+        Me%CurrentWorkSize%JLB = Me%WorkSize%JUB + 1
+        Me%CurrentWorkSize%JUB = Me%WorkSize%JLB - 1
         
         !$OMP PARALLEL PRIVATE(I,J)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if (Me%ActivePoints(i,j) == 1) then
-                Me%CurrentWorkSize%CurrentILB(j) = min(Me%CurrentWorkSize%CurrentILB(j), i-1)
-                Me%CurrentWorkSize%CurrentIUB(j) = max(Me%CurrentWorkSize%CurrentIUB(j), i+1)
-                Me%CurrentWorkSize%CurrentJLB = min(Me%CurrentWorkSize%CurrentJLB, j-1)
-                Me%CurrentWorkSize%CurrentJUB = max(Me%CurrentWorkSize%CurrentJUB, j+1)
+                Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
+                Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
+                Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, j-1)
+                Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, j+1)
             endif
         enddo
         enddo    
         !$OMP END DO
         !$OMP END PARALLEL
     
-        where (Me%CurrentWorkSize%CurrentILB == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%CurrentILB == 0) Me%CurrentWorkSize%CurrentILB = Me%WorkSize%ILB
-        where (Me%CurrentWorkSize%CurrentIUB == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%CurrentIUB == Me%WorkSize%IUB + 1) Me%CurrentWorkSize%CurrentIUB = Me%WorkSize%IUB
+        where (Me%CurrentWorkSize%ILB == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB == 0) Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
+        where (Me%CurrentWorkSize%IUB == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB == Me%WorkSize%IUB + 1) Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
         
-        if (Me%CurrentWorkSize%CurrentJLB == Me%WorkSize%JUB + 1) Me%CurrentWorkSize%CurrentJLB = Me%WorkSize%JLB
-        Me%CurrentWorkSize%CurrentJLB = max(Me%CurrentWorkSize%CurrentJLB, Me%WorkSize%JLB)
-        if (Me%CurrentWorkSize%CurrentJUB == Me%WorkSize%JLB - 1) Me%CurrentWorkSize%CurrentJUB = Me%WorkSize%JUB
-        Me%CurrentWorkSize%CurrentJUB = min(Me%CurrentWorkSize%CurrentJUB, Me%WorkSize%JUB)
+        if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1) Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
+        Me%CurrentWorkSize%JLB = max(Me%CurrentWorkSize%JLB, Me%WorkSize%JLB)
+        if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1) Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+        Me%CurrentWorkSize%JUB = min(Me%CurrentWorkSize%JUB, Me%WorkSize%JUB)
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
     end subroutine SetWorkSize
@@ -12198,8 +12189,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J,n, U, Vaverage, V, Uaverage)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = JLB, JUB
-        do i = ILB, IUB
+        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+        do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
             if (Me%ComputeFaceU(i, j) == Compute) then  
                 Vaverage = 0.0
                 n = 0
@@ -12296,8 +12287,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !X
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+        do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
 
             if (Me%ComputeFaceU(i, j) == Compute) then
             
@@ -13211,8 +13202,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !Y
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+        do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
             if (Me%ComputeFaceV(i, j) == Compute) then
             
                 waterColumn_bottom = Me%myWaterColumn(i-1, j)
@@ -14075,21 +14066,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real, intent(IN)                            :: LocalDT
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
-        integer                                     :: ILB, IUB, JLB, JUB
         real(8)                                     :: WaterVolume
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterLevels")
 
-        ILB = Me%WorkSize%ILB
-        IUB = Me%WorkSize%IUB
-        JLB = Me%WorkSize%JLB
-        JUB = Me%WorkSize%JUB
-
         !$OMP PARALLEL PRIVATE(I,J, WaterVolume)
         if (Me%GridIsConstant) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%ActivePoints_Left(i,j+1) == 1) then!because cant update j-1 cell in dynamicwavexx due to paralelization
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT
                     Me%ActivePoints(i,j) = 1
@@ -14126,8 +14111,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = ILB, IUB
-            do i = JLB, JUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%ActivePoints_Left(i,j+1) == 1) then
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT
                     Me%ActivePoints(i,j) = 1
@@ -16745,8 +16730,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (Me%Discharges) then
             !Integrates along X and Y Directions
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%ActivePoints(i,j) == Compute) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / SumDTs
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / SumDTs
@@ -16764,8 +16749,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !Integrates along X Directions
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%ActivePoints(i,j) == Compute) then
                     Me%iFlowX(i, j) = (Me%iFlowX(i, j) * SumDT + Me%lFlowX(i, j) * LocalDT) / (SumDTs)
                     Me%iFlowY(i, j) = (Me%iFlowY(i, j) * SumDT + Me%lFlowY(i, j) * LocalDT) / (SumDTs)
@@ -16816,8 +16801,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (Me%Discharges) then
             !Integrates along X and Y Directions
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%DischargePoints(i,j) == Compute) then
                     sumDischarge = sumDischarge + Me%lFlowDischarge(i, j) * LocalDT
                 endif
@@ -17930,8 +17915,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (Me%GridIsRotated) then
                     !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowX_Center,FlowY,FlowY_top,FlowY_Center,VelocityX,VelocityY)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                    do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                             if (Me%OpenPoints(i,j) == BasinPoint) then
                                 FlowX = iFlowX(i, j)
@@ -17968,8 +17953,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 else
                     !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowY,FlowY_top)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                    do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                         if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                             if (Me%OpenPoints(i,j) == BasinPoint) then
                             
@@ -18003,8 +17988,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                         if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
@@ -18034,8 +18019,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if(Me%Output%WriteMaxFlowModulus) then
                 !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%OpenPoints(i,j) == BasinPoint) then
                             Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
@@ -18056,8 +18041,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                         if (Me%OpenPoints(i,j) == BasinPoint) then
                             Me%FlowModulus_R4(i, j) = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
@@ -18118,20 +18103,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%GridIsRotated) then
                 !$OMP PARALLEL PRIVATE(I,J,VelocityX,VelocityY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                        if (Me%OpenPoints(i,j) == BasinPoint) then
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
+                    if (Me%OpenPoints(i,j) == BasinPoint) then
                             
-                            VelocityX = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
-                            VelocityY = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
+                        VelocityX = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
+                        VelocityY = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
                             
-                            Me%CenterVelocityX_R4 (i, j) = VelocityX * Me%GridCosAngleX + VelocityY * Me%GridCosAngleY
-                            Me%CenterVelocityY_R4 (i, j) = VelocityX * Me%GridSinAngleX + VelocityY * Me%GridSinAngleY
+                        Me%CenterVelocityX_R4 (i, j) = VelocityX * Me%GridCosAngleX + VelocityY * Me%GridCosAngleY
+                        Me%CenterVelocityY_R4 (i, j) = VelocityX * Me%GridSinAngleX + VelocityY * Me%GridSinAngleY
                             
-                            Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
-                        end if
-                    endif
+                        Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                    end if
                 enddo
                 enddo
                 !$OMP END DO
@@ -18139,17 +18122,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                        if (Me%OpenPoints(i,j) == BasinPoint) then
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
+                    if (Me%OpenPoints(i,j) == BasinPoint) then
                             
-                            Me%CenterVelocityX_R4 (i, j) = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
-                            Me%CenterVelocityY_R4 (i, j) = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
+                        Me%CenterVelocityX_R4 (i, j) = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
+                        Me%CenterVelocityY_R4 (i, j) = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
                             
-                            Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
-                        end if
-                    endif
+                        Me%VelocityModulus_R4 (i, j) = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                    end if
                 enddo
                 enddo
                 !$OMP END DO
@@ -18160,8 +18141,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                 
                     if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
@@ -18250,8 +18231,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
                         !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
                         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-                        do j = JLB+1, JUB
-                        do i = ILB+1, IUB
+                        do j = Me%CurrentWorkSize%JLB+1, Me%CurrentWorkSize%JUB
+                        do i = Me%CurrentWorkSize%ILB(j)+1, Me%CurrentWorkSize%IUB(j)
                             if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                                 do c = 1, size(strideJ,1)
                                     !Compute fluxes of east and north cell faces
@@ -18296,8 +18277,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
                         !$OMP Distance_Courant)
                         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-                        do j = JLB+1, JUB
-                        do i = ILB+1, IUB
+                        do j = Me%CurrentWorkSize%JLB+1, Me%CurrentWorkSize%JUB
+                        do i = Me%CurrentWorkSize%ILB(j)+1, Me%CurrentWorkSize%IUB(j)
                             if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                                 do c = 1, size(strideJ,1)
                                     !Compute fluxes of east and north cell faces
@@ -19451,8 +19432,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, n)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:Sum)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+        do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
             if (ComputePoints(i, j) == BasinPoint) then
                 WaterColumn = Me%myWaterColumn(i, j)
                 !Water Column of overland flow
@@ -19679,8 +19660,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+        do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
             if (Me%OpenPoints(i, j) == BasinPoint) then
                 WaterColumn = Me%myWaterColumn(i, j)
                 !Water Column of overland flow
@@ -19776,8 +19757,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%MinimumWaterColumn > minval(Me%Output%FloodPeriodWaterColumnLimits)) then
                 !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%OpenPoints(i,j) == Compute) then
                         WaterColumn = Me%myWaterColumn(i, j)
                         do n = 1, Me%Output%nFloodPeriodLimits
@@ -19793,8 +19774,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ActivePoints(i,j) == Compute) then
                         WaterColumn = Me%myWaterColumn(i, j)
                         do n = 1, Me%Output%nFloodPeriodLimits
@@ -19813,8 +19794,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (Me%MinimumWaterColumn > Me%Output%FloodPeriodWaterColumnLimit) then
                 !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%OpenPoints(i,j) == Compute) then
                         if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
                             Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
@@ -19827,8 +19808,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             else
                 !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     if (Me%ActivePoints(i,j) == Compute) then
                         if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
                             Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
@@ -19873,8 +19854,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                 if (Me%ActivePoints(i,j) == Compute) then
 
                     if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
@@ -19893,8 +19874,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            do j = JLB, JUB
-            do i = ILB, IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
    
                 if (Me%ActivePoints(i,j) == Compute) then
 
@@ -20041,8 +20022,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
             !$OMP PARALLEL PRIVATE(I,J)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB(j), Me%CurrentWorkSize%IUB(j)
                     
                 if (Me%ActivePoints(i, j) == 1) then
                     !m3 = m3  + m3
