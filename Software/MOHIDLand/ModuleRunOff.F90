@@ -8274,7 +8274,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call ReadUnLockExternalVar (StaticOnly = .true.)
                 
             else !other models, no changes
-999 format(a20,1x,2i,1x,1f20.6)
+999 format(a20,1x,2i,1x,2f20.6)
 996 format(a20,1x,1f20.6)
 998 format(a20)
 997 format(a20,1x,1i)
@@ -8286,16 +8286,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
-                Me%Instant = Me%Instant + 1
-                write(99,997) "Depois de ModifyInfiltration", Me%Instant
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                    if (Me%myWaterVolume(i,j) > 0.0) then
-                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
-                    endif
-                enddo
-                enddo
-                
+                if (Me%Instant < 202) then
+                    Me%Instant = Me%Instant + 1
+                    write(99,997) "Depois de ModifyInfiltration", Me%Instant
+                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        if (Me%myWaterVolume(i,j) > 0.0) then
+                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                        endif
+                    enddo
+                    enddo
+                endif
                 call SetWorkSize
                 
                 !Updates Geometry
@@ -8407,25 +8408,31 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     call ComputeFaceVelocityModulus
 #ifdef _SEWERGEMSENGINECOUPLER_                                    
                                     call DynamicWaveXX_2    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
-                                    write(99,998) "Depois de DynamicWaveXX_2"
+                                    
+                                    if (Me%Instant < 372) then
+                                        write(99,998) "Depois de DynamicWaveXX_2"
                             
-                                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                                        if (Me%myWaterVolume(i,j) > 0.0) then
-                                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
-                                        endif
-                                    enddo
-                                    enddo
+                                        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                            if (Me%myWaterVolume(i,j) > 0.0) then
+                                                write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                                            endif
+                                        enddo
+                                        enddo
+                                    endif
                                     call DynamicWaveYY_2    (Me%CV%CurrentDT)
-                                    write(99,998) "Depois de DynamicWaveYY_2"
+                                    
+                                    if (Me%Instant < 372) then
+                                        write(99,998) "Depois de DynamicWaveYY_2"
                             
-                                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                                        if (Me%myWaterVolume(i,j) > 0.0) then
-                                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
-                                        endif
-                                    enddo
-                                    enddo
+                                        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                            if (Me%myWaterVolume(i,j) > 0.0) then
+                                                write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                                            endif
+                                        enddo
+                                        enddo
+                                    endif
 #else
                                     call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                     call DynamicWaveYY    (Me%CV%CurrentDT)
@@ -8445,15 +8452,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
                             
-                            write(99,998) "Depois de UpdateWaterLevels"
+                            if (Me%Instant < 372) then
+                                write(99,998) "Depois de UpdateWaterLevels"
                             
-                            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                                if (Me%myWaterVolume(i,j) > 0.0) then
-                                    write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
-                                endif
-                            enddo
-                            enddo
+                                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                    if (Me%myWaterVolume(i,j) > 0.0) then
+                                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                                    endif
+                                enddo
+                                enddo
+                            endif
                             
                             call CheckStability(Restart)
                     
@@ -8546,15 +8555,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call ComputeStormWaterModel
                 endif
                 
-                write(99,998) "Depois de ComputeStormWaterModel"
+                if (Me%Instant < 372) then
+                    write(99,998) "Depois de ComputeStormWaterModel"
                             
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                    if (Me%myWaterVolume(i,j) > 0.0) then
-                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
-                    endif
-                enddo
-                enddo
+                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        if (Me%myWaterVolume(i,j) > 0.0) then
+                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                        endif
+                    enddo
+                    enddo
+                endif
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
                 !because of resistance. However in both methods the area used is not consistent (regular faces flow
@@ -8578,15 +8589,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call Modify_Boundary_Condition
                 endif
                 
-                write(99,998) "Depois de Modify_Boundary_Condition"
+                if (Me%Instant < 372) then
+                    write(99,998) "Depois de Modify_Boundary_Condition"
                             
-                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                    if (Me%myWaterVolume(i,j) > 0.0) then
-                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000
-                    endif
-                enddo
-                enddo
+                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        if (Me%myWaterVolume(i,j) > 0.0) then
+                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                        endif
+                    enddo
+                    enddo
+                endif
                 
                 if (Me%Compute) then
                     !Calculates center flow and velocities (for output and next DT)
@@ -8597,12 +8610,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     endif
                 endif
                 
-                write(99,996) "Current DT = ", Me%CV%CurrentDT
-                
+                if (Me%Instant < 372) then
+                    write(99,996) "Current DT = ", Me%CV%CurrentDT
+                endif
                 call ComputeNextDT (Niter)
                 
-                write(99,996) "new DT = ", Me%CV%NextDT
-                
+                if (Me%Instant < 372) then
+                    write(99,996) "new DT = ", Me%CV%NextDT
+                endif
                 call Outputs
 
                 !Ungets external variables
