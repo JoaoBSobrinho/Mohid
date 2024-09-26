@@ -968,7 +968,6 @@ Module ModuleRunOff
         real                                        :: GridCellArea             = null_real
         integer                                     :: Instant = 0
         
-        
         type(T_RunOff), pointer                     :: Next                 => null()
     end type  T_RunOff
 
@@ -8219,7 +8218,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_, i, j
+        integer                                     :: STAT_, ready_!, i, j
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
@@ -8274,11 +8273,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call ReadUnLockExternalVar (StaticOnly = .true.)
                 
             else !other models, no changes
-999 format(a20,1x,2i,1x,2f20.6)
-996 format(a20,1x,1f20.6)
-998 format(a20)
-997 format(a20,1x,1i)
-                
+!999 format(a20,1x,2i,1x,2f20.6)
+!996 format(a20,1x,1f20.6)
+!998 format(a20)
+!997 format(a20,1x,1i)
                 if (Me%HasRainFall) then
                     call ModifyRainFall
                 endif
@@ -8286,17 +8284,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
-                if (Me%Instant < 1000) then
-                    Me%Instant = Me%Instant + 1
-                    write(99,997) "Depois de ModifyInfiltration", Me%Instant
-                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                        if (Me%myWaterVolume(i,j) > 0.0) then
-                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
-                        endif
-                    enddo
-                    enddo
-                endif
+                !Me%Instant = Me%Instant + 1
+                !if (Me%Instant < 21) then
+                !    write(99,997) "Depois de ModifyInfiltration", Me%Instant
+                !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                !        if (Me%myWaterVolume(i,j) > 0.0) then
+                !            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                !        endif
+                !    enddo
+                !    enddo
+                !endif
                 call SetWorkSize
                 
                 !Updates Geometry
@@ -8409,33 +8407,35 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 #ifdef _SEWERGEMSENGINECOUPLER_                                    
                                     call DynamicWaveXX_2    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                     
-                                    if (Me%Instant < 1000) then
-                                        write(99,998) "Depois de DynamicWaveXX_2"
-                            
-                                        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                                        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                                            if (Me%myWaterVolume(i,j) > 0.0) then
-                                                write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
-                                            endif
-                                        enddo
-                                        enddo
-                                    endif
+                                    !if (Me%Instant < 21) then
+                                    !    write(99,998) "Depois de DynamicWaveXX_2"
+                                    !
+                                    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                    !        if (Me%myWaterVolume(i,j) > 0.0) then
+                                    !            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                                    !        endif
+                                    !    enddo
+                                    !    enddo
+                                    !endif
                                     call DynamicWaveYY_2    (Me%CV%CurrentDT)
                                     
-                                    if (Me%Instant < 1000) then
-                                        write(99,998) "Depois de DynamicWaveYY_2"
-                            
-                                        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                                        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                                            if (Me%myWaterVolume(i,j) > 0.0) then
-                                                write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
-                                            endif
-                                        enddo
-                                        enddo
-                                    endif
+                                    !if (Me%Instant < 21) then
+                                    !    write(99,998) "Depois de DynamicWaveYY_2"
+                                    !
+                                    !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                    !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                    !        if (Me%myWaterVolume(i,j) > 0.0) then
+                                    !            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                                    !        endif
+                                    !    enddo
+                                    !    enddo
+                                    !endif
+                                    call SetWorkSize
 #else
                                     call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
                                     call DynamicWaveYY    (Me%CV%CurrentDT)
+                                    call SetWorkSize
 #endif _SEWERGEMSENGINECOUPLER_                                  
                             end select
 
@@ -8446,24 +8446,22 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                             !Inputs Water from discharges
                             if (Me%Discharges) then
-                                call ModifyWaterDischarges  (Me%CV%CurrentDT)                
+                                call ModifyWaterDischarges  (Me%CV%CurrentDT)
                             endif
                         
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
-                            
-                            if (Me%Instant < 1000) then
-                                write(99,998) "Depois de UpdateWaterLevels"
-                            
-                                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                                    if (Me%myWaterVolume(i,j) > 0.0) then
-                                        write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
-                                    endif
-                                enddo
-                                enddo
-                            endif
-                            
+                            !if (Me%Instant < 21) then
+                            !    write(99,998) "Depois de UpdateWaterLevels"
+                            !
+                            !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                            !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                            !        if (Me%myWaterVolume(i,j) > 0.0) then
+                            !            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                            !        endif
+                            !    enddo
+                            !    enddo
+                            !endif
                             call CheckStability(Restart)
                     
                             if (Restart) then
@@ -8554,18 +8552,17 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%StormWaterModel) then
                     call ComputeStormWaterModel
                 endif
-                
-                if (Me%Instant < 1000) then
-                    write(99,998) "Depois de ComputeStormWaterModel"
-                            
-                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                        if (Me%myWaterVolume(i,j) > 0.0) then
-                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
-                        endif
-                    enddo
-                    enddo
-                endif
+                !if (Me%Instant < 21) then
+                !    write(99,998) "Depois de ComputeStormWaterModel"
+                !            
+                !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                !        if (Me%myWaterVolume(i,j) > 0.0) then
+                !            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                !        endif
+                !    enddo
+                !    enddo
+                !endif
                 !Routes Ponded levels which occour due to X/Y direction (Runoff does not route in D8)
                 !the defaul method was celerity (it was corrected) but it ccould create high flow changes. Manning method is stabler
                 !because of resistance. However in both methods the area used is not consistent (regular faces flow
@@ -8588,18 +8585,19 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%ImposeBoundaryValue) then
                     call Modify_Boundary_Condition
                 endif
+                !if (Me%Instant < 21) then
+                !    write(99,998) "Depois de Modify_Boundary_Condition"
+                !            
+                !    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                !    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                !        if (Me%myWaterVolume(i,j) > 0.0) then
+                !            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
+                !        endif
+                !    enddo
+                !    enddo
+                !endif
                 
-                if (Me%Instant < 1000) then
-                    write(99,998) "Depois de Modify_Boundary_Condition"
-                            
-                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                        if (Me%myWaterVolume(i,j) > 0.0) then
-                            write(99,999) "Volume in i, j = ", i, j, Me%myWaterVolume(i,j)*1000000, Me%myWaterColumn(i,j)*1000000
-                        endif
-                    enddo
-                    enddo
-                endif
+                if (Me%StormWaterModel .or. Me%ImposeBoundaryValue) call SetWorkSize
                 
                 if (Me%Compute) then
                     !Calculates center flow and velocities (for output and next DT)
@@ -8610,14 +8608,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     endif
                 endif
                 
-                if (Me%Instant < 1000) then
-                    write(99,996) "Current DT = ", Me%CV%CurrentDT
-                endif
+                !if (Me%Instant < 21) then
+                !    write(99,996) "Current DT = ", Me%CV%CurrentDT
+                !endif
                 call ComputeNextDT (Niter)
                 
-                if (Me%Instant < 1000) then
-                    write(99,996) "new DT = ", Me%CV%NextDT
-                endif
+                !if (Me%Instant < 21) then
+                !    write(99,996) "new DT = ", Me%CV%NextDT
+                !endif
+                
                 call Outputs
 
                 !Ungets external variables
@@ -11289,27 +11288,38 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                     Me%ActivePoints(i,j)   = 1
                     
-                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
-                    if (Me%CurrentWorkSize%ILB(j) > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB(j) < Me%WorkSize%ILB) then
-                        Me%CurrentWorkSize%ILB(j) = Me%WorkSize%ILB
-                    endif
+                    if (.not. Me%HasRainFall) then
+                        Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
+                        if (Me%CurrentWorkSize%ILB(j) > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB(j) < Me%WorkSize%ILB) then
+                            Me%CurrentWorkSize%ILB(j) = Me%WorkSize%ILB
+                        endif
                     
-                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
-                    if (Me%CurrentWorkSize%IUB(j) < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB(j) > Me%WorkSize%IUB) then
-                        Me%CurrentWorkSize%IUB(j) = Me%WorkSize%IUB
-                    endif
+                        Me%CurrentWorkSize%ILB(j+1) = min(Me%CurrentWorkSize%ILB(j+1), i-1)
+                        if (Me%CurrentWorkSize%ILB(j+1) > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB(j+1) < Me%WorkSize%ILB) then
+                            Me%CurrentWorkSize%ILB(j+1) = Me%WorkSize%ILB
+                        endif
                     
-                    Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, j-1)
-                    Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, j+1)
+                        Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
+                        if (Me%CurrentWorkSize%IUB(j) < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB(j) > Me%WorkSize%IUB) then
+                            Me%CurrentWorkSize%IUB(j) = Me%WorkSize%IUB
+                        endif
                     
-                    if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
-                        Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
-                    endif
+                        Me%CurrentWorkSize%IUB(j+1) = max(Me%CurrentWorkSize%IUB(j+1), i+1)
+                        if (Me%CurrentWorkSize%IUB(j+1) < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB(j+1) > Me%WorkSize%IUB) then
+                            Me%CurrentWorkSize%IUB(j+1) = Me%WorkSize%IUB
+                        endif
                     
-                    if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
-                        Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+                        Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, j-1)
+                        Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, j+1)
+                    
+                        if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
+                            Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
+                        endif
+                    
+                        if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
+                            Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+                        endif
                     endif
-        
                     if (present(UpdateWaterLevels)) then
                         if (AuxFlowIJ /= 0.0) Me%Compute = .true. !turn flag on so compute nexdt gets called
                         !Updates Water Column
@@ -11334,25 +11344,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                         Me%ActivePoints(ib,jb)   = 1
                         
-                        Me%CurrentWorkSize%ILB(jb) = min(Me%CurrentWorkSize%ILB(jb), ib-1)
-                        if (Me%CurrentWorkSize%ILB(jb) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB(jb) == 0) then
-                            Me%CurrentWorkSize%ILB(jb) = Me%WorkSize%ILB
-                        endif
+                        if (.not. Me%HasRainFall) then
+                            Me%CurrentWorkSize%ILB(jb) = min(Me%CurrentWorkSize%ILB(jb), ib-1)
+                            if (Me%CurrentWorkSize%ILB(jb) == Me%WorkSize%IUB + 1 .or. Me%CurrentWorkSize%ILB(jb) == 0) then
+                                Me%CurrentWorkSize%ILB(jb) = Me%WorkSize%ILB
+                            endif
                     
-                        Me%CurrentWorkSize%IUB(jb) = max(Me%CurrentWorkSize%IUB(jb), ib+1)
-                        if (Me%CurrentWorkSize%IUB(jb) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB(jb) == Me%WorkSize%IUB + 1) then
-                            Me%CurrentWorkSize%IUB(jb) = Me%WorkSize%IUB
-                        endif
+                            Me%CurrentWorkSize%IUB(jb) = max(Me%CurrentWorkSize%IUB(jb), ib+1)
+                            if (Me%CurrentWorkSize%IUB(jb) == Me%WorkSize%ILB - 1 .or. Me%CurrentWorkSize%IUB(jb) == Me%WorkSize%IUB + 1) then
+                                Me%CurrentWorkSize%IUB(jb) = Me%WorkSize%IUB
+                            endif
                     
-                        Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, jb-1)
-                        Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, jb+1)
+                            Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, jb-1)
+                            Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, jb+1)
                     
-                        if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
-                            Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
-                        endif
+                            if (Me%CurrentWorkSize%JLB == Me%WorkSize%JUB + 1 .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) then
+                                Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
+                            endif
                     
-                        if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
-                            Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+                            if (Me%CurrentWorkSize%JUB == Me%WorkSize%JLB - 1 .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) then
+                                Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+                            endif
                         endif
                         if (present(UpdateWaterLevels)) then
                             !Updates Water Column
@@ -11945,45 +11957,61 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine SetWorkSize
         !Arguments-------------------------------------------------------------
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, di, dj, c
-        integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: WCA
-        integer                                     :: CHUNK, Sum
-        integer, dimension(2,2)                     :: strideJ
-        integer, dimension(:), allocatable          :: Imin, Imax
-        integer                                     :: Jmin, Jmax
+        integer                                     :: i, j, MaxJUB, MinJLB
+        integer                                     :: CHUNK
     
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-        
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
     
-        Me%CurrentWorkSize%ILB = Me%WorkSize%IUB + 1
-        Me%CurrentWorkSize%IUB = Me%WorkSize%ILB - 1
-        Me%CurrentWorkSize%JLB = Me%WorkSize%JUB + 1
-        Me%CurrentWorkSize%JUB = Me%WorkSize%JLB - 1
-        
-        !$OMP PARALLEL PRIVATE(I,J)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if (Me%ActivePoints(i,j) == 1) then
-                Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
-                Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
-                Me%CurrentWorkSize%JLB = min(Me%CurrentWorkSize%JLB, j-1)
-                Me%CurrentWorkSize%JUB = max(Me%CurrentWorkSize%JUB, j+1)
-            endif
-        enddo
-        enddo    
-        !$OMP END DO
-        !$OMP END PARALLEL
+        if (Me%HasRainFall) then
+            Me%CurrentWorkSize%ILB = Me%WorkSize%IUB
+            Me%CurrentWorkSize%IUB = Me%WorkSize%ILB
+            Me%CurrentWorkSize%JLB = Me%WorkSize%JUB
+            Me%CurrentWorkSize%JUB = Me%WorkSize%JLB
+        else
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
+            
+            Me%CurrentWorkSize%ILB = Me%WorkSize%IUB + 1
+            Me%CurrentWorkSize%IUB = Me%WorkSize%ILB - 1
+            Me%CurrentWorkSize%JLB = Me%WorkSize%JUB + 1
+            Me%CurrentWorkSize%JUB = Me%WorkSize%JLB - 1
+            MinJLB = Me%CurrentWorkSize%JLB
+            MaxJUB = Me%CurrentWorkSize%JUB
+            
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:MinJLB) REDUCTION(MAX:MaxJUB)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%ActivePoints(i,j) == 1) then
+                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
+                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
+                    MinJLB = min(MinJLB, j-1)
+                    MaxJUB = max(MaxJUB, j+1)
+                elseif (Me%ActivePoints(i,j-1) == 1) then
+                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
+                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
+                elseif (Me%ActivePoints(i,j+1) == 1) then
+                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
+                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
+                endif
+            enddo
+            enddo    
+            !$OMP END DO
+            !$OMP END PARALLEL
     
-        where (Me%CurrentWorkSize%ILB > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB < Me%WorkSize%ILB) Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
-        where (Me%CurrentWorkSize%IUB < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB > Me%WorkSize%IUB) Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
+            Me%CurrentWorkSize%JLB = MinJLB
+            Me%CurrentWorkSize%JUB = MaxJUB
         
-        if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
-        if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                if (Me%CurrentWorkSize%ILB(j) > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB(j) < Me%WorkSize%ILB) Me%CurrentWorkSize%ILB(j) = Me%WorkSize%ILB
+                if (Me%CurrentWorkSize%IUB(j) < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB(j) > Me%WorkSize%IUB) Me%CurrentWorkSize%IUB(j) = Me%WorkSize%IUB
+            enddo
         
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
+            if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
+            if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
+        endif
+        
+        
     end subroutine SetWorkSize
     
     !------------------------------------------------------------------------------
@@ -14696,8 +14724,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR170'
 
         enddo
-        
-        call SetWorkSize
         
         !ModifyGeometryandMapping
         strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
@@ -17742,8 +17768,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
     endif
     
-    call SetWorkSize
-    
     end subroutine Modify_Boundary_Condition
 
     !--------------------------------------------------------------------------
@@ -18314,8 +18338,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
                         !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
                         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-                        do j = Me%CurrentWorkSize%JLB+1, Me%CurrentWorkSize%JUB
-                        do i = Me%CurrentWorkSize%ILB(j)+1, Me%CurrentWorkSize%IUB(j)
+                        do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
+                        do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
                             if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                                 do c = 1, size(strideJ,1)
                                     !Compute fluxes of east and north cell faces
@@ -18360,8 +18384,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
                         !$OMP Distance_Courant)
                         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-                        do j = Me%CurrentWorkSize%JLB+1, Me%CurrentWorkSize%JUB
-                        do i = Me%CurrentWorkSize%ILB(j)+1, Me%CurrentWorkSize%IUB(j)
+                        do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
+                        do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
                             if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                                 do c = 1, size(strideJ,1)
                                     !Compute fluxes of east and north cell faces
