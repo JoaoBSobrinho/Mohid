@@ -8279,6 +8279,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 !997 format(a20,1x,1i)
                 if (Me%HasRainFall) then
                     call ModifyRainFall
+                    call SetWorkSize
                 endif
                 !Apply infiltration
                 if (Me%HasInfiltration) then
@@ -8295,7 +8296,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !    enddo
                 !    enddo
                 !endif
-                call SetWorkSize
+                !call SetWorkSize
                 
                 !Updates Geometry
                 call ModifyGeometryAndMapping
@@ -11959,6 +11960,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, MaxJUB, MinJLB
         integer                                     :: CHUNK
+        logical                                     :: foundfirst_i, foundj
     
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
     
@@ -11970,44 +11972,48 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
             
-            Me%CurrentWorkSize%ILB = Me%WorkSize%IUB + 1
-            Me%CurrentWorkSize%IUB = Me%WorkSize%ILB - 1
             Me%CurrentWorkSize%JLB = Me%WorkSize%JUB + 1
             Me%CurrentWorkSize%JUB = Me%WorkSize%JLB - 1
             MinJLB = Me%CurrentWorkSize%JLB
             MaxJUB = Me%CurrentWorkSize%JUB
             
-            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP PARALLEL PRIVATE(I,J, foundfirst_i, foundj)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:MinJLB) REDUCTION(MAX:MaxJUB)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ActivePoints(i,j) == 1) then
-                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
-                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
-                    MinJLB = min(MinJLB, j-1)
-                    MaxJUB = max(MaxJUB, j+1)
-                elseif (Me%ActivePoints(i,j-1) == 1) then
-                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
-                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
-                elseif (Me%ActivePoints(i,j+1) == 1) then
-                    Me%CurrentWorkSize%ILB(j) = min(Me%CurrentWorkSize%ILB(j), i-1)
-                    Me%CurrentWorkSize%IUB(j) = max(Me%CurrentWorkSize%IUB(j), i+1)
-                endif
-            enddo
+                foundfirst_i = .false.
+                foundj = .false.
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%ActivePoints(i,j) == 1 .or. Me%ActivePoints(i,j-1) == 1 .or. Me%ActivePoints(i,j+1) == 1) then
+                        if (.not. foundfirst_i) then
+                            Me%CurrentWorkSize%ILB(j) = max(Me%WorkSize%ILB, i-1)
+                            foundfirst_i = .true.
+                        endif
+                        Me%CurrentWorkSize%IUB(j) = i+1
+                        if (.not. foundj) then
+                            MinJLB = min(MinJLB, j)
+                            MaxJUB = max(MaxJUB, j)
+                            foundj = .true.
+                        endif
+                    endif
+                enddo
             enddo    
             !$OMP END DO
             !$OMP END PARALLEL
     
-            Me%CurrentWorkSize%JLB = MinJLB
-            Me%CurrentWorkSize%JUB = MaxJUB
-        
+            Me%CurrentWorkSize%JLB = MinJLB - 1
+            Me%CurrentWorkSize%JUB = MaxJUB + 1
+            
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-                if (Me%CurrentWorkSize%ILB(j) > Me%WorkSize%IUB .or. Me%CurrentWorkSize%ILB(j) < Me%WorkSize%ILB) Me%CurrentWorkSize%ILB(j) = Me%WorkSize%ILB
                 if (Me%CurrentWorkSize%IUB(j) < Me%WorkSize%ILB .or. Me%CurrentWorkSize%IUB(j) > Me%WorkSize%IUB) Me%CurrentWorkSize%IUB(j) = Me%WorkSize%IUB
             enddo
-        
+            !$OMP END DO
+            !$OMP END PARALLEL
+            
             if (Me%CurrentWorkSize%JLB > Me%WorkSize%JUB .or. Me%CurrentWorkSize%JLB < Me%WorkSize%JLB) Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
             if (Me%CurrentWorkSize%JUB < Me%WorkSize%JLB .or. Me%CurrentWorkSize%JUB > Me%WorkSize%JUB) Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+            
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
         endif
         

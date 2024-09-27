@@ -1095,7 +1095,7 @@ Module ModuleFunctions
         !Begin-----------------------------------------------------------------
 
         if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValue_Dynamic_2D_R8_Constant")
-        CHUNK = CHUNK_J(Size%JLB, Size%JUB)
+        CHUNK = CHUNKJ !CHUNK_J(Size%JLB, Size%JUB)
 
         if (present(MapMatrix)) then
             !$OMP PARALLEL PRIVATE(I,J)
@@ -1407,7 +1407,7 @@ Module ModuleFunctions
 
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValue_Dynamic_2D_R8_FromMatrix")
-        CHUNK = CHUNK_J(Size%JLB, Size%JUB)
+        CHUNK = CHUNKJ !CHUNK_J(Size%JLB, Size%JUB)
         
         if (present(MapMatrix)) then
             !$OMP PARALLEL PRIVATE(I,J)
@@ -1497,7 +1497,7 @@ Module ModuleFunctions
 
         !Begin-----------------------------------------------------------------
 
-        CHUNK = CHUNK_J(Size%JLB, Size%JUB)
+        CHUNK = CHUNKJ !CHUNK_J(Size%JLB, Size%JUB)
 
         if (present(MapMatrix)) then
             !$OMP PARALLEL PRIVATE(I,J)
