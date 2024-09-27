@@ -70,7 +70,6 @@ Module ModuleFunctions
     public  :: SetMatrixValueAllocatable
     public  :: SetMatrixValueAllocatableV2
     public  :: SetMatrixValueAllocatable_jik
-    public  :: SetMatrixValue_Dynamic
     public  :: GetPointer
     public  :: AddMAtrixtimesScalar
     public  :: AddMatrixtimesScalarDivByMatrix
@@ -510,12 +509,6 @@ Module ModuleFunctions
     interface SetMatrixValueAllocatable_jik
         module procedure SetMatrixValues3D_R_FromMatrixAllocatable_jik
     end interface SetMatrixValueAllocatable_jik
-    
-    interface SetMatrixValue_Dynamic
-        module procedure SetMatrixValue_Dynamic_2D_R8ToR4_FromMatrix
-        module procedure SetMatrixValue_Dynamic_2D_R8_Constant
-        module procedure SetMatrixValue_Dynamic_2D_R8_FromMatrix
-    end interface SetMatrixValue_Dynamic
     
     interface SumMatrixes_jik_V2
         module procedure SumMatrixes_jik_V2_R8R4
@@ -1079,52 +1072,6 @@ Module ModuleFunctions
     end subroutine SetMatrixValues2D_R8_Constant
 
     !--------------------------------------------------------------------------
-    
-    subroutine SetMatrixValue_Dynamic_2D_R8_Constant (Matrix, Size, ValueX, MapMatrix)
-
-        !Arguments-------------------------------------------------------------
-        real(8), dimension(:, :), pointer               :: Matrix
-        type (T_LocalWorkSize)                          :: Size
-        real(8), intent (IN)                            :: ValueX
-        integer, dimension(:, :), pointer, optional     :: MapMatrix
-
-        !Local-----------------------------------------------------------------
-        integer                                         :: i, j
-        integer                                         :: CHUNK
-
-        !Begin-----------------------------------------------------------------
-
-        if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValue_Dynamic_2D_R8_Constant")
-        CHUNK = CHUNKJ !CHUNK_J(Size%JLB, Size%JUB)
-
-        if (present(MapMatrix)) then
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Size%JLB, Size%JUB
-            do i = Size%ILB(j), Size%IUB(j)
-                if (MapMatrix(i, j) == 1) then
-                    Matrix (i, j) = ValueX
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        else
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Size%JLB, Size%JUB
-            do i = Size%ILB(j), Size%IUB(j)
-                Matrix (i, j) = ValueX
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        endif
-        if (MonitorPerformance) call StopWatch ("ModuleFunctions", "SetMatrixValue_Dynamic_2D_R8_Constant")
-
-    end subroutine SetMatrixValue_Dynamic_2D_R8_Constant
-
-    !--------------------------------------------------------------------------
 
     subroutine SetMatrixValues2D_R8_ConstantAllocatable (Matrix, Size, ValueX, MapMatrix)
 
@@ -1392,53 +1339,6 @@ Module ModuleFunctions
     end subroutine SetMatrixValues2D_R8_FromMatrix
 
     !--------------------------------------------------------------------------
-    
-    subroutine SetMatrixValue_Dynamic_2D_R8_FromMatrix (Matrix, Size, InMatrix, MapMatrix)
-
-        !Arguments-------------------------------------------------------------
-        real(8), dimension(:, :), pointer               :: Matrix
-        type (T_LocalWorkSize)                          :: Size
-        real(8), dimension(:, :), pointer               :: InMatrix
-        integer, dimension(:, :), pointer, optional     :: MapMatrix
-
-        !Local-----------------------------------------------------------------
-        integer                                         :: i, j
-        integer                                         :: CHUNK
-
-        !Begin-----------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValue_Dynamic_2D_R8_FromMatrix")
-        CHUNK = CHUNKJ !CHUNK_J(Size%JLB, Size%JUB)
-        
-        if (present(MapMatrix)) then
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Size%JLB, Size%JUB
-            do i = Size%ILB(j), Size%IUB(j)
-                if (MapMatrix(i, j) == 1) then
-                    Matrix (i, j) = InMatrix(i, j)
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        else
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Size%JLB, Size%JUB
-            do i = Size%ILB(j), Size%IUB(j)
-                Matrix (i, j) = InMatrix(i, j)
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        endif
-        
-        
-        if (MonitorPerformance) call StopWatch ("ModuleFunctions", "SetMatrixValue_Dynamic_2D_R8_FromMatrix")
-
-    end subroutine SetMatrixValue_Dynamic_2D_R8_FromMatrix
-
-    !--------------------------------------------------------------------------
 
     subroutine SetMatrixValues2D_R8ToR4_FromMatrix (Matrix, Size, InMatrix, MapMatrix)
 
@@ -1481,49 +1381,7 @@ Module ModuleFunctions
         endif
 
     end subroutine SetMatrixValues2D_R8ToR4_FromMatrix
-    !--------------------------------------------------------------------------
     
-    subroutine SetMatrixValue_Dynamic_2D_R8ToR4_FromMatrix (Matrix, Size, InMatrix, MapMatrix)
-
-        !Arguments-------------------------------------------------------------
-        real(4), dimension(:, :), pointer               :: Matrix
-        type (T_LocalWorkSize)                          :: Size
-        real(8), dimension(:, :), pointer               :: InMatrix
-        integer, dimension(:, :), pointer, optional     :: MapMatrix
-
-        !Local-----------------------------------------------------------------
-        integer                                         :: i, j
-        integer                                         :: CHUNK
-
-        !Begin-----------------------------------------------------------------
-
-        CHUNK = CHUNKJ !CHUNK_J(Size%JLB, Size%JUB)
-
-        if (present(MapMatrix)) then
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Size%JLB, Size%JUB
-            do i = Size%ILB(j), Size%IUB(j)
-                if (MapMatrix(i, j) == 1) then
-                    Matrix (i, j) = InMatrix(i, j)
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        else
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-            do j = Size%JLB, Size%JUB
-            do i = Size%ILB(j), Size%IUB(j)
-                Matrix (i, j) = InMatrix(i, j)
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-        endif
-
-    end subroutine SetMatrixValue_Dynamic_2D_R8ToR4_FromMatrix
     !--------------------------------------------------------------------------
     subroutine SetMatrixValues2D_R8_FromMatrixAllocatable (Matrix, Size, InMatrix, MapMatrix)
 
