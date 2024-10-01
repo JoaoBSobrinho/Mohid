@@ -8216,14 +8216,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_!, i, j
+        integer                                     :: STAT_, ready_
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
         integer                                     :: Niter, iter
         integer                                     :: n_restart
         logical                                     :: firstRestart
-        real, dimension(6)  , target                :: AuxTime
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
         call Ready(RunOffID, ready_)
@@ -8281,10 +8280,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
-                
-                call ExtractDate   (Me%ExtVar%Now , AuxTime(1), AuxTime(2),         &
-                                                    AuxTime(3), AuxTime(4),         &
-                                                    AuxTime(5), AuxTime(6))
                 
                 !Updates Geometry
                 call ModifyGeometryAndMapping
