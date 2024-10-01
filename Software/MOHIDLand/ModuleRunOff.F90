@@ -5530,9 +5530,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         if (Me%OutPut%SinglePrecision) then
             allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
-               
-            call SetMatrixValue(Me%myWaterColumn_R4, Me%Size, ZeroValue)       
-            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel)
+            
+            where (Me%ExtVar%BasinPoints == 1)
+                Me%myWaterColumn_R4 = Me%myWaterColumn
+                Me%myWaterLevel_R4 = Me%myWaterLevel
+            elsewhere
+                Me%myWaterColumn_R4 = null_real
+                Me%myWaterLevel_R4 = null_real
+            endwhere
             
             allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -18979,7 +18984,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             !Writes Flow values
             !Writes the Water Column - should be on runoff
-            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn)
+            
+            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water column",          &
                                   "water column", "m",                          &
                                   Array2D      = Me%MyWaterColumn_R4,           &
@@ -18988,7 +18994,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR040'
             
             !Writes the Water Level
-            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel)
+            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%ExtVar%BasinPoints)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water level",           &
                                   "water level", "m",                           &
                                   Array2D      = Me%MyWaterLevel_R4,            &
@@ -19224,9 +19230,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
             if (Me%ExtVar%Now >= NextOutput) then
                 if (Me%OutPut%UpdateWaterLevel_R4) then
-                    call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn)
+                    call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%ExtVar%BasinPoints)
                     !Writes the Water Level
-                    call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel)
+                    call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%ExtVar%BasinPoints)
                 endif 
             endif
         
