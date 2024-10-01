@@ -8249,13 +8249,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 !Apply rain. Needs to be done here so that all source and sinks are added at the same instant in time
                 if (Me%HasRainFall) then
-                    call ModifyRainFall
+                    call ModifyRainFall_Infiltration
                 endif
                 
-                !Apply infiltration
-                if (Me%HasInfiltration) then
-                    call ModifyInfiltration
-                endif
                 !StormWaterModel
                 if (Me%StormWaterModel) call ComputeStormWaterModel
                 
@@ -8273,12 +8269,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             else !other models, no changes
                 
                 if (Me%HasRainFall) then
-                    call ModifyRainFall
+                    call ModifyRainFall_Infiltration
                     call SetWorkSize
-                endif
-                !Apply infiltration
-                if (Me%HasInfiltration) then
-                    call ModifyInfiltration
                 endif
                 
                 !Updates Geometry
@@ -11324,28 +11316,44 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine ModifyWaterDischarges  
     
     !--------------------------------------------------------------------------
+    
+    !--------------------------------------------------------------------------
     !> @author Joao Sobrinho - Bentley Systems
     !> @brief
-    !> Updates water column with rainfall sent from module basin for current time step
+    !> Updates water column with rainfall and infiltration sent from module basin for current time step
     !---------------------------------------------------------------------------
-    subroutine ModifyRainFall
+    subroutine ModifyRainFall_Infiltration
         !Arguments-------------------------------------------------------------
         
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
         integer                                     :: CHUNK
+        real                                        :: aux
         !Begin-----------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyRainFall")
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyRainFall_Infiltration")
         CHUNK = ChunkJ
-        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP PARALLEL PRIVATE(I,J, aux)
         if (Me%GridIsConstant) then
             
-            if (Me%HasInfiltration) then !Don't need to update volume and water level. This will be done in Modify Infiltration
+            if (Me%HasInfiltration) then
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if(Me%CellHasRain(i, j) == BasinPoint) then
-                        Me%myWaterColumn(i, j) = Me%myWaterColumn(i, j) + Me%RainFall(i, j)
+                        
+                        aux = Me%myWaterColumn (i, j) + Me%RainFall(i, j) - Me%InfiltrationRate(i, j)
+                        
+                        if (aux >= AlmostZero) then
+                            Me%myWaterColumn(i, j) = aux
+                        else
+                            !Mass Error
+                            Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%GridCellArea
+                            Me%myWaterColumn(i, j) = 0.0
+                        endif
+                    
+                        Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
+                        Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
+                        Me%ActivePoints(i,j) = 1
                     endif
                 enddo
                 enddo
@@ -11372,6 +11380,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if(Me%CellHasRain(i, j) == BasinPoint) then
                         Me%myWaterColumn(i, j) = Me%myWaterColumn(i, j) + Me%RainFall(i, j)
+                        
+                        aux = Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j)
+                        if (aux >= AlmostZero) then
+                            Me%myWaterColumn(i, j) = aux
+                        else
+                            !Mass Error
+                            Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
+                            Me%myWaterColumn(i, j) = 0.0
+                        endif
+                        Me%ActivePoints(i,j) = 1
                     endif
                 enddo
                 enddo
@@ -11396,79 +11414,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         nullify (Me%RainFall)
         Me%HasRainFall = .false.
         if (.not. Me%HasInfiltration) nullify (Me%CellHasRain)
-        
-       if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall")
-    end subroutine ModifyRainFall
-    
-    !--------------------------------------------------------------------------
-    !> @author Joao Sobrinho - Bentley Systems
-    !> @brief
-    !> Updates water column with infiltration sent from module basin for current time step
-    !---------------------------------------------------------------------------
-    subroutine ModifyInfiltration
-        !Arguments-------------------------------------------------------------
-        
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j
-        integer                                     :: CHUNK
-        real                                        :: aux
-        !Begin-----------------------------------------------------------------
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyInfiltration")
-        CHUNK = ChunkJ
-        
-        !$OMP PARALLEL PRIVATE(i,j, aux)
-        if (Me%GridIsConstant) then
-            !$OMP DO SCHEDULE(DYNAMIC)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%CellHasRain(i, j) == BasinPoint) then
-                    !m
-                    aux = Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j)
-                    if (aux >= AlmostZero) then
-                        Me%myWaterColumn(i, j) = aux
-                    else
-                        !Mass Error
-                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
-                        Me%myWaterColumn(i, j) = 0.0
-                    endif
-                    
-                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                    Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%GridCellArea
-                    Me%ActivePoints(i,j) = 1
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-        else
-            !$OMP DO SCHEDULE(DYNAMIC)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%CellHasRain(i, j) == BasinPoint) then
-                    !m
-                    aux = Me%myWaterColumn (i, j) - Me%InfiltrationRate(i, j)
-                    if (aux >= AlmostZero) then
-                        Me%myWaterColumn(i, j) = aux
-                    else
-                        !Mass Error
-                        Me%MassError (i, j) = Me%MassError (i,j) - Me%myWaterColumn(i,j) * Me%ExtVar%GridCellArea(i,j)
-                        Me%myWaterColumn(i, j) = 0.0
-                    endif
-                    
-                    Me%myWaterLevel (i, j) = Me%myWaterColumn(i, j) + Me%ExtVar%Topography(i, j)
-                    Me%myWaterVolume(i, j) = Me%myWaterColumn(i, j) * Me%ExtVar%GridCellArea(i, j)
-                    Me%ActivePoints(i,j) = 1
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-        endif
-        !$OMP END PARALLEL
-        
-        nullify (Me%CellHasRain)
         nullify (Me%InfiltrationRate)
         Me%HasInfiltration = .false.
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyInfiltration")
-    end subroutine ModifyInfiltration
+        
+       if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall_Infiltration")
+    end subroutine ModifyRainFall_Infiltration
     
 !--------------------------------------------------------------------------------------------------------
     
