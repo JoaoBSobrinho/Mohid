@@ -307,8 +307,7 @@ Module ModuleRunOff
     private ::      ComputeNextDT
     private ::      RunOffOutput
     private ::      OutputTimeSeries
-    private ::      ModifyInfiltration
-    private ::      ModifyRainfall
+    private ::      ModifyRainFall_Infiltration
     private ::  AdjustSlope
 
     !Destructor
@@ -8216,7 +8215,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_
+        integer                                     :: STAT_, ready_, i, j, CHUNK
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
@@ -8268,6 +8267,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
             else !other models, no changes
                 
+                CHUNK = ChunkJ
+
                 if (Me%HasRainFall) then
                     call ModifyRainFall_Infiltration
                     call SetWorkSize
@@ -8287,8 +8288,20 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%iFlowX, Me%ActivePoints)
                         call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%iFlowY, Me%ActivePoints)
                     else
-                        call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
+                        !$OMP PARALLEL PRIVATE(I, J)
+                        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                        do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                            if (Me%ActivePoints(i, j) == 1) then
+                                Me%InitialFlowX(i,j) = Me%lFlowX(i,j)
+                                Me%InitialFlowY(i,j) = Me%lFlowY(i,j)
+                            endif
+                        enddo
+                        enddo
+                        !$OMP END DO 
+                        !$OMP END PARALLEL
+                        !call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
+                        !call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
                     endif
                     
                     !Set 1D River level in river boundary cells
@@ -8355,8 +8368,20 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             if (Me%CV%CheckCorrectDischarges .or. Me%CV%Stabilize) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                             if (firstRestart) then
-                                call SetMatrixValue(Me%FlowXOld, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                                call SetMatrixValue(Me%FlowYOld, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                                !$OMP PARALLEL PRIVATE(I, J)
+                                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                                     if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                                         Me%FlowXOld(i,j) = Me%InitialFlowX(i,j)
+                                         Me%FlowYOld(i,j) = Me%InitialFlowY(i,j)
+                                     endif
+                                enddo
+                                enddo
+                                !$OMP END DO 
+                                !$OMP END PARALLEL
+                                !call SetMatrixValue(Me%FlowXOld, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                                !call SetMatrixValue(Me%FlowYOld, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                                 firstRestart = .false.
                             else
                                 !Updates Geometry
