@@ -754,7 +754,6 @@ Module ModuleRunOff
         real,    dimension(:,:), pointer            :: iFlowBoundary            => null() !Integrated    Flow to impose BC
         real,    dimension(:,:), pointer            :: lFlowDischarge           => null() !Instantaneous Flow of discharges
         real,    dimension(:,:), pointer            :: iFlowDischarge           => null() !Integrated    Flow of discharges
-        type (T_RunOffDischarges),     pointer      :: DischargeCells           => null() !Linked list with all cells that discharge water
         real(8), dimension(:,:), pointer            :: lFlowX, lFlowY           => null() !Instantaneous OverLandFlow (LocalDT   )
         real(8), dimension(:,:), pointer            :: iFlowX, iFlowY           => null() !Integrated    OverLandFlow (AfterSumDT)
         real(8), dimension(:,:), pointer            :: FlowXOld, FlowYOld       => null() !Flow From previous iteration
@@ -5444,7 +5443,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%iFlowBoundary, Me%Size, 0.0)   !model can run without BC
         endif
 
-        if (Me%Discharges) then
+        if (Me%Discharges .and. Me%HasRunoffProperties) then
             allocate(Me%lFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             allocate(Me%iFlowDischarge    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             call SetMatrixValue(Me%lFlowDischarge, Me%Size, 0.0)   !Sets values initially to zero, so 
@@ -8219,6 +8218,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer                                     :: Niter, iter
         integer                                     :: n_restart
         logical                                     :: firstRestart
+        real, dimension(6)  , target                :: AuxTime
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
         call Ready(RunOffID, ready_)
@@ -8276,6 +8276,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%HasInfiltration) then
                     call ModifyInfiltration
                 endif
+                
+                call ExtractDate   (Me%ExtVar%Now , AuxTime(1), AuxTime(2),         &
+                                                    AuxTime(3), AuxTime(4),         &
+                                                    AuxTime(5), AuxTime(6))
                 
                 !Updates Geometry
                 call ModifyGeometryAndMapping
@@ -8418,7 +8422,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             if (Niter > 1) then
                                 call IntegrateFlow     (Me%CV%CurrentDT, SumDT)
                             else
-                                call IntegrateDischargeFlow     (Me%CV%CurrentDT)
+                                if (Me%HasRunoffProperties) then
+                                    call IntegrateDischargeFlow     (Me%CV%CurrentDT)
+                                endif
                             endif
                             
                             call ReadUnLockExternalVar (StaticOnly = .false.)
@@ -9715,7 +9721,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
     real                    :: velMod, aux1, aux2                            !> velocity modulus
     integer                 :: CHUNK
     logical                 :: validCell
-    !type (T_RunOffDischarges), pointer :: DischargeCellSet
     !Begin----------------------------------------------------------------------------------------------
     
     if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeStateFVS_CG")
@@ -10930,8 +10935,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
 
         !Sets to 0
-        call SetMatrixValue(Me%lFlowDischarge, Me%CurrentWorkSize, 0.0, Me%DischargePoints)
-        
+        if (Me%HasRunoffProperties) then
+            call SetMatrixValue(Me%lFlowDischarge, Me%CurrentWorkSize, 0.0, Me%DischargePoints)
+        endif
         !The discharge flow is controled using two basic rules:
         ! 1 - when the flow is negative can not remove more than the volume present in the cell;
         ! 2 - the volume variation induce by the discharge can not be larger than a percentage of the volume present in the cell.
@@ -11195,10 +11201,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     
                     endif
 
-                    Me%lFlowDischarge(i, j)     = Me%lFlowDischarge(i, j) + AuxFlowIJ
+                    if (Me%HasRunoffProperties) then
+                        Me%lFlowDischarge(i, j)     = Me%lFlowDischarge(i, j) + AuxFlowIJ * LocalDT
+                    else
+                        Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume + AuxFlowIJ * LocalDT
+                    endif
                     
                     if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
-                        Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume + Me%lFlowDischarge(i, j) * LocalDT
+                        Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume + AuxFlowIJ * LocalDT
                     endif
                     !Updates Water Volume
                     Me%myWaterVolume(i, j)      = Me%myWaterVolume(i, j) + AuxFlowIJ * LocalDT
@@ -11224,14 +11234,17 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !Updates Water Level
                         Me%myWaterLevel (i, j)      = Me%myWaterColumn (i, j) + Me%ExtVar%Topography(i, j)
                         
-                        Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume + AuxFlowIJ * LocalDT
                     endif
                     if (ByPassON) then
 
                         if (AuxFlowIJ /= 0.0) Me%Compute = .true. !turn flag on so compute nexdt gets called
                         
-                        Me%lFlowDischarge(ib, jb)     = Me%lFlowDischarge(ib, jb) - AuxFlowIJ
-
+                        if (Me%HasRunoffProperties) then
+                            Me%lFlowDischarge(ib, jb)     = Me%lFlowDischarge(ib, jb) - AuxFlowIJ
+                        else
+                            Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume - AuxFlowIJ * LocalDT
+                        endif
+                        
                         !Updates Water Volume
                         Me%myWaterVolume(ib, jb)      = Me%myWaterVolume(ib, jb) - AuxFlowIJ * LocalDT
 
@@ -11253,6 +11266,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                             !Updates Water Level
                             Me%myWaterLevel (ib, jb)      = Me%myWaterColumn (ib, jb) + Me%ExtVar%Topography(ib, jb)
+                            Me%TotalDischargeFlowVolume = Me%TotalDischargeFlowVolume - AuxFlowIJ * LocalDT
                         endif
                     endif
 
@@ -16738,7 +16752,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         sumDischarge = Me%TotalDischargeFlowVolume
         SumDTs = SumDT + LocalDT
         !$OMP PARALLEL PRIVATE(I,J, DischargeVolume) 
-        if (Me%Discharges) then
+        if (Me%Discharges .and. Me%HasRunoffProperties) then
             !Integrates along X and Y Directions
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sumDischarge)
             do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -18965,7 +18979,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
             !Writes Flow values
             !Writes the Water Column - should be on runoff
-            call SetMatrixValue(Me%MyWaterColumn_R4, Me%CurrentWorkSize, Me%myWaterColumn, Me%OpenPoints)
+            call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%ActivePoints)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water column",          &
                                   "water column", "m",                          &
                                   Array2D      = Me%MyWaterColumn_R4,           &
@@ -18974,7 +18988,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR040'
             
             !Writes the Water Level
-            call SetMatrixValue(Me%myWaterLevel_R4, Me%CurrentWorkSize, Me%myWaterLevel, Me%OpenPoints)
+            call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%ActivePoints)
             call HDF5WriteData   (Me%ObjHDF5, "/Results/water level",           &
                                   "water level", "m",                           &
                                   Array2D      = Me%MyWaterLevel_R4,            &
@@ -19210,9 +19224,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
             if (Me%ExtVar%Now >= NextOutput) then
                 if (Me%OutPut%UpdateWaterLevel_R4) then
-                    call SetMatrixValue(Me%MyWaterColumn_R4, Me%CurrentWorkSize, Me%myWaterColumn, Me%OpenPoints)
+                    call SetMatrixValue(Me%MyWaterColumn_R4, Me%Size, Me%myWaterColumn, Me%ActivePoints)
                     !Writes the Water Level
-                    call SetMatrixValue(Me%myWaterLevel_R4, Me%CurrentWorkSize, Me%myWaterLevel, Me%OpenPoints)
+                    call SetMatrixValue(Me%myWaterLevel_R4, Me%Size, Me%myWaterLevel, Me%ActivePoints)
                 endif 
             endif
         
@@ -20874,15 +20888,12 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                         
                     endif
                     
-                    deallocate(Me%lFlowDischarge)
-                    deallocate(Me%iFlowDischarge)
-                    nullify    (Me%lFlowDischarge)
-                    nullify    (Me%iFlowDischarge)
-                    
-                    !deallocate (Me%FirstDischargeCellSet)
-                    !nullify    (Me%FirstDischargeCellSet)
-                    !deallocate (Me%DischargeCells)
-                    !nullify    (Me%DischargeCells)
+                    if (Me%HasRunoffProperties) then
+                        deallocate(Me%lFlowDischarge)
+                        deallocate(Me%iFlowDischarge)
+                        nullify    (Me%lFlowDischarge)
+                        nullify    (Me%iFlowDischarge)
+                    endif
                 endif
 
                 if (Me%ImposeBoundaryValue) then
