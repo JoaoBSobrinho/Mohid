@@ -5014,8 +5014,7 @@ cd0:    if (Exist) then
         !Arguments-------------------------------------------------------------
         real, dimension(:, :), pointer                       :: PrecipitationFlux
         !Local-----------------------------------------------------------------     
-        integer                                     :: i, j, STAT_CALL
-        real                                        :: GrossPrecipitation
+        integer                                     :: STAT_CALL
         !Begin-----------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")
@@ -5042,7 +5041,7 @@ cd0:    if (Exist) then
         real, dimension(:, :), pointer                       :: PrecipitationFlux
 
         !Local-----------------------------------------------------------------     
-        integer                                     :: i, j, STAT_CALL
+        integer                                     :: i, j
         real                                        :: GrossPrecipitation, CurrentFlux
         real                                        :: aux1, aux2, aux3
         integer                                     :: Sum
@@ -5146,7 +5145,7 @@ cd0:    if (Exist) then
         real, dimension(:, :), pointer                       :: PrecipitationFlux
 
         !Local-----------------------------------------------------------------     
-        integer                                     :: i, j, STAT_CALL
+        integer                                     :: i, j
         real                                        :: GrossPrecipitation
         real                                        :: CurrentFlux
         
@@ -6466,8 +6465,8 @@ cd0:    if (Exist) then
         !Local-----------------------------------------------------------------
         integer                                     :: I, J, NumberOfTimeSeries
         integer                                     :: Chunk
-        real                                        :: previousInDayRain, rain, qNew, rain_m
-        real                                        :: qInTimeStep, Infiltration, aux1, aux2, aux3, InfiltrationRate
+        real                                        :: rain, qNew, rain_m, Current5DayAccRain
+        real                                        :: qInTimeStep, aux1, aux2, aux3, InfiltrationRate
         integer                                     :: STAT_CALL
         logical                                     :: NeedsOutput = .false.
         
