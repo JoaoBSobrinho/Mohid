@@ -8527,7 +8527,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 !with a free drop to boundary level (that can be much lower than topography)
                 if (Me%ImposeBoundaryValue) then
                     call Modify_Boundary_Condition
-                    !call SetWorkSize
                 endif
                 
                 if (Me%Compute) then
