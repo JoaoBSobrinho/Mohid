@@ -6464,14 +6464,12 @@ cd0:    if (Exist) then
         !Arguments-------------------------------------------------------------
     
         !Local-----------------------------------------------------------------
-        integer                                     :: I, J
-    
+        integer                                     :: I, J, NumberOfTimeSeries
         integer                                     :: Chunk
-        
         real                                        :: previousInDayRain, rain, qNew, rain_m
-        real                                        :: qInTimeStep, Infiltration, aux1, aux2, aux3
-        
+        real                                        :: qInTimeStep, Infiltration, aux1, aux2, aux3, InfiltrationRate
         integer                                     :: STAT_CALL
+        logical                                     :: NeedsOutput = .false.
         
         !Begin-----------------------------------------------------------------
         
@@ -6513,53 +6511,111 @@ cd0:    if (Exist) then
             aux1 = Me%CurrentDT / 3600000.0
             aux2 = 3600.0 / Me%CurrentDT
             aux3 = 3600000.0 / Me%CurrentDT
-        
-            !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep)
-            !$OMP DO SCHEDULE(DYNAMIC)
-            do J = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
-                if (Me%CellHasRain(i,j) == 1) then
-                    !mm  =        mm         +                     mm
-                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
-                                                        + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
-                
-                    rain_m = Me%ThroughFall (i, j)
-                    
-                    !mm  =              m                  * mm/m
-                    rain = rain_m * 1000.0
-                    !               mm                 =                 mm                 +  mm
-                    Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
-                    
-                    if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
-                        
-                        !mm         = (mm - mm)**2 / (mm + mm)
-                        qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
-                                        (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
-                        
-                        qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
-                    
-                        Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
-                        !Output mm/h = mm/s * 3600 s/hour
-                        Me%InfiltrationRate (i, j) = (rain - qInTimeStep) * aux2
-                        
-                    else
-                        !Output mm/h = m/s * 3600000 (mm/m * s/hour)
-                        Me%InfiltrationRate (i, j) = rain_m * aux3
-                    endif
-                
-                    Me%Infiltration(i,j) = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
-                    !m - Accumulated Infiltration of the entite area
-                    Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
-                else
-                    !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
-                    Me%InfiltrationRate (i, j)    =  0.0
+            
+            call GetNumberOfTimeSeries(Me%ObjTimeSerie, NumberOfTimeSeries, STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR010'
+            
+            if (Me%Output%Yes) then
+                if (Me%CurrentTime >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+                    NeedsOutput = .true.
                 endif
+            endif
             
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
+            if (NumberOfTimeSeries > 0) then
+                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep)
+                !$OMP DO SCHEDULE(DYNAMIC)
+                do J = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
+                    if (Me%CellHasRain(i,j) == 1) then
+                        !mm  =        mm         +                     mm
+                        Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
+                                                            + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                
+                        rain_m = Me%ThroughFall (i, j)
+                    
+                        !mm  =              m                  * mm/m
+                        rain = rain_m * 1000.0
+                        !               mm                 =                 mm                 +  mm
+                        Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+                    
+                        if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
+                        
+                            !mm         = (mm - mm)**2 / (mm + mm)
+                            qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
+                                            (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
+                        
+                            qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
+                    
+                            Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
+                            !Output mm/h = mm/s * 3600 s/hour
+                            Me%InfiltrationRate (i, j) = (rain - qInTimeStep) * aux2
+                        
+                        else
+                            !Output mm/h = m/s * 3600000 (mm/m * s/hour)
+                            Me%InfiltrationRate (i, j) = rain_m * aux3
+                        endif
+                
+                        Me%Infiltration(i,j) = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
+                        !m - Accumulated Infiltration of the entite area
+                        if (NeedsOutput) then
+                            Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
+                        endif
+                    else
+                        !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
+                        Me%InfiltrationRate (i, j)    =  0.0
+                    endif
             
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            else
+                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep)
+                !$OMP DO SCHEDULE(DYNAMIC)
+                do J = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
+                    if (Me%CellHasRain(i,j) == 1) then
+                        !mm  =        mm         +                     mm
+                        Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
+                                                            + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                
+                        rain_m = Me%ThroughFall (i, j)
+                    
+                        !mm  =              m                  * mm/m
+                        rain = rain_m * 1000.0
+                        !               mm                 =                 mm                 +  mm
+                        Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+                    
+                        if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
+                        
+                            !mm         = (mm - mm)**2 / (mm + mm)
+                            qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
+                                            (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
+                        
+                            qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
+                    
+                            Me%SCSCNRunOffModel%Q_Previous (i, j) = qNew
+                            !Output mm/h = mm/s * 3600 s/hour
+                            InfiltrationRate = (rain - qInTimeStep) * aux2
+                        
+                        else
+                            !Output mm/h = m/s * 3600000 (mm/m * s/hour)
+                            InfiltrationRate = rain_m * aux3
+                        endif
+                
+                        Me%Infiltration(i,j) = InfiltrationRate * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
+                        !m - Accumulated Infiltration of the entite area
+                        if (NeedsOutput) then
+                            Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
+                        endif
+                    endif
+            
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            endif
+        
             call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
         endif
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "SCSCNRunoffModel")
@@ -8927,334 +8983,339 @@ cd0:    if (Exist) then
         real(8), dimension(:,:), pointer            :: ActualEvaporation
         real, dimension(:,:), pointer               :: ActualTP, ActualEVAP
         type (T_BasinProperty), pointer             :: Property
-
+        integer                                     :: NumberOfTimeSeries
         !Begin-----------------------------------------------------------------
 
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "TimeSerieOutput")
 
-        !Watercolumn - should be done in runoff
-        call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                              &
-                             Data2D_8    = Me%ExtUpdate%Watercolumn,                     &                             
-                             STAT        = STAT_CALL)
+        call GetNumberOfTimeSeries(Me%ObjTimeSerie, NumberOfTimeSeries, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR010'
-
-        !Waterlevel
-        call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                              &
-                             Data2D_8    = Me%ExtUpdate%WaterLevel,                      &                             
-                             STAT        = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR020'
-
-
-        !Infiltration Rate
-        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                             Data2D_8 = Me%InfiltrationRate,                    &                             
-                             STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR030'
-
-               !Rain Rate
-        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                             Data2D_8 = Me%PrecipRate,                          &                             
-                             STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR040'
         
-        !Through Fall Rate
-        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                             Data2D_8 = Me%ThroughRate,                         &                             
-                             STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
+        if (NumberOfTimeSeries > 0) then
+            !Watercolumn - should be done in runoff
+            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                              &
+                                 Data2D_8    = Me%ExtUpdate%Watercolumn,                     &                             
+                                 STAT        = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR010'
 
-        !Efective EVTP Rate
-        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                             Data2D_8 = Me%EVTPRate,                            &                             
-                             STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR060'
-
-        !Watercolumn Removed
-        call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                             Data2D_8    = Me%WaterColumnRemoved,               &                             
-                             STAT        = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR070'
-
-        call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                            Data2D_8     = Me%AccRainFall,                      &                             
-                            STAT         = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR071'   
-
-        call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                            Data2D_8     = Me%AccInfiltration,                  &                             
-                            STAT         = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR072'   
+            !Waterlevel
+            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                              &
+                                 Data2D_8    = Me%ExtUpdate%WaterLevel,                      &                             
+                                 STAT        = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR020'
 
 
-        if (Me%Coupled%SCSCNRunoffModel) then
-            if (Me%ConstantCurveNumber) then !When using SewerGems
+            !Infiltration Rate
+            call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                 Data2D_8 = Me%InfiltrationRate,                    &                             
+                                 STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR030'
+
+                   !Rain Rate
+            call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                 Data2D_8 = Me%PrecipRate,                          &                             
+                                 STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR040'
+        
+            !Through Fall Rate
+            call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                 Data2D_8 = Me%ThroughRate,                         &                             
+                                 STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
+
+            !Efective EVTP Rate
+            call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                 Data2D_8 = Me%EVTPRate,                            &                             
+                                 STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR060'
+
+            !Watercolumn Removed
+            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                 Data2D_8    = Me%WaterColumnRemoved,               &                             
+                                 STAT        = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR070'
+
+            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                Data2D_8     = Me%AccRainFall,                      &                             
+                                STAT         = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR071'   
+
+            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                Data2D_8     = Me%AccInfiltration,                  &                             
+                                STAT         = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR072'   
+
+
+            if (Me%Coupled%SCSCNRunoffModel) then
+                if (Me%ConstantCurveNumber) then !When using SewerGems
+                    call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
+                                         Data2D_8    = Me%SCSCNRunOffModel%CurveNumber%Field,   &                             
+                                         STAT        = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075_a'
+                else
+                    call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
+                                         Data2D_8    = Me%SCSCNRunOffModel%ActualCurveNumber,   &                             
+                                         STAT        = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075_b'
+                endif
+        
+            
                 call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
-                                     Data2D_8    = Me%SCSCNRunOffModel%CurveNumber%Field,   &                             
+                                     Data2D_8    = Me%SCSCNRunOffModel%Current5DayAccRain,  &                             
                                      STAT        = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075_a'
-            else
-                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
-                                     Data2D_8    = Me%SCSCNRunOffModel%ActualCurveNumber,   &                             
-                                     STAT        = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR075_b'
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR076' 
+  
             endif
         
-            
-            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                         &
-                                 Data2D_8    = Me%SCSCNRunOffModel%Current5DayAccRain,  &                             
-                                 STAT        = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR076' 
-  
-        endif
-        
-        if (Me%Coupled%Vegetation) then
+            if (Me%Coupled%Vegetation) then
 
            
-            !Canopy Capacity 
-            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                                 Data2D_8    = Me%CanopyStorageCapacity,            &                             
-                                 STAT        = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR080'
+                !Canopy Capacity 
+                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                     Data2D_8    = Me%CanopyStorageCapacity,            &                             
+                                     STAT        = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR080'
 
-            !Canopy Storage
-            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                                 Data2D_8    = Me%CanopyStorage,                    &                             
-                                 STAT        = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR090'
+                !Canopy Storage
+                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                     Data2D_8    = Me%CanopyStorage,                    &                             
+                                     STAT        = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR090'
 
-            !Canopy Drainage
-            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                                 Data2D_8    = Me%CanopyDrainage,                   &                             
-                                 STAT        = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR100'
+                !Canopy Drainage
+                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                     Data2D_8    = Me%CanopyDrainage,                   &                             
+                                     STAT        = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR100'
 
-            allocate(CropEvapotrans(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                allocate(CropEvapotrans(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
-            !Convert Units to mm/h
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    !m/s * 1000 mm/m * 3600 s/h = mm/h
-                    CropEvapotrans(i,j)   = Me%CropEvapotrans(i,j) * 1000. * 3600.
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-            
-            !Potential Crop Evapotranspiration
-            call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                 Data2D = CropEvapotrans,                           &
-                                 STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR110'            
-
-            deallocate (CropEvapotrans)
-
-            if (Me%EvapoTranspirationMethod == SeparateEvapoTranspiration) then
-
-                !m3/s
-                call GetTranspiration(Me%ObjVegetation, ActualTranspiration, STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR120'
-                !m
-                call GetEvaporation(Me%ObjPorousMedia, ActualEvaporation, STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR130'
-                
-                allocate(PotentialTranspiration(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-                allocate(PotentialEvaporation(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-                allocate(ActualTP(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-                allocate(ActualEVAP(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            
                 !Convert Units to mm/h
                 !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                     if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                        !mm/h                       =           m/s                * mm/m  * s/h
-                        PotentialEvaporation(i,j)   = Me%PotentialEvaporation(i,j) * 1000. * 3600.                      
-                        
-                        !mm/h                       =           m/s                  * mm/m  * s/h 
-                        PotentialTranspiration(i,j) = Me%PotentialTranspiration(i,j) * 1000. * 3600.
-                        
-                        !mm/h           =           m            /       s      * 1000 mm/m * 3600s/h
-                        ActualEVAP(i,j) = ActualEvaporation(i,j) / Me%CurrentDT * 1000.0 * 3600.0
-                        if (Me%EVTPOutput%Yes) then
-                            !mm                         =         mm            +    (          m            * mm/m)
-                            Me%PartialAccEVAct   (i, j) = Me%PartialAccEVAct (i,j) + (ActualEvaporation(i,j) * 1000) 
-                        endif    
-                        if (Me%EVTPOutput2%Yes) then
-                            !mm                         =              mm            +    (          m          * mm/m)          
-                            Me%PartialAccEVAct2   (i, j) = Me%PartialAccEVAct2 (i,j) + (ActualEvaporation (i,j) * 1000) 
-                        endif                           
-                        
-                        !mm/h           =           m3/s           /              m2             * mm/m  * s/h
-                        ActualTP(i,j)   = ActualTranspiration(i,j) / Me%ExtVar%GridCellArea(i,j) * 1000. * 3600.
-                        if (Me%EVTPOutput%Yes) then
-                            !mm                         =    mm  + (m3/s /m2 * mm/m * s) 
-                            Me%PartialAccETAct   (i, j) = Me%PartialAccETAct (i,j) + (ActualTranspiration(i,j)    &
-                                                          / Me%ExtVar%GridCellArea(i,j) * 1000 * Me%CurrentDT) 
-                        endif    
-                        if (Me%EVTPOutput2%Yes) then
-                            !mm                         =   mm + (m3/s / m2 * mm/m * s)         
-                            Me%PartialAccETAct2   (i, j) = Me%PartialAccETAct2 (i,j) + (ActualTranspiration (i,j)  &
-                                                           / Me%ExtVar%GridCellArea(i,j) * 1000 * Me%CurrentDT) 
-                        endif                         
+                        !m/s * 1000 mm/m * 3600 s/h = mm/h
+                        CropEvapotrans(i,j)   = Me%CropEvapotrans(i,j) * 1000. * 3600.
                     endif
                 enddo
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
-                
-                
-                call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                     Data2D = PotentialEvaporation,                     &
-                                     STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR140'
-
-
-                call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                     Data2D = PotentialTranspiration,                   &
-                                     STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR150'
-
-                call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                     Data2D = ActualEVAP,                               &
-                                     STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR160'
-
-
-                call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                     Data2D = ActualTP,                                 &
-                                     STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR170'
-
-
-                call UnGetVegetation(Me%ObjVegetation, ActualTranspiration, STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR0180'
-
-                call UnGetPorousMedia(Me%ObjPorousMedia, ActualEvaporation, STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR0190'            
-
-                deallocate (PotentialTranspiration)
-                deallocate (PotentialEvaporation)
-                deallocate (ActualTP)
-                deallocate (ActualEVAP)
-
-            endif
             
-            Property => Me%FirstProperty
-            do while (associated (Property))
-                if (Property%Inherited) then
+                !Potential Crop Evapotranspiration
+                call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                     Data2D = CropEvapotrans,                           &
+                                     STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR110'            
+
+                deallocate (CropEvapotrans)
+
+                if (Me%EvapoTranspirationMethod == SeparateEvapoTranspiration) then
+
+                    !m3/s
+                    call GetTranspiration(Me%ObjVegetation, ActualTranspiration, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR120'
+                    !m
+                    call GetEvaporation(Me%ObjPorousMedia, ActualEvaporation, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR130'
+                
+                    allocate(PotentialTranspiration(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                    allocate(PotentialEvaporation(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                    allocate(ActualTP(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                    allocate(ActualEVAP(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            
+                    !Convert Units to mm/h
+                    !$OMP PARALLEL PRIVATE(I,J)
+                    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+                    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                        if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                            !mm/h                       =           m/s                * mm/m  * s/h
+                            PotentialEvaporation(i,j)   = Me%PotentialEvaporation(i,j) * 1000. * 3600.                      
+                        
+                            !mm/h                       =           m/s                  * mm/m  * s/h 
+                            PotentialTranspiration(i,j) = Me%PotentialTranspiration(i,j) * 1000. * 3600.
+                        
+                            !mm/h           =           m            /       s      * 1000 mm/m * 3600s/h
+                            ActualEVAP(i,j) = ActualEvaporation(i,j) / Me%CurrentDT * 1000.0 * 3600.0
+                            if (Me%EVTPOutput%Yes) then
+                                !mm                         =         mm            +    (          m            * mm/m)
+                                Me%PartialAccEVAct   (i, j) = Me%PartialAccEVAct (i,j) + (ActualEvaporation(i,j) * 1000) 
+                            endif    
+                            if (Me%EVTPOutput2%Yes) then
+                                !mm                         =              mm            +    (          m          * mm/m)          
+                                Me%PartialAccEVAct2   (i, j) = Me%PartialAccEVAct2 (i,j) + (ActualEvaporation (i,j) * 1000) 
+                            endif                           
+                        
+                            !mm/h           =           m3/s           /              m2             * mm/m  * s/h
+                            ActualTP(i,j)   = ActualTranspiration(i,j) / Me%ExtVar%GridCellArea(i,j) * 1000. * 3600.
+                            if (Me%EVTPOutput%Yes) then
+                                !mm                         =    mm  + (m3/s /m2 * mm/m * s) 
+                                Me%PartialAccETAct   (i, j) = Me%PartialAccETAct (i,j) + (ActualTranspiration(i,j)    &
+                                                              / Me%ExtVar%GridCellArea(i,j) * 1000 * Me%CurrentDT) 
+                            endif    
+                            if (Me%EVTPOutput2%Yes) then
+                                !mm                         =   mm + (m3/s / m2 * mm/m * s)         
+                                Me%PartialAccETAct2   (i, j) = Me%PartialAccETAct2 (i,j) + (ActualTranspiration (i,j)  &
+                                                               / Me%ExtVar%GridCellArea(i,j) * 1000 * Me%CurrentDT) 
+                            endif                         
+                        endif
+                    enddo
+                    enddo
+                    !$OMP END DO
+                    !$OMP END PARALLEL
+                
+                
                     call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                         Data2D_8 = Property%VegetationConc,                &
+                                         Data2D = PotentialEvaporation,                     &
                                          STAT = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR200'  
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR140'
+
+
                     call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                                         Data2D_8 = Property%VegetationOldMass,             &
+                                         Data2D = PotentialTranspiration,                   &
                                          STAT = STAT_CALL)
-                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR210' 
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR150'
+
+                    call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                         Data2D = ActualEVAP,                               &
+                                         STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR160'
+
+
+                    call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                         Data2D = ActualTP,                                 &
+                                         STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR170'
+
+
+                    call UnGetVegetation(Me%ObjVegetation, ActualTranspiration, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR0180'
+
+                    call UnGetPorousMedia(Me%ObjPorousMedia, ActualEvaporation, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR0190'            
+
+                    deallocate (PotentialTranspiration)
+                    deallocate (PotentialEvaporation)
+                    deallocate (ActualTP)
+                    deallocate (ActualEVAP)
+
+                endif
+            
+                Property => Me%FirstProperty
+                do while (associated (Property))
+                    if (Property%Inherited) then
+                        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                             Data2D_8 = Property%VegetationConc,                &
+                                             STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR200'  
+                        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                                             Data2D_8 = Property%VegetationOldMass,             &
+                                             STAT = STAT_CALL)
+                        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR210' 
                                       
-                endif
-                Property => Property%Next
-            enddo            
+                    endif
+                    Property => Property%Next
+                enddo            
 
-        endif
+            endif
   
-        !Reference EVTP Rate
-        if (Me%Coupled%Evapotranspiration) then
-            call SearchProperty(RefEvapotrans, RefEvapotrans_        , .true., STAT = STAT_CALL)        
+            !Reference EVTP Rate
+            if (Me%Coupled%Evapotranspiration) then
+                call SearchProperty(RefEvapotrans, RefEvapotrans_        , .true., STAT = STAT_CALL)        
 
-            allocate(PotentialEvapoTranspiration(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                allocate(PotentialEvapoTranspiration(Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
-            !Convert Units to mm/h
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
-                    !m/s * 1000 mm/m * 3600 s/h = mm/h
-                    PotentialEvapoTranspiration(i,j) = RefEvapotrans%Field(i,j) * 1000. * 3600.
+                !Convert Units to mm/h
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        !m/s * 1000 mm/m * 3600 s/h = mm/h
+                        PotentialEvapoTranspiration(i,j) = RefEvapotrans%Field(i,j) * 1000. * 3600.
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+
+                call WriteTimeSerie (Me%ObjTimeSerie,                                       &
+                                     Data2D = PotentialEvapoTranspiration,                        &                             
+                                     STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR220'
+
+                deallocate(PotentialEvapoTranspiration)
+
+            endif
+
+            call ExtractDate   (Me%CurrentTime, AuxTime(1), AuxTime(2),         &
+                                                AuxTime(3), AuxTime(4),         &
+                                                AuxTime(5), AuxTime(6))
+            !Integrated Daily Values
+        
+            !Ouput of daily values
+            if (Me%DailyFlow%On .and. Me%Coupled%DrainageNetwork) then
+        
+                call GetVolumes(Me%ObjDrainageNetwork, TotalFlowVolume = TotalFlowVolume, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR230'
+        
+                !Sum Volume
+                Me%DailyFlow%Flow = Me%DailyFlow%Flow + TotalFlowVolume * Me%CurrentDT
+        
+                if (Me%DailyFlow%CurrentIndex /= AuxTime(3)) then
+            
+                    !Write time series entry
+                    Me%TimeSeriesBuffer2(1) = Me%DailyFlow%Flow
+                    call WriteTimeSerieLine (Me%DailyFlow%ObjTimeSerie, Me%TimeSeriesBuffer2, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR240'
+                
+                    !Resets integrated values
+                    Me%DailyFlow%Flow = 0.0
+                
+                    !Stores New Index
+                    Me%DailyFlow%CurrentIndex = AuxTime(3)
+                                
                 endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-
-            call WriteTimeSerie (Me%ObjTimeSerie,                                       &
-                                 Data2D = PotentialEvapoTranspiration,                        &                             
-                                 STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR220'
-
-            deallocate(PotentialEvapoTranspiration)
-
-        endif
-
-        call ExtractDate   (Me%CurrentTime, AuxTime(1), AuxTime(2),         &
-                                            AuxTime(3), AuxTime(4),         &
-                                            AuxTime(5), AuxTime(6))
-        !Integrated Daily Values
-        
-        !Ouput of daily values
-        if (Me%DailyFlow%On .and. Me%Coupled%DrainageNetwork) then
-        
-            call GetVolumes(Me%ObjDrainageNetwork, TotalFlowVolume = TotalFlowVolume, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR230'
-        
-            !Sum Volume
-            Me%DailyFlow%Flow = Me%DailyFlow%Flow + TotalFlowVolume * Me%CurrentDT
-        
-            if (Me%DailyFlow%CurrentIndex /= AuxTime(3)) then
             
-                !Write time series entry
-                Me%TimeSeriesBuffer2(1) = Me%DailyFlow%Flow
-                call WriteTimeSerieLine (Me%DailyFlow%ObjTimeSerie, Me%TimeSeriesBuffer2, STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR240'
-                
-                !Resets integrated values
-                Me%DailyFlow%Flow = 0.0
-                
-                !Stores New Index
-                Me%DailyFlow%CurrentIndex = AuxTime(3)
-                                
             endif
             
-        endif
+            !Ouput of montly values
+            if (Me%MonthlyFlow%On .and. Me%Coupled%DrainageNetwork) then
+        
+                call GetVolumes(Me%ObjDrainageNetwork, TotalFlowVolume = TotalFlowVolume, STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR250'
+        
+                !Sum Volume
+                Me%MonthlyFlow%Flow = Me%MonthlyFlow%Flow + TotalFlowVolume * Me%CurrentDT
+        
+                if (Me%MonthlyFlow%CurrentIndex /= AuxTime(2)) then
             
-        !Ouput of montly values
-        if (Me%MonthlyFlow%On .and. Me%Coupled%DrainageNetwork) then
-        
-            call GetVolumes(Me%ObjDrainageNetwork, TotalFlowVolume = TotalFlowVolume, STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR250'
-        
-            !Sum Volume
-            Me%MonthlyFlow%Flow = Me%MonthlyFlow%Flow + TotalFlowVolume * Me%CurrentDT
-        
-            if (Me%MonthlyFlow%CurrentIndex /= AuxTime(2)) then
-            
-                !Write time series entry
-                Me%TimeSeriesBuffer2(1) = Me%MonthlyFlow%Flow
-                call WriteTimeSerieLine (Me%MonthlyFlow%ObjTimeSerie, Me%TimeSeriesBuffer2, STAT = STAT_CALL)
-                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR260'
+                    !Write time series entry
+                    Me%TimeSeriesBuffer2(1) = Me%MonthlyFlow%Flow
+                    call WriteTimeSerieLine (Me%MonthlyFlow%ObjTimeSerie, Me%TimeSeriesBuffer2, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR260'
                 
-                !Resets integrated values
-                Me%MonthlyFlow%Flow = 0.0
+                    !Resets integrated values
+                    Me%MonthlyFlow%Flow = 0.0
                 
-                !Stores New Index
-                Me%MonthlyFlow%CurrentIndex = AuxTime(2)
+                    !Stores New Index
+                    Me%MonthlyFlow%CurrentIndex = AuxTime(2)
                                 
-            endif
+                endif
             
-        endif
+            endif
         
-        if (Me%Coupled%Snow) then
-            call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
-                                 Data2D_8    = Me%SnowMeltingRate,                  &                             
-                                 STAT        = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR270'
-        endif
+            if (Me%Coupled%Snow) then
+                call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                     &
+                                     Data2D_8    = Me%SnowMeltingRate,                  &                             
+                                     STAT        = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR270'
+            endif
 
+        endif
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "TimeSerieOutput")
 
     end subroutine TimeSerieOutput

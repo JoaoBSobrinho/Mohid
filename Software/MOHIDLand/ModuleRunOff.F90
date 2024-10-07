@@ -951,7 +951,6 @@ Module ModuleRunOff
                                                                                      !when a transition between weir and dynamic wave
                                                                                      !equations is performed
         real                                        :: Transition_acoef_1D_2D = 100 ! "a" coeficient in ax+b=y
-        logical                                     :: UpdatedWaterColumnFromBasin
         logical                                     :: HasRunoffProperties
         logical                                     :: CheckGlobalMass
         logical                                     :: GridIsRotated = .false.
@@ -2364,7 +2363,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR799'    
          
         endif
-
 
         call ReadConvergenceParameters
         
@@ -5234,10 +5232,11 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetLocationCellsZ (Me%ObjDischarges, dn, nCells, VectorI, VectorJ, VectorK, STAT= STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ModuleRunOff - ConstructDischarges - ERR16'
             
-            do i = 1, size(VectorI)
-                Me%DischargePoints(VectorI(i),VectorJ(i)) = 1
-            enddo
-
+            if(Me%HasRunoffProperties) then
+                do i = 1, size(VectorI)
+                    Me%DischargePoints(VectorI(i),VectorJ(i)) = 1
+                enddo
+            endif
         enddo
         
         if (Me%OutPut%TimeSerieDischON) then
@@ -5496,7 +5495,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%OpenPoints           (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ActivePoints         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ActivePoints_Left    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%DischargePoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceU          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5517,7 +5515,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%OpenPoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints_Left, Me%Size, 0)
-        call SetMatrixValue(Me%DischargePoints, Me%Size, 0)
         call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
         call SetMatrixValue(Me%Bottom_Y, Me%Size, 0.0)
         
@@ -5525,18 +5522,16 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         call SetMatrixValue(Me%VelModFaceU, Me%Size, 0.0)
         call SetMatrixValue(Me%VelModFaceV, Me%Size, 0.0)
 
-        
+        if(Me%HasRunoffProperties) then
+            allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            Me%BoundaryCells = 0
+            allocate(Me%DischargePoints    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            call SetMatrixValue(Me%DischargePoints, Me%Size, 0)
+        endif
         if (Me%OutPut%SinglePrecision) then
             allocate(Me%myWaterLevel_R4         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             allocate(Me%myWaterColumn_R4        (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))            
             
-            where (Me%ExtVar%BasinPoints == 1)
-                Me%myWaterColumn_R4 = Me%myWaterColumn
-                Me%myWaterLevel_R4 = Me%myWaterLevel
-            elsewhere
-                Me%myWaterColumn_R4 = null_real
-                Me%myWaterLevel_R4 = null_real
-            endwhere
             
             allocate (Me%CenterFlowX_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterFlowY_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5549,21 +5544,31 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%Output%VelocityAtMaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxFloodRisk_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             
+            Aux = Me%MinimumWaterColumn
+            where (Me%ExtVar%BasinPoints == 1)
+                Me%myWaterColumn_R4 = Me%myWaterColumn
+                Me%myWaterLevel_R4 = Me%myWaterLevel
+                Me%Output%MaxFloodRisk_R4 = 0.0
+                Me%Output%VelocityAtMaxWaterColumn_R4 = 0.0
+                Me%Output%MaxWaterColumn_R4 = Aux
+                Me%Output%MaxFlowModulus_R4 = 0.0
+            elsewhere
+                Me%myWaterColumn_R4 = null_real
+                Me%myWaterLevel_R4 = null_real
+                Me%Output%MaxFloodRisk_R4 = null_real_4
+                Me%Output%VelocityAtMaxWaterColumn_R4 = null_real_4
+                Me%Output%MaxWaterColumn_R4 = null_real_4
+                Me%Output%MaxFlowModulus_R4 = null_real_4
+            endwhere
+            
             call SetMatrixValue(Me%CenterFlowX_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%CenterFlowY_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%CenterVelocityX_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%CenterVelocityY_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%FlowModulus_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%VelocityModulus_R4, Me%Size, ZeroValue)
-            call SetMatrixValue(Me%Output%MaxFlowModulus_R4, Me%Size, ZeroValue)
-            Aux = Me%MinimumWaterColumn
-            call SetMatrixValue(Me%Output%MaxWaterColumn_R4, Me%Size, Aux)
-            call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn_R4, Me%Size, ZeroValue)
-            call SetMatrixValue(Me%Output%MaxFloodRisk_R4, Me%Size, ZeroValue)
             
         else
-            allocate(Me%BoundaryCells     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-            Me%BoundaryCells = 0
             
             allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             
@@ -5579,17 +5584,21 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
             
             call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, null_real)
-            call SetMatrixValue(Me%Output%MaxFlowModulus, Me%Size, 0.0)
+            call SetMatrixValue(Me%Output%MaxFlowModulus, Me%Size, null_real)
             call SetMatrixValue(Me%Output%MaxWaterColumn, Me%Size, Me%MinimumWaterColumn)
             call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
             call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, 0.0)
         endif
         
-        
         allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
-        call SetMatrixValue(Me%Output%TimeOfMaxWaterColumn, Me%Size, -99.0)
         
-        if (Me%Output%WriteFloodPeriod) then
+        where (Me%ExtVar%BasinPoints == 1)
+            Me%Output%TimeOfMaxWaterColumn = 0.0
+        elsewhere
+            Me%Output%TimeOfMaxWaterColumn = -99.0
+        endwhere
+        
+        if (Me%Output%WriteFloodPeriod) then            
             allocate (Me%Output%FloodPeriod (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
             call SetMatrixValue(Me%Output%FloodPeriod, Me%Size, 0.0)
         endif
@@ -8061,8 +8070,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
             
             STAT_ = SUCCESS_
             
-            Me%UpdatedWaterColumnFromBasin = .True.
-            
         else               
             STAT_ = ready_
         end if
@@ -8215,7 +8222,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer, intent(OUT), optional              :: STAT
 
         !Local-----------------------------------------------------------------
-        integer                                     :: STAT_, ready_, i, j, CHUNK
+        integer                                     :: STAT_, ready_, i, j, CHUNK, n
         integer                                     :: STAT_CALL
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart
@@ -8280,28 +8287,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%Discharges) TotalDischargeFlowVolume_entry = Me%TotalDischargeFlowVolume
                 
                 if (Me%Compute) then
-                    !Stores initial values = from basin
+                    
                     call SetMatrixValue(Me%myWaterColumnOld, Me%CurrentWorkSize, Me%myWaterColumn, Me%ActivePoints)
-                    !No need to change it back to false becasue because basin options do not change over time. Updated in ActualizeWaterColumn_RunOff
-            
+                    
                     if (Me%Restarted) then
                         call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%iFlowX, Me%ActivePoints)
                         call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%iFlowY, Me%ActivePoints)
+                        
                     else
-                        !$OMP PARALLEL PRIVATE(I, J)
-                        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-                        do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                            if (Me%ActivePoints(i, j) == 1) then
-                                Me%InitialFlowX(i,j) = Me%lFlowX(i,j)
-                                Me%InitialFlowY(i,j) = Me%lFlowY(i,j)
-                            endif
-                        enddo
-                        enddo
-                        !$OMP END DO 
-                        !$OMP END PARALLEL
-                        !call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
-                        !call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
                     endif
                     
                     !Set 1D River level in river boundary cells
@@ -8368,20 +8363,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                             if (Me%CV%CheckCorrectDischarges .or. Me%CV%Stabilize) call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, Me%myWaterVolume, Me%ExtVar%BasinPoints)
 
                             if (firstRestart) then
-                                !$OMP PARALLEL PRIVATE(I, J)
-                                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-                                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                                     if (Me%ExtVar%BasinPoints(i, j) == 1) then
-                                         Me%FlowXOld(i,j) = Me%InitialFlowX(i,j)
-                                         Me%FlowYOld(i,j) = Me%InitialFlowY(i,j)
-                                     endif
-                                enddo
-                                enddo
-                                !$OMP END DO 
-                                !$OMP END PARALLEL
-                                !call SetMatrixValue(Me%FlowXOld, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                                !call SetMatrixValue(Me%FlowYOld, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+
+                                call SetMatrixValue(Me%FlowXOld, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
+                                call SetMatrixValue(Me%FlowYOld, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                                 firstRestart = .false.
                             else
                                 !Updates Geometry
@@ -8573,8 +8557,6 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (present(STAT)) STAT = STAT_
         
     end subroutine ModifyRunOff
-    
-    !---------------------------------------------------------------------------
     
     !---------------------------------------------------------------------------
     !> @author Ricardo Birjukovs Canelas - Bentley Systems
@@ -11023,7 +11005,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
             
         else
-            if (Me%HasInfiltration) then !Don't need to update volume and water level. This will be done in Modify Infiltration
+            if (Me%HasInfiltration) then
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do i = Me%WorkSize%ILB, Me%WorkSize%IUB
@@ -19152,7 +19134,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
                     if (Me%OpenPoints(i,j) == Compute) then
                         if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
-                            Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
+                            Me%Output%FloodPeriods(i, j, 1) = Me%Output%FloodPeriods(i, j, 1) + Me%ExtVar%DT
                         endif
                     endif
                 enddo
@@ -19166,7 +19148,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
                     if (Me%ActivePoints(i,j) == Compute) then
                         if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
-                            Me%Output%FloodPeriod(i, j) = Me%Output%FloodPeriod(i, j) + Me%ExtVar%DT
+                            Me%Output%FloodPeriods(i, j, 1) = Me%Output%FloodPeriods(i, j, 1) + Me%ExtVar%DT
                         endif
                     endif
                 enddo
@@ -19963,10 +19945,10 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 
                 if (Me%Output%WriteFloodPeriod) then
 
-                    if(Me%Output%nFloodPeriodLimits > 0)then
+                    call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR061'
 
-                        call GetBasinPoints (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR061'
+                    if(Me%Output%nFloodPeriodLimits > 0)then
 
                         do n = 1, Me%Output%nFloodPeriodLimits
 
@@ -19991,12 +19973,15 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
 
                         enddo
 
-                        call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
-                        if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR071'
-
-                        deallocate(Me%Output%FloodPeriods)
-
                     else
+                        
+                        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                            if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                                Me%Output%FloodPeriod(i,j) = Me%Output%FloodPeriods(i,j,1)
+                            endif
+                        enddo
+                        enddo
 
                         call WriteGridData  (Me%Output%FloodPeriodFile,            &
                              COMENT1          = "FloodPeriod",                     &
@@ -20009,8 +19994,12 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                         if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR073'
 
                     endif
-
+                    
+                    call UnGetBasin (Me%ObjBasinGeometry, Me%ExtVar%BasinPoints, STAT = STAT_CALL)
+                    if (STAT_CALL /= SUCCESS_) stop 'KillRunOff - RunOff - ERR071'
+                    
                     deallocate(Me%Output%FloodPeriod)
+                    deallocate(Me%Output%FloodPeriods)
 
                 endif
 

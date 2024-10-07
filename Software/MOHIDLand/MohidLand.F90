@@ -348,8 +348,8 @@ program MohidLand
         !$       call omp_set_num_threads(openmp_num_threads)
         !$       write(*,*)"OPENMP: Number of threads implemented is ", openmp_num_threads
         !$    else
-        !$       openmp_num_threads = omp_get_max_threads()
-        !$       write(*,*)"OPENMP: Using the max number of threads available"
+        !$       openmp_num_threads = omp_get_max_threads() / 2
+        !$       write(*,*)"OPENMP: Using half of the max number of threads available : ", openmp_num_threads
         !$    endif        
 #else
         !$ call GetData(openmp_num_threads, ObjEnterData, iflag, keyword = 'OPENMP_NUM_THREADS',  &
@@ -369,8 +369,8 @@ program MohidLand
         !$       call omp_set_num_threads(openmp_num_threads)
         !$       write(*,*)"OPENMP: Number of threads implemented is ", openmp_num_threads
         !$    else
-        !$       openmp_num_threads = omp_get_max_threads() / 2
-        !$       write(*,*)"OPENMP: Using half of the max number of threads available"
+        !$       openmp_num_threads = omp_get_max_threads()
+        !$       write(*,*)"OPENMP: Using the max number of threads available"
         !$    endif   
 
 #endif _SEWERGEMSENGINECOUPLER_ 

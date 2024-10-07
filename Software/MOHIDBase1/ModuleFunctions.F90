@@ -1337,7 +1337,7 @@ Module ModuleFunctions
         if (MonitorPerformance) call StopWatch ("ModuleFunctions", "SetMatrixValues2D_R8_FromMatrix")
 
     end subroutine SetMatrixValues2D_R8_FromMatrix
-
+    
     !--------------------------------------------------------------------------
 
     subroutine SetMatrixValues2D_R8ToR4_FromMatrix (Matrix, Size, InMatrix, MapMatrix)
