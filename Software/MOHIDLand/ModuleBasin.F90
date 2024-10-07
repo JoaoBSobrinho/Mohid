@@ -6521,7 +6521,7 @@ cd0:    if (Exist) then
                 endif
             endif
             
-            if (NumberOfTimeSeries > 0) then
+            if (NumberOfTimeSeries > 0 .or. NeedsOutput) then
                 !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep)
                 !$OMP DO SCHEDULE(DYNAMIC)
                 do J = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -6556,10 +6556,9 @@ cd0:    if (Exist) then
                         endif
                 
                         Me%Infiltration(i,j) = Me%InfiltrationRate(i, j) * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
+                        
                         !m - Accumulated Infiltration of the entite area
-                        if (NeedsOutput) then
-                            Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
-                        endif
+                        Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
                     else
                         !Output mm/h = m/s * 1E3 mm/m * 3600 s/hour
                         Me%InfiltrationRate (i, j)    =  0.0
@@ -6570,14 +6569,13 @@ cd0:    if (Exist) then
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep)
+                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep, Current5DayAccRain)
                 !$OMP DO SCHEDULE(DYNAMIC)
                 do J = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
                     if (Me%CellHasRain(i,j) == 1) then
                         !mm  =        mm         +                     mm
-                        Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
-                                                            + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
+                        Current5DayAccRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                 
                         rain_m = Me%ThroughFall (i, j)
                     
@@ -6586,11 +6584,11 @@ cd0:    if (Exist) then
                         !               mm                 =                 mm                 +  mm
                         Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
                     
-                        if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
+                        if (Current5DayAccRain > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
                         
                             !mm         = (mm - mm)**2 / (mm + mm)
-                            qNew = (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
-                                            (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
+                            qNew = (Current5DayAccRain - Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S (i, j))**2.0 / &
+                                            (Current5DayAccRain + (1.0-Me%SCSCNRunOffModel%IAFactor)*Me%SCSCNRunOffModel%S (i, j))
                         
                             qInTimeStep = qNew - Me%SCSCNRunOffModel%Q_Previous (i, j)
                     
@@ -6604,16 +6602,12 @@ cd0:    if (Exist) then
                         endif
                 
                         Me%Infiltration(i,j) = InfiltrationRate * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
-                        !m - Accumulated Infiltration of the entite area
-                        if (NeedsOutput) then
-                            Me%AccInfiltration  (i, j)    = Me%AccInfiltration  (i, j) + Me%Infiltration(i,j)
-                        endif
                     endif
-            
                 enddo
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
+
             endif
         
             call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
