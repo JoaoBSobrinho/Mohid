@@ -6568,7 +6568,7 @@ cd0:    if (Exist) then
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep, Current5DayAccRain)
+                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep, Current5DayAccRain, InfiltrationRate)
                 !$OMP DO SCHEDULE(DYNAMIC)
                 do J = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
