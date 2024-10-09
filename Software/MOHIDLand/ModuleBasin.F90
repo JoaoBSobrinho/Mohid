@@ -4344,7 +4344,9 @@ cd0:    if (Exist) then
                 if ((Me%Coupled%SCSCNRunOffModel .or. Me%Coupled%SimpleInfiltration ) .and. (.not. Me%Coupled%PorousMedia)) then
                     !Do nothing
                 else
+#ifndef _SEWERGEMSENGINECOUPLER_
                     call UpdateWaterColumn
+#endif _SEWERGEMSENGINECOUPLER_
                 endif
                 
                 if (Me%Coupled%RunoffProperties) then

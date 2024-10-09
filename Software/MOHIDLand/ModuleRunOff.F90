@@ -962,6 +962,7 @@ Module ModuleRunOff
         real                                        :: DX                       = null_real
         real                                        :: DY                       = null_real
         real                                        :: GridCellArea             = null_real
+        integer                                     :: Instant = 0
         
         type(T_RunOff), pointer                     :: Next                 => null()
     end type  T_RunOff
@@ -8282,9 +8283,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call ReadUnLockExternalVar (StaticOnly = .true.)
                 
             else !other models, no changes
-                
-                CHUNK = ChunkJ
 
+                Me%Instant = Me%Instant + 1
                 if (Me%HasRainFall) then
                     call ModifyRainFall_Infiltration
                     call SetWorkSize
