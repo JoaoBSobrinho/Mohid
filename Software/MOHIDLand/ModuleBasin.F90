@@ -2467,7 +2467,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         
         
         !Time Serie of properties variable in the Basin 
-        i = 7
+        i = 9
         if (Me%Coupled%SCSCNRunoffModel) then
              i = i + 2
         endif
@@ -2505,7 +2505,9 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         PropertyList(5)  = 'Throughfall Rate [mm/hour]'
         PropertyList(6)  = 'EvapoTranspiration Rate [mm/hour]'
         PropertyList(7)  = 'Water Column Removed [m]'
-        i = 8
+        PropertyList(8)  = 'Accumulated Rainfall [m]' 
+        PropertyList(9)  = 'Accumulated Infiltration [m]'
+        i = 10
         if (Me%Coupled%SCSCNRunoffModel) then
             PropertyList(i) = 'Actual Curve Vumber [-]' 
             i = i + 1
@@ -6244,8 +6246,6 @@ cd0:    if (Exist) then
             if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
                             
                 if (Me%ThroughFall (i, j) > 0.0) then
-                    !       mm        =                mm
-                    previousInDayRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) 
                     
                     !mm  =              m                  * mm/m
                     rain = Me%ThroughFall (i, j) * 1000
@@ -6254,7 +6254,7 @@ cd0:    if (Exist) then
                     Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
         
                     !mm  =        mm         +                     mm
-                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = previousInDayRain  &
+                    Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
                                                      + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                     
                     if (Me%SCSCNRunOffModel%VegGrowthStage%Field (i, j) == DormantVegetation) then
@@ -8697,6 +8697,18 @@ cd0:    if (Exist) then
         !Through Fall Rate
         call WriteTimeSerie (Me%ObjTimeSerie,                                   &
                              Data2D_8 = Me%ThroughRate,                         &                             
+                             STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
+        
+        !Accumulated Rain
+        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                             Data2D_8 = Me%AccRainFall,                          &                             
+                             STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR040'
+        
+        !Accumulated Infiltration
+        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                             Data2D_8 = Me%AccInfiltration,                         &                             
                              STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
 
