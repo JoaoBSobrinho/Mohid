@@ -6528,9 +6528,6 @@ cd0:    if (Exist) then
                 do J = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
                     if (Me%CellHasRain(i,j) == 1) then
-                        !mm  =        mm         +                     mm
-                        Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
-                                                            + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                 
                         rain_m = Me%ThroughFall (i, j)
                     
@@ -6538,6 +6535,10 @@ cd0:    if (Exist) then
                         rain = rain_m * 1000.0
                         !               mm                 =                 mm                 +  mm
                         Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+                        
+                        !mm  =        mm         +                     mm
+                        Me%SCSCNRunOffModel%Current5DayAccRain(i,j) = Me%SCSCNRunOffModel%DailyAccRain (i, j)   &
+                                                            + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                     
                         if (Me%SCSCNRunOffModel%Current5DayAccRain(i,j) > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
                         
@@ -6575,8 +6576,6 @@ cd0:    if (Exist) then
                 do J = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
                     if (Me%CellHasRain(i,j) == 1) then
-                        !mm  =        mm         +                     mm
-                        Current5DayAccRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                 
                         rain_m = Me%ThroughFall (i, j)
                     
@@ -6584,6 +6583,9 @@ cd0:    if (Exist) then
                         rain = rain_m * 1000.0
                         !               mm                 =                 mm                 +  mm
                         Me%SCSCNRunOffModel%DailyAccRain (i, j) = Me%SCSCNRunOffModel%DailyAccRain (i, j) + rain
+                        
+                        !mm  =        mm         +                     mm
+                        Current5DayAccRain = Me%SCSCNRunOffModel%DailyAccRain (i, j) + Me%SCSCNRunOffModel%Last5DaysAccRainTotal (i, j)
                     
                         if (Current5DayAccRain > Me%SCSCNRunOffModel%IAFactor * Me%SCSCNRunOffModel%S(i,j)) then
                         
@@ -6604,6 +6606,11 @@ cd0:    if (Exist) then
                 
                         Me%Infiltration(i,j) = InfiltrationRate * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
                     endif
+                    
+                    if (Me%Infiltration(i,j) < 0.0) then
+                        write(*,*) "Fodeu"
+                    endif
+                    
                 enddo
                 enddo
                 !$OMP END DO
