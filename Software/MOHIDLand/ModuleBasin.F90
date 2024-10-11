@@ -6607,10 +6607,6 @@ cd0:    if (Exist) then
                         Me%Infiltration(i,j) = InfiltrationRate * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
                     endif
                     
-                    if (Me%Infiltration(i,j) < 0.0) then
-                        write(*,*) "Fodeu"
-                    endif
-                    
                 enddo
                 enddo
                 !$OMP END DO
