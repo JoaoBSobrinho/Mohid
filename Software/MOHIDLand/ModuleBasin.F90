@@ -613,6 +613,9 @@ Module ModuleBasin
         real                                        :: DY = 0.0 !For constant grids
         real                                        :: GridCellArea = 0.0 !For constant grids
         logical                                     :: ActiveRain = .false.
+        real(8)                                     :: TotalCumulativeInfiltrationDepth = 0.0
+        real(8)                                     :: TotalCumulativeInfiltrationVolume = 0.0
+        real(8)                                     :: TotalCumulativeRainfallVolume = 0.0
         
         !Basin Water Balance
         type (T_BasinWaterBalance)                  :: BWB
@@ -5044,13 +5047,22 @@ cd0:    if (Exist) then
 
         !Local-----------------------------------------------------------------     
         integer                                     :: i, j
-        real                                        :: GrossPrecipitation, CurrentFlux
+        real                                        :: GrossPrecipitation, CurrentFlux, AccumulatedRainfall
         real                                        :: aux1, aux2, aux3
         integer                                     :: Sum
+        logical                                     :: NeedsOutput
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_CG")
         Sum = 0
-        if (Me%NumberOftimeSeries > 0) then
+        AccumulatedRainfall = 0.0
+        
+        if (Me%Output%Yes) then
+            if (Me%CurrentTime >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+                NeedsOutput = .true.
+            endif
+        endif
+            
+        if (Me%NumberOftimeSeries > 0 .or. NeedsOutput) then
             
             aux1 = Me%CurrentDT / Me%GridCellArea
             aux2 = 3600000.0 / Me%GridCellArea
@@ -5099,7 +5111,7 @@ cd0:    if (Exist) then
         else
             aux1 = Me%CurrentDT / Me%GridCellArea
             !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, AccumulatedRainfall)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
@@ -5115,7 +5127,7 @@ cd0:    if (Exist) then
                         GrossPrecipitation = CurrentFlux * aux1
                         !Accumulated rainfall
                         !m
-                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation * Me%GridCellArea
                     
                         ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
@@ -5133,6 +5145,8 @@ cd0:    if (Exist) then
                 Me%ActiveRain = .false.
             endif
             
+            Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
+            
         endif
 
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_CG")
@@ -5148,15 +5162,27 @@ cd0:    if (Exist) then
 
         !Local-----------------------------------------------------------------     
         integer                                     :: i, j
-        real                                        :: GrossPrecipitation
-        real                                        :: CurrentFlux
-        
+        real                                        :: GrossPrecipitation, CurrentFlux, Sum
+        real                                        :: aux3
+        logical                                     :: NeedsOutput
+        real(8)                                     :: AccumulatedRainfall
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_VG")
         
-        if (Me%NumberOftimeSeries > 0) then
+        Sum = 0
+        AccumulatedRainfall = 0.0
+        
+        if (Me%Output%Yes) then
+            if (Me%CurrentTime >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
+                NeedsOutput = .true.
+            endif
+        endif
+            
+        if (Me%NumberOftimeSeries > 0 .or. NeedsOutput) then
+            aux3 = 3600000.0 / Me%CurrentDT
+            
             !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
@@ -5164,7 +5190,7 @@ cd0:    if (Exist) then
                     CurrentFlux = PrecipitationFlux(i, j)
                     Me%CellHasRain(i,j) = 0
                     if (CurrentFlux > 0.0) then
-                            
+                        Sum = Sum + 1
                         !Precipitation Rate for (output only)
                         !mm/ hour            m3/s                    / m2                 * 1000 mm/m * 3600 s/h
                         Me%PrecipRate  (i,j) = CurrentFlux / Me%ExtVar%GridCellArea(i, j) * 3600000.0
@@ -5177,7 +5203,7 @@ cd0:    if (Exist) then
                         Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
                     
                         !mm/ hour                   m                       s         1000mm/m   *  3600s/h
-                        Me%ThroughRate(i, j) = GrossPrecipitation / Me%CurrentDT * 3600000.0
+                        Me%ThroughRate(i, j) = GrossPrecipitation * aux3
                     
                         ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
@@ -5193,7 +5219,7 @@ cd0:    if (Exist) then
         else
             
             !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, AccumulatedRainfall)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
@@ -5207,7 +5233,7 @@ cd0:    if (Exist) then
                         GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
                         !Accumulated rainfall
                         !m
-                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation * Me%ExtVar%GridCellArea(i, j)
                     
                         ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
@@ -5220,6 +5246,7 @@ cd0:    if (Exist) then
             !$OMP END DO
             !$OMP END PARALLEL
             
+            Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
         endif        
 
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_VG")
@@ -6471,7 +6498,7 @@ cd0:    if (Exist) then
         real                                        :: qInTimeStep, aux1, aux2, aux3, InfiltrationRate
         integer                                     :: STAT_CALL
         logical                                     :: NeedsOutput = .false.
-        
+        real(8)                                     :: Infiltration, InfiltrationDepth, InfiltrationVolume
         !Begin-----------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "SCSCNRunoffModel")
@@ -6571,8 +6598,10 @@ cd0:    if (Exist) then
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep, Current5DayAccRain, InfiltrationRate)
-                !$OMP DO SCHEDULE(DYNAMIC)
+                InfiltrationDepth = 0.0
+                InfiltrationVolume = 0.0
+                !$OMP PARALLEL PRIVATE(I,J, rain, rain_m, qNew, qInTimeStep, Current5DayAccRain, InfiltrationRate, Infiltration)
+                !$OMP DO SCHEDULE(DYNAMIC) REDUCTION(+:InfiltrationVolume, InfiltrationDepth)
                 do J = Me%WorkSize%JLB, Me%WorkSize%JUB
                 do I = Me%WorkSize%ILB, Me%WorkSize%IUB           
                     if (Me%CellHasRain(i,j) == 1) then
@@ -6604,7 +6633,16 @@ cd0:    if (Exist) then
                             InfiltrationRate = rain_m * aux3
                         endif
                 
-                        Me%Infiltration(i,j) = InfiltrationRate * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
+                        Infiltration = InfiltrationRate * (1.0 - Me%SCSCNRunOffModel%ImpFrac%Field(i, j)) * aux1
+                        Me%Infiltration(i,j) = Infiltration
+                        
+                        if (Me%GridIsConstant) then
+                            InfiltrationVolume = InfiltrationVolume + Infiltration * Me%GridCellArea
+                            InfiltrationDepth = InfiltrationDepth + Infiltration
+                        else
+                            InfiltrationVolume = InfiltrationVolume + Infiltration * Me%ExtVar%GridCellArea(i, j)
+                            InfiltrationDepth = InfiltrationDepth + Infiltration
+                        endif
                     endif
                     
                 enddo
@@ -6612,6 +6650,8 @@ cd0:    if (Exist) then
                 !$OMP END DO
                 !$OMP END PARALLEL
 
+                Me%TotalCumulativeInfiltrationDepth = Me%TotalCumulativeInfiltrationDepth + InfiltrationDepth
+                Me%TotalCumulativeInfiltrationVolume = Me%TotalCumulativeInfiltrationVolume + InfiltrationVolume
             endif
         
             call SetRunOffInfiltration(Me%ObjRunoff, Me%Infiltration, Me%CellHasRain, STAT = STAT_CALL)
@@ -10997,25 +11037,38 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
         AverageCumulativeInfiltrationVolume = 0
         nCells                              = 0
 
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if (Me%ExtVar%BasinPoints(i, j) == 1) then
-                ![m3]                           = [m3] + [m*m2]
-                TotalCumulativeRainfallVolume   = TotalCumulativeRainfallVolume + &
-                                                  Me%AccRainfall(i,j) * Me%ExtVar%GridCellArea(i,j)
+        if (Me%NumberOfTimeSeries > 0 .or. Me%Output%Yes) then
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                    ![m3]                           = [m3] + [m*m2]
+                    TotalCumulativeRainfallVolume   = TotalCumulativeRainfallVolume + &
+                                                      Me%AccRainfall(i,j) * Me%ExtVar%GridCellArea(i,j)
 
-                ![m]                          = [m] + [m]
-                TotalCumulativeInfiltrationDepth    = TotalCumulativeInfiltrationDepth + Me%AccInfiltration(i,j)
+                    ![m]                          = [m] + [m]
+                    TotalCumulativeInfiltrationDepth    = TotalCumulativeInfiltrationDepth + Me%AccInfiltration(i,j)
                 
-                ![m3]                         = [m3] + [m] * [m2]
-                TotalCumulativeInfiltrationVolume = TotalCumulativeInfiltrationVolume + &
-                                                    Me%AccInfiltration(i,j) * Me%ExtVar%GridCellArea(i,j)
+                    ![m3]                         = [m3] + [m] * [m2]
+                    TotalCumulativeInfiltrationVolume = TotalCumulativeInfiltrationVolume + &
+                                                        Me%AccInfiltration(i,j) * Me%ExtVar%GridCellArea(i,j)
 
-                nCells = nCells + 1
-            endif
-        enddo
-        enddo 
-
+                    nCells = nCells + 1
+                endif
+            enddo
+            enddo 
+        else
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                    nCells = nCells + 1
+                endif
+            enddo
+            enddo 
+            TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume
+            TotalCumulativeInfiltrationDepth = Me%TotalCumulativeInfiltrationDepth
+            TotalCumulativeInfiltrationVolume = Me%TotalCumulativeInfiltrationVolume
+        endif
+        
         if(nCells > 0)then
             AverageCumulativeInfiltrationDepth  = TotalCumulativeInfiltrationDepth  / real(nCells)
             AverageCumulativeInfiltrationVolume = TotalCumulativeInfiltrationVolume / real(nCells) 
