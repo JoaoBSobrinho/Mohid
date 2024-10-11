@@ -1481,7 +1481,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                          Me%ObjEnterData, iflag,                                             &
                          SearchType   = FromFile,                                            &
                          keyword      = 'SCSCN_CI_GROWTH_THRESHOLD',                         &
-                         default      = 35.56,                                               &
+                         default      = 0.0,                                                 &
                          ClientModule = 'ModuleBasin',                                       &
                          STAT         = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleBasin - ERR311.3' 
@@ -1490,7 +1490,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                          Me%ObjEnterData, iflag,                                             &
                          SearchType   = FromFile,                                            &
                          keyword      = 'SCSCN_CIII_GROWTH_THRESHOLD',                       &
-                         default      = 53.34,                                               &
+                         default      = 1000.0,                                              &
                          ClientModule = 'ModuleBasin',                                       &
                          STAT         = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleBasin - ERR311.4'             
@@ -8699,18 +8699,6 @@ cd0:    if (Exist) then
                              Data2D_8 = Me%ThroughRate,                         &                             
                              STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
-        
-        !Accumulated Rain
-        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                             Data2D_8 = Me%AccRainFall,                          &                             
-                             STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR040'
-        
-        !Accumulated Infiltration
-        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
-                             Data2D_8 = Me%AccInfiltration,                         &                             
-                             STAT = STAT_CALL)
-        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
 
         !Efective EVTP Rate
         call WriteTimeSerie (Me%ObjTimeSerie,                                   &
@@ -8723,6 +8711,18 @@ cd0:    if (Exist) then
                              Data2D_8    = Me%WaterColumnRemoved,               &                             
                              STAT        = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR070'
+        
+        !Accumulated Rain
+        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                             Data2D_8 = Me%AccRainFall,                          &                             
+                             STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR040'
+        
+        !Accumulated Infiltration
+        call WriteTimeSerie (Me%ObjTimeSerie,                                   &
+                             Data2D_8 = Me%AccInfiltration,                         &                             
+                             STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'TimeSerieOutput - ModuleBasin - ERR050'
 
         if (Me%Coupled%SCSCNRunoffModel) then 
             call WriteTimeSerie (TimeSerieID = Me%ObjTimeSerie,                       &
