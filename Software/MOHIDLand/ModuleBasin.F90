@@ -628,7 +628,8 @@ Module ModuleBasin
         
         type (T_Time)                               :: CurrentTime
         type (T_Time)                               :: BeginTime
-        type (T_Time)                               :: EndTime       
+        type (T_Time)                               :: EndTime
+        real                                        :: SimulationTime
         type (T_OutPut)                             :: OutPut
         type (T_OutPut)                             :: EVTPOutPut
         type (T_OutPut)                             :: EVTPOutPut2
@@ -777,6 +778,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                          EndTime = Me%EndTime, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR03'
 
+            Me%SimulationTime = Me%EndTime - Me%BeginTime
             call ReadFileNames        
         
             !Constructs Horizontal Grid
@@ -1442,6 +1444,14 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleBasin - ERR311'
 
         if (Me%Coupled%SCSCNRunOffModel) then
+            
+            if (Me%SimulationTime > 432000.0) then
+                write(*,*)  
+                write(*,*) 'Using Curve number method for a simulation longer than 5 days'
+                write(*,*) 'This will produce wrong results'
+                stop 'ReadDataFile - ModuleBasin - ERR311.01'
+            endif
+            
             call GetData(Me%SCSCNRunOffModel%IAFactor,                                       &
                          Me%ObjEnterData, iflag,                                             &
                          SearchType   = FromFile,                                            &
