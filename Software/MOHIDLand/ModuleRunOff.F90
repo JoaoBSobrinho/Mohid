@@ -13388,7 +13388,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Store SewerGEMS SWMM current time step
         !Check subroutine ComputeNextTimeStep where
         localStormWaterDT = dt
-        if (ElapsedTime == 0.0) then
+        if (ElapsedTime == 0.0 .or. (Me%EndTime - Me%ExtVar%Now <= 1.0 .and. dt == 1.0E-3)) then
             Me%StormWaterModelDT = Me%ExtVar%DT
         else
             Me%StormWaterModelDT = dt
@@ -13400,7 +13400,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if(Me%ExtVar%Now .ge. Me%EndTime)then
             if(localStormWaterDT > 0.0)then
                 !Run SewerGEMS SWMM engine just to make sure last output is written in case of time step rounding error
-                STAT_CALL = SewerGEMSEngine_step_imposed_dt(elapsedTime, localStormWaterDT)
+                STAT_CALL = SewerGEMSEngine_step_imposed_dt(elapsedTime, Me%StormWaterModelDT )
                 if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR200'
             endif
         endif
