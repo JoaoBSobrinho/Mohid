@@ -2956,7 +2956,7 @@ cd1:        if (DT>0) then
         integer                                     :: JLB, JUB, j
         integer                                     :: k
         integer                                     :: iClass   
-        real                                        :: DT, Aux
+        real                                        :: DT, Aux, ValueMax
 
         !Shorten
         ILB = Me%ExternalVar%WorkSize%ILB
@@ -2994,13 +2994,28 @@ cd1:    if (DT>0) then
         enddo
 
             !Loops
-            do k = KLB, KUB
+!            do k = KLB, KUB
             do j = JLB, JUB
             do i = ILB, IUB
+                
+                if (WaterPoints3D(i, j, KUB) == WaterPoint) then
+                    
+                    ValueMax = FillValueReal
+                    !Compute the max value in the water column
+                    do k = KLB, KUB
                 if (WaterPoints3D(i, j, k) == WaterPoint) then
+                            if (Value(i, j, k) > ValueMax) ValueMax = Value(i, j, k)
+                        endif
+                    enddo
+                    
+                    !Frequency analysis of the max in the water column
     doClass2:       do iClass = 1, Me%Classification%nClasses
-                        if (Value(i, j, k) >= Me%Classification%Classes(iClass, 1) .and.    &
-                            Value(i, j, k)  < Me%Classification%Classes(iClass, 2)) then
+                        !if (Value(i, j, k) >= Me%Classification%Classes(iClass, 1) .and.    &
+                        !    Value(i, j, k)  < Me%Classification%Classes(iClass, 2)) then
+    
+                        if (ValueMax >= Me%Classification%Classes(iClass, 1) .and.    &
+                            ValueMax  < Me%Classification%Classes(iClass, 2)) then
+    
                             Aux = DT
                         else
                             Aux = 0
@@ -3010,11 +3025,12 @@ cd1:    if (DT>0) then
                             (Me%Classification%Frequency2D(i, j, iClass) *                  &
                                 Me%Classification%RunPeriod + Aux          ) /                 &
                             (Me%Classification%RunPeriod + DT)
+                        
                     enddo doClass2
                 endif
             enddo
             enddo
-            enddo
+!            enddo
 
         Me%Classification%RunPeriod       = Me%Classification%RunPeriod + DT
 
@@ -4212,6 +4228,10 @@ doClass:        do iClass = 1, Me%Classification%nClasses
             if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFileHDF5 - ModuleStatistic - ERR400'
         
 
+            call HDF5SetLimits (Me%ObjHDF5, ILB, IUB, JLB, JUB, KLB, KUB,               &
+                                STAT = STAT_CALL)
+            if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFileHDF5 - ModuleStatistic - ERR405'            
+
             !Minimum
             if (Me%Methodology==Value3DStat3D_ .or.  &
                 Me%Methodology==Value3DStatLayers_) then
@@ -4946,8 +4966,86 @@ doClass2:           do iClass = 1, nc
 
         endif
 
+        if (Me%Classification%On .and. WriteClassification) then        
+        
+            if (Me%Methodology==Value3DStat3D_ .or.  &
+                Me%Methodology==Value3DStatLayers_) then
 
-        if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFile - ModuleStatistic - ERR990'
+
+                !Allocates auxiliar matrix 3D
+                allocate (AuxMatrix3D(ILB-1:IUB+1, JLB-1:JUB+1, KLB-1:KUB+1))
+            
+                AuxMatrix3D(:,:,:) = 0
+                    
+                do iClass = 1, Me%Classification%nClasses        
+
+                    do k = KLB, KUB
+                    do j = JLB, JUB
+                    do i = ILB, IUB
+                        AuxMatrix3D(i, j, k) = AuxMatrix3D(i, j, k) + 100. * Me%Classification%Frequency(i, j, k, iClass) 
+                    enddo
+                    enddo
+                    enddo
+            
+                enddo
+
+                    
+                call HDF5WriteData (Me%ObjHDF5, trim(Me%GroupName)//trim(Me%Name)//"/Classes",  &
+                                    "Period_WithData",                                          &
+                                    "%", Array3D = AuxMatrix3D,                                 &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFileHDF5 - ModuleStatistic - ERR800'
+            
+                AuxMatrix3D(:,:,:) = 100. - AuxMatrix3D(:,:,:)
+            
+                call HDF5WriteData (Me%ObjHDF5, trim(Me%GroupName)//trim(Me%Name)//"/Classes",  &
+                                    "Period_WithOutData",                                       &
+                                    "%", Array3D = AuxMatrix3D,                                 &
+                                     STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFileHDF5 - ModuleStatistic - ERR810'
+            
+                deallocate (AuxMatrix3D)
+
+            endif
+
+            if (Me%Methodology==Value2DStat2D_ .or. Me%Methodology==Value3DStat3D_) then
+                    
+
+                !Allocates auxiliar matrix 2D
+                allocate (AuxMatrix2D(Me%ExternalVar%Size%ILB:Me%ExternalVar%Size%IUB,                  &
+                                        Me%ExternalVar%Size%JLB:Me%ExternalVar%Size%JUB))
+            
+                AuxMatrix2D(:,:) = 0
+                    
+                do iClass = 1, Me%Classification%nClasses                
+
+                    do j = JLB, JUB
+                    do i = ILB, IUB
+                        AuxMatrix2D(i, j) = AuxMatrix2D(i, j) + 100. * Me%Classification%Frequency2D(i, j, iClass) 
+                    enddo
+                    enddo
+                
+                enddo
+            
+                call HDF5WriteData (Me%ObjHDF5, trim(Me%GroupName)//trim(Me%Name)//"/Classes2D",  &
+                                    "Period_WithData",                                          &
+                                    "%", Array2D = AuxMatrix2D,                                 &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFileHDF5 - ModuleStatistic - ERR820'
+            
+                AuxMatrix2D(:,:) = 100. - AuxMatrix2D(:,:)
+            
+                call HDF5WriteData (Me%ObjHDF5, trim(Me%GroupName)//trim(Me%Name)//"/Classes2D",  &
+                                    "Period_WithOutData",                                       &
+                                    "%", Array2D = AuxMatrix2D,                                 &
+                                     STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'WriteValuesToFileHDF5 - ModuleStatistic - ERR830'
+            
+                deallocate (AuxMatrix2D)
+
+            endif
+
+        endif
 
     end subroutine WriteValuesToFileHDF5
 !
