@@ -617,6 +617,7 @@ Module ModuleRunOff
         character(len=PathLength)                   :: TimeSerieLocationFile, DiscTimeSerieLocationFile
         logical                                     :: UpdateWaterLevel_R4            = .true.
         integer                                     :: TimeSerieNumber                = 0
+        logical                                     :: Faces                          = .false.
 
         
     end type T_OutPutRunOff
@@ -784,8 +785,12 @@ Module ModuleRunOff
         real(4),    dimension(:,:), pointer         :: CenterFlowY_R4           => null()
         real,    dimension(:,:), pointer            :: CenterVelocityX          => null()
         real,    dimension(:,:), pointer            :: CenterVelocityY          => null()
+        real,    dimension(:,:), pointer            :: FaceVelocityX            => null()
+        real,    dimension(:,:), pointer            :: FaceVelocityY            => null()
         real(4),    dimension(:,:), pointer         :: CenterVelocityX_R4       => null()
         real(4),    dimension(:,:), pointer         :: CenterVelocityY_R4       => null()
+        real(4),    dimension(:,:), pointer         :: FaceVelocityX_R4         => null()
+        real(4),    dimension(:,:), pointer         :: FaceVelocityY_R4         => null()
         real,    dimension(:,:), pointer            :: FlowModulus              => null()
         real(4),    dimension(:,:), pointer         :: FlowModulus_R4           => null()
         real,    dimension(:,:), pointer            :: VelocityModulus          => null()
@@ -2364,6 +2369,16 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR799'    
          
         endif
+        
+        !Write Velocities at grid faces
+        call GetData(Me%Output%Faces,                                              &
+                        Me%ObjEnterData, iflag,                                    &
+                        SearchType   = FromFile,                                   &
+                        keyword      = 'WRITE_VELOCITIES_AT_FACES',                &
+                        default      = .false.,                                    &
+                        ClientModule = 'ModuleRunOff',                             &
+                        STAT         = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR810'    
 
         call ReadConvergenceParameters
         
@@ -5547,6 +5562,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%FlowModulus_R4    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FaceVelocityX_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FaceVelocityY_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%VelocityModulus_R4(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxFlowModulus_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn_R4 (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
@@ -5574,6 +5591,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             call SetMatrixValue(Me%CenterFlowY_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%CenterVelocityX_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%CenterVelocityY_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%FaceVelocityX_R4, Me%Size, ZeroValue)
+            call SetMatrixValue(Me%FaceVelocityY_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%FlowModulus_R4, Me%Size, ZeroValue)
             call SetMatrixValue(Me%VelocityModulus_R4, Me%Size, ZeroValue)
             
@@ -5586,6 +5605,8 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%FlowModulus    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FaceVelocityX(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            allocate (Me%FaceVelocityY(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%VelocityModulus(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxFlowModulus (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -16691,11 +16712,80 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         nullify (iFlowX, iflowY)
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
-
+        
+        if (Me%Output%Faces) then
+            call ComputeFaceVelocities
+        endif
 
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues")
         
     end subroutine ComputeCenterValues
+    
+    
+    !--------------------------------------------------------------------------
+    subroutine ComputeFaceVelocities
+    
+        !Arguments-------------------------------------------------------------
+    
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: CHUNK
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocities")
+        
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
+            
+        if(.not. Me%ExtVar%Distortion) then
+    
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocities - FaceVelocity")
+    
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                if (Me%OpenPoints(i,j) == BasinPoint) then
+                    Me%FaceVelocityX(i,j) = iFlowX(i, j) / Me%AreaU(i,j)
+                    Me%FaceVelocityY(i,j) = iFlowY(i, j) / Me%AreaV(i,j)
+                end if
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocities - FaceVelocity")
+    
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                if (Me%OpenPoints(i,j) == BasinPoint) then                      
+                    Me%FaceVelocityX(i, j) = iFlowX(i, j) * cos(Me%ExtVar%RotationX(i, j)) + iFlowY(i, j) * cos(Me%ExtVar%RotationY(i, j)) / Me%AreaU(i,j)
+                    Me%FaceVelocityY(i, j) = iFlowX(i, j) * sin(Me%ExtVar%RotationX(i, j)) + iFlowY(i, j) * sin(Me%ExtVar%RotationY(i, j)) / Me%AreaV(i,j)
+                else
+                    Me%FaceVelocityX(i, j) = 0.0
+                    Me%FaceVelocityY(i, j) = 0.0
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        endif
+        
+        nullify (iFlowX, iflowY)
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocities")
+        
+    end subroutine ComputeFaceVelocities
     
     !--------------------------------------------------------------------------
     subroutine ComputeCenterValues_R4 
@@ -16901,6 +16991,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END PARALLEL
             endif
             
+            
+            
             nullify (iFlowX, iflowY)
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")    
         else
@@ -16909,8 +17001,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             
         endif
         
+        if (Me%Output%Faces) then
+            call ComputeFaceVelocities_R4
+        endif
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues_R4")
-        nullify (iFlowX, iflowY)
+        
     end subroutine ComputeCenterValues_R4
     
     !--------------------------------------------------------------------------
@@ -16947,7 +17043,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
                     if (Me%OpenPoints(i,j) == BasinPoint) then
-                            
+                        
                         VelocityX = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
                         VelocityY = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
                             
@@ -17015,8 +17111,73 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterVelocities_R4")
         
     end subroutine ComputeCenterVelocities_R4
+    
+    !--------------------------------------------------------------------------
+    subroutine ComputeFaceVelocities_R4 
+    
+        !Arguments-------------------------------------------------------------
+    
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: CHUNK
+        real(8), dimension(:,:), pointer            :: iFlowX, iflowY
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocities_R4")
+        
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        
+        if (Me%Restarted) then
+            iFlowX => Me%iFlowX
+            iFlowY => Me%iFlowY
+        else
+            iFlowX => Me%lFlowX
+            iFlowY => Me%lFlowY
+        endif
+            
+        if(.not. Me%ExtVar%Distortion) then
+    
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocities_R4 - FaceVelocity_R4")
+    
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                if (Me%OpenPoints(i,j) == BasinPoint) then
+                    Me%FaceVelocityX_R4(i,j) = iFlowX(i, j) / Me%AreaU(i,j)
+                    Me%FaceVelocityY_R4(i,j) = iFlowY(i, j) / Me%AreaV(i,j)
+                end if
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
 
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocities_R4 - FaceVelocity_R4")
+    
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                if (Me%OpenPoints(i,j) == BasinPoint) then                      
+                    Me%FaceVelocityX_R4 (i, j) = iFlowX(i, j) * cos(Me%ExtVar%RotationX(i, j)) + iFlowY(i, j) * cos(Me%ExtVar%RotationY(i, j)) / Me%AreaU(i,j)
+                    Me%FaceVelocityY_R4 (i, j) = iFlowX(i, j) * sin(Me%ExtVar%RotationX(i, j)) + iFlowY(i, j) * sin(Me%ExtVar%RotationY(i, j)) / Me%AreaV(i,j)
+                else
+                    Me%FaceVelocityX_R4(i, j) = 0.0
+                    Me%FaceVelocityY_R4(i, j) = 0.0
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        endif
+        
+        nullify (iFlowX, iflowY)
+        
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocities_R4")
+        
+    end subroutine ComputeFaceVelocities_R4
 
+    
     !--------------------------------------------------------------------------
     
     subroutine ComputeNextDT (Niter)
@@ -17309,6 +17470,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         real,  dimension(:), pointer                :: AuxFlow
+        real,  dimension(:,:), pointer              :: AuxMatrix
         integer                                     :: STAT_CALL
         integer                                     :: ILB, IUB, JLB, JUB
         real, dimension(6)  , target                :: AuxTime
@@ -17374,27 +17536,38 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR050'
             
             !Writes Flow X
+            if (Me%OutPut%Faces) then
+                AuxMatrix = Me%iFlowX
+            else
+                AuxMatrix = Me%CenterFlowX
+            endif
+            
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow X",                                &
                                   "flow X",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%CenterFlowX,                    &
+                                  Array2D      = AuxMatrix,                         &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR60'
 
             
             !Writes Flow Y
+            if (Me%OutPut%Faces) then
+                AuxMatrix = Me%iFlowY
+            else
+                AuxMatrix = Me%CenterFlowY
+            endif
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow Y",                                &
                                   "flow Y",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%CenterFlowY,                    &
+                                  Array2D      = AuxMatrix,                         &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR70'
 
-             !Writes Flow Modulus
+            !Writes Flow Modulus at center (TODO: compute at faces when we decide to show velocities arrows at faces)
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/"//trim(GetPropertyName (FlowModulus_)),&
                                   trim(GetPropertyName (FlowModulus_)),             &   
@@ -17404,7 +17577,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR80'
 
-             !Writes Velocity X
+            !Writes Velocity X
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityU_)),     &
                                   trim(GetPropertyName (VelocityU_)),                  &
@@ -17415,14 +17588,34 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR90'
 
              !Writes Velocity Y
-            call HDF5WriteData   (Me%ObjHDF5,                                          &
-                                  "/Results/"//trim(GetPropertyName (VelocityV_)),     &
-                                  trim(GetPropertyName (VelocityV_)),                  &
-                                  "m/s",                                               &
-                                  Array2D      = Me%CenterVelocityY,                   &
-                                  OutputNumber = Me%OutPut%NextOutPut,                 &
-                                  STAT = STAT_CALL)
+            call HDF5WriteData   (Me%ObjHDF5,                                            &
+                                    "/Results/"//trim(GetPropertyName (VelocityV_)),     &
+                                    trim(GetPropertyName (VelocityV_)),                  &
+                                    "m/s",                                               &
+                                    Array2D      = Me%CenterVelocityY,                   &
+                                    OutputNumber = Me%OutPut%NextOutPut,                 &
+                                    STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR100'
+            
+            if (Me%OutPut%Faces) then
+                call HDF5WriteData   (Me%ObjHDF5,                                          &
+                                      "/Results/"//trim(GetPropertyName (VelocityFaceU_)), &
+                                      trim(GetPropertyName (VelocityFaceU_)),              &
+                                      "m/s",                                               &
+                                      Array2D      = Me%FaceVelocityX,                     &
+                                      OutputNumber = Me%OutPut%NextOutPut,                 &
+                                      STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR105a'
+                
+                call HDF5WriteData   (Me%ObjHDF5,                                          &
+                                      "/Results/"//trim(GetPropertyName (VelocityFaceV_)), &
+                                      trim(GetPropertyName (VelocityFaceV_)),              &
+                                      "m/s",                                               &
+                                      Array2D      = Me%FaceVelocityY,                     &
+                                      OutputNumber = Me%OutPut%NextOutPut,                 &
+                                      STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR105b'
+            endif
 
             !Writes Velocity Modulus
             call HDF5WriteData   (Me%ObjHDF5,                                                &
@@ -17517,6 +17710,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         real,  dimension(:), pointer                :: AuxFlow
+        real,  dimension(:,:), pointer              :: AuxMatrix
         integer                                     :: STAT_CALL
         integer                                     :: ILB, IUB, JLB, JUB
         real, dimension(6)  , target                :: AuxTime
@@ -17588,22 +17782,36 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR050'
             
             !Writes Flow X
+            
+            if (Me%OutPut%Faces) then
+                AuxMatrix = Me%iFlowX
+            else
+                AuxMatrix = Me%CenterFlowX_R4
+            endif
+            
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow X",                                &
                                   "flow X",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%CenterFlowX_R4,                 &
+                                  Array2D      = AuxMatrix,                         &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR60'
 
             
             !Writes Flow Y
+            
+            if (Me%OutPut%Faces) then
+                AuxMatrix = Me%iFlowY
+            else
+                AuxMatrix = Me%CenterFlowY_R4
+            endif
+            
             call HDF5WriteData   (Me%ObjHDF5,                                       &
                                   "/Results/flow Y",                                &
                                   "flow Y",                                         &   
                                   "m3/s",                                           &
-                                  Array2D      = Me%CenterFlowY_R4,                 &
+                                  Array2D      = AuxMatrix,                         &
                                   OutputNumber = Me%OutPut%NextOutPut,              &
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR70'
@@ -17618,7 +17826,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR80'
 
-             !Writes Velocity X
+            !Writes Velocity X
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityU_)),     &
                                   trim(GetPropertyName (VelocityU_)),                  &
@@ -17628,7 +17836,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR90'
 
-             !Writes Velocity Y
+            !Writes Velocity Y
             call HDF5WriteData   (Me%ObjHDF5,                                          &
                                   "/Results/"//trim(GetPropertyName (VelocityV_)),     &
                                   trim(GetPropertyName (VelocityV_)),                  &
@@ -17638,6 +17846,26 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                   STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR100'
 
+            if (Me%OutPut%Faces) then
+                call HDF5WriteData   (Me%ObjHDF5,                                          &
+                                      "/Results/"//trim(GetPropertyName (VelocityFaceU_)), &
+                                      trim(GetPropertyName (VelocityFaceU_)),              &
+                                      "m/s",                                               &
+                                      Array2D      = Me%FaceVelocityX_R4,                  &
+                                      OutputNumber = Me%OutPut%NextOutPut,                 &
+                                      STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR105a'
+                
+                call HDF5WriteData   (Me%ObjHDF5,                                          &
+                                      "/Results/"//trim(GetPropertyName (VelocityFaceV_)), &
+                                      trim(GetPropertyName (VelocityFaceV_)),              &
+                                      "m/s",                                               &
+                                      Array2D      = Me%FaceVelocityY_R4,                  &
+                                      OutputNumber = Me%OutPut%NextOutPut,                 &
+                                      STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'RunOffOutput - ModuleRunOff - ERR105b'
+            endif
+            
             !Writes Velocity Modulus
             call HDF5WriteData   (Me%ObjHDF5,                                                &
                                   "/Results/"//trim(GetPropertyName (VelocityModulus_)),     &
@@ -17730,7 +17958,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                 :: STAT_CALL
-        
+        real,  dimension(:,:), pointer          :: AuxMatrix
         !----------------------------------------------------------------------
         if (Me%Output%TimeSerieNumber > 0) then
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
@@ -17743,13 +17971,26 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
         
+            !Write Flow X values
+            if (Me%OutPut%Faces) then
+                AuxMatrix = Me%iFlowX
+            else
+                AuxMatrix = Me%CenterFlowX
+            endif
+            
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                                Data2D = Me%CenterFlowX,                                    &
+                                Data2D = AuxMatrix,                                         &
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
 
+            if (Me%OutPut%Faces) then
+                AuxMatrix = Me%iFlowY
+            else
+                AuxMatrix = Me%CenterFlowY
+            endif
+            
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                                Data2D = Me%CenterFlowY,                                    &
+                                Data2D = AuxMatrix,                                         &
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
 
@@ -17758,12 +17999,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
         
+            !Write Velocity X values
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                                 Data2D = Me%CenterVelocityX,                                &
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
-
         
+            !Write Velocity Y values
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                                 Data2D = Me%CenterVelocityY,                                &
                                 STAT = STAT_CALL)
@@ -17806,6 +18048,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Local-----------------------------------------------------------------
         integer                                 :: STAT_CALL
         type (T_Time)                           :: NextOutput
+        real (4),  dimension(:,:), pointer      :: AuxMatrix
         !----------------------------------------------------------------------
         
         !check timeserie output
@@ -17832,17 +18075,36 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR02'
         
-            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                                Data2D_4 = Me%CenterFlowX_R4,                               &
-                                MapMatrix = Me%OpenPoints,                                  &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03'
+            !Write Flow X values
+            if (Me%OutPut%Faces) then
+                call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                    Data2D_R8 = Me%iFlowX,                                       &
+                                    MapMatrix = Me%OpenPoints,                                  &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03a'
+            else
+                call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                    Data2D_4 = Me%CenterFlowX_R4,                               &
+                                    MapMatrix = Me%OpenPoints,                                  &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR03b'
+            endif
+            
 
-            call WriteTimeSerie(Me%ObjTimeSerie,                                            &
-                                Data2D_4 = Me%CenterFlowY_R4,                               &
-                                MapMatrix = Me%OpenPoints,                                  &
-                                STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04'
+            !Write Flow Y values
+            if (Me%OutPut%Faces) then
+                call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                    Data2D_R8 = Me%iFlowY,                                       &
+                                    MapMatrix = Me%OpenPoints,                                  &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04a'
+            else
+                call WriteTimeSerie(Me%ObjTimeSerie,                                            &
+                                    Data2D_4 = Me%CenterFlowY_R4,                               &
+                                    MapMatrix = Me%OpenPoints,                                  &
+                                    STAT = STAT_CALL)
+                if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR04b'
+            endif
 
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                                 Data2D_4 = Me%FlowModulus_R4,                               &
@@ -17850,13 +18112,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR05'
         
+            !Write Velocity X values
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                                 Data2D_4 = Me%CenterVelocityX_R4,                           &
                                 MapMatrix = Me%OpenPoints,                                  &
                                 STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'OutputTimeSeries - ModuleRunoff - ERR06'
 
-        
+            !Write Velocity Y values
             call WriteTimeSerie(Me%ObjTimeSerie,                                            &
                                 Data2D_4 = Me%CenterVelocityY_R4,                           &
                                 MapMatrix = Me%OpenPoints,                                  &
