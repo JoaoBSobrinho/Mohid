@@ -455,9 +455,6 @@ Module ModuleGlobalData
     integer, parameter :: TideState_                        = 940
     integer, parameter :: ShearStressX_                     = 950
     integer, parameter :: ShearStressY_                     = 960
-    !ResultsAtFaces
-    integer, parameter :: VelocityFaceU_                    = 8700
-    integer, parameter :: VelocityFaceV_                    = 8800
     
     !Assimilation Properties        guillaume nogueira
     integer, parameter :: AltimLevelAnalyzed_               = 4000
@@ -1314,8 +1311,6 @@ Module ModuleGlobalData
     character(StringLength), private, parameter :: Char_MeridionalVelocity_  = 'meridional velocity'
     character(StringLength), private, parameter :: Char_ZonalVelocity_       = 'zonal velocity'
     character(StringLength), private, parameter :: Char_TideState_           = 'tide state'
-    character(StringLength), private, parameter :: Char_VelocityFaceU_       = 'velocity FaceU'
-    character(StringLength), private, parameter :: Char_VelocityFaceV_       = 'velocity FaceV'
 
 
 !_______used @ moduleWQ for POM pools (aquaculture cages)_____________________________________________________________
@@ -2936,8 +2931,6 @@ do2:            do i=1, DynamicPropertiesNumber
             call AddPropList (MeridionalVelocity_,      Char_MeridionalVelocity_,       ListNumber)
             call AddPropList (ZonalVelocity_,           Char_ZonalVelocity_,            ListNumber)
             call AddPropList (TideState_,               Char_TideState_,                ListNumber)            
-            call AddPropList (VelocityFaceU_,           Char_VelocityFaceU_,            ListNumber)
-            call AddPropList (VelocityFaceV_,           Char_VelocityFaceV_,            ListNumber)
             
             !seagrasses rates and limiting functions
             call AddPropList (LeavesUptakeN_ ,          Char_LeavesUptakeN ,            ListNumber)  !Isabella
