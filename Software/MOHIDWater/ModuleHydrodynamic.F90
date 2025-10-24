@@ -12968,7 +12968,10 @@ iStart: if (OutputOk) then
             if (IgnoreOK) cycle
 
             call GetTimeSerieLocation(Me%ObjTimeSerie, dn,                              &
-                                      CoordX = CoordX, CoordY = CoordY, CoordON = CoordON, STAT = STAT_CALL)
+                                      CoordX = CoordX,                                  &
+                                      CoordY = CoordY,                                  &
+                                      CoordON = CoordON,                                &
+                                      STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'Construct_Time_Serie - ModuleHydrodynamic - ERR110'
 
             call GetTimeSerieName(Me%ObjTimeSerie, dn, TimeSerieName, STAT  = STAT_CALL)
