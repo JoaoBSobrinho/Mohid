@@ -6334,7 +6334,7 @@ cd1:    if (Me%Grid_Angle /= 0. .or. Me%CoordType == CIRCULAR_ .or. Me%CornersXY
             !$OMP END PARALLEL
         else  cd1 !Grid_Angle = 0. No grid rotation. Or coordinate type not circular
 
-            if (Me%ConstantSpacingX .and. Me%ConstantSpacingY) Then
+            if (Me%ConstantSpacingX .and. Me%ConstantSpacingY .and. Me%CoordType == GRID_COORD_) Then
                 Me%DXX(:,:) = Me%DX
                 Me%DYY(:,:) = Me%DY
             else
