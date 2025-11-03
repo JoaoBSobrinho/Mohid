@@ -10617,6 +10617,9 @@ cd0:    if (Exist) then
 
             call GetNextPorousMediaDT (Me%ObjPorousMedia, PorousMediaDT, STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ComputeNextDT - ModuleBasin - ERR040'
+            if (PorousMediaDT == null_real) then
+                PorousMediaDT = -null_real
+            end if
 
         else
             PorousMediaDT = -null_real
