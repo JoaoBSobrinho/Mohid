@@ -788,19 +788,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             Me%SimulationTime = Me%EndTime - Me%BeginTime
             call ReadFileNames        
             
-#ifndef _SEWERGEMSENGINECOUPLER_
-
-            !Constructs Horizontal Grid
-            call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
-                                         STAT = STAT_CALL)           
-            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR04'
-            
-            !Constructs GridData
-            call ConstructGridData      (Me%ObjGridData, Me%ObjHorizontalGrid,           &
-                                         FileName = Me%Files%TopographicFile,            &
-                                         STAT = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR05'
-#else
             !Constructs Horizontal Grid
             if (MonitorPerformance) call StartWatch ("ModuleBasin", "ConstructHorizontalGrid")
             call ConstructHorizontalGrid(Me%ObjHorizontalGrid, Me%Files%TopographicFile, &
@@ -814,7 +801,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                          Topography = .true., NumberOfLines = NumberOfLines, &
                                          STAT = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ConstructBasin - ModuleBasin - ERR05'
-#endif _SEWERGEMSENGINECOUPLER_ 
+            
             if (MonitorPerformance) call StopWatch ("ModuleBasin", "ConstructGridData")
             !Constructs BasinGeometry
             call ConstructBasinGeometry (Me%ObjBasinGeometry, Me%ObjGridData,            &
