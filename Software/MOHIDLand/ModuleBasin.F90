@@ -2162,18 +2162,24 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
 
         !Local-----------------------------------------------------------------
         integer                                       :: i, j
+        LOGICAL                                       :: VegGrowthStageBlockFound
         
         allocate(Me%SCSCNRunOffModel%InfRate%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         call SetMatrixValue(Me%SCSCNRunOffModel%InfRate%Field, Me%Size, FillValueReal)
         
-#ifndef _SEWERGEMSENGINECOUPLER_
-        allocate(Me%SCSCNRunOffModel%VegGrowthStage%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        call SetMatrixValue(Me%SCSCNRunOffModel%VegGrowthStage%Field, Me%Size, FillValueReal)
+        VegGrowthStageBlockFound = SearchBlockInFile(Me%SCSCNRunOffModel%VegGrowthStage, "VegGrowthStage",  &
+                                       "<BeginVegGrowthStage>", "<EndVegGrowthStage>")
+        if (VegGrowthStageBlockFound) then
+            
+            allocate(Me%SCSCNRunOffModel%VegGrowthStage%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            call SetMatrixValue(Me%SCSCNRunOffModel%VegGrowthStage%Field, Me%Size, FillValueReal)
 
-        call ConstructOneProperty (Me%SCSCNRunOffModel%VegGrowthStage, "VegGrowthStage",  &
-                                   "<BeginVegGrowthStage>", "<EndVegGrowthStage>")
-#endif _SEWERGEMSENGINECOUPLER_ 
-
+            call ConstructOneProperty (Me%SCSCNRunOffModel%VegGrowthStage, "VegGrowthStage",  &
+                                       "<BeginVegGrowthStage>", "<EndVegGrowthStage>")
+        else
+            write(*,*) "Module Basin : VegGrowthStage block not found. Assuming default value of 2.0 (growing vegetation)."
+        endif
+        
         
         allocate(Me%SCSCNRunOffModel%ImpFrac%Field (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))              
         call SetMatrixValue(Me%SCSCNRunOffModel%ImpFrac%Field, Me%Size, FillValueReal)
@@ -2319,6 +2325,42 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
         if (STAT_CALL /= SUCCESS_) stop 'ConstructOneProperty - ModuleBasin - ERR06'
 
     end subroutine ConstructOneProperty
+
+    !--------------------------------------------------------------------------
+    
+    logical function SearchBlockInFile (NewProperty, PropertyName, BlockBegin, BlockEnd)
+    
+        !Arguments-------------------------------------------------------------
+        type (T_PropertyB)                          :: NewProperty
+        character(Len=*)                            :: PropertyName, BlockBegin, BlockEnd
+        logical                                     :: FoundBlock
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: ClientNumber
+        logical                                     :: BlockFound
+        integer                                     :: FirstLine, LastLine
+        integer                                     :: STAT_CALL
+
+        call RewindBuffer(Me%ObjEnterData, STAT = STAT_CALL)       
+        if (STAT_CALL /= SUCCESS_) stop 'SearchBlockInFile - ModuleBasin - ERR01'
+        
+        call ExtractBlockFromBuffer(Me%ObjEnterData, ClientNumber,                   &
+                                    BlockBegin, BlockEnd, BlockFound,                &
+                                    FirstLine, LastLine, STAT = STAT_CALL) 
+                                    
+        if (STAT_CALL /= SUCCESS_) then
+            write(*,*)BlockBegin, BlockEnd
+            write(*,*)BlockFound
+            write(*,*)STAT_CALL
+            stop 'SearchBlockInFile - ModuleBasin - ERR02'
+        endif
+        
+        SearchBlockInFile = BlockFound
+        
+        call Block_Unlock(Me%ObjEnterData, ClientNumber, STAT = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_) stop 'SearchBlockInFile - ModuleBasin - ERR03'
+
+    end function SearchBlockInFile
 
     !--------------------------------------------------------------------------
 
