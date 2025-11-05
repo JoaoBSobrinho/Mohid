@@ -5199,16 +5199,18 @@ cd0:    if (Exist) then
             endif
         endif
         
-        !First, lets deal with concentrated Rain if needed. Returns modified PrecipitationFlux if concentrate Rain is true
-        call ConcentrateRain(PrecipitationFlux, CurrentFluxPtr)
-        
-        !Now BasinWaterBalance
-        if (IsPresent) then
-            call ComputeRainWaterBalance_WithIrrigation(CurrentFluxPtr, Irri)
-        else
-            call ComputeRainWaterBalance(CurrentFluxPtr)
+        if (Me%ConcentrateRain .OR. IsPresent) then
+            call SetMatrixValue(Me%CurrentPrecipitationFlux, Me%Size, PrecipitationFlux)
         endif
         
+        !First, lets deal with concentrated Rain if needed. Returns modified PrecipitationFlux if concentrate Rain is true
+        call ConcentrateRain(PrecipitationFlux)
+        
+        !Now BasinWaterBalance
+        call ComputeWaterBalance(IsPresent, Irri, PrecipitationFlux)
+        
+        !Now deal with irrigation if present
+        call IntegrateIrrigationAndPrecipitation_CG (IsPresent, Irri, PrecipitationFlux)
         
             
         if (Me%NumberOftimeSeries > 0 .or. NeedsOutput) then
@@ -5406,10 +5408,9 @@ cd0:    if (Exist) then
 #endif _SEWERGEMSENGINECOUPLER_
     !--------------------------------------------------------------------------
 
-    subroutine ConcentrateRain (PrecipitationFlux, CurrentFluxPtr)
+    subroutine ConcentrateRain (PrecipitationFlux)
     !Arguments-------------------------------------------------------------
     real, dimension(:, :), pointer, intent(in)      :: PrecipitationFlux
-    real, dimension(:, :), pointer, intent(out)     :: CurrentFluxPtr
     !Local-----------------------------------------------------------------
     
     !Begin-----------------------------------------------------------------
@@ -5418,7 +5419,6 @@ cd0:    if (Exist) then
     !Only do this if DT is already shorten by DTDuringRain variable.
 
     if (Me%ConcentrateRain) then
-        call SetMatrixValue(Me%CurrentPrecipitationFlux, Me%Size, PrecipitationFlux)
         
         if (Me%CurrentDT <= Me%DTDuringRain) then
         
@@ -5449,7 +5449,7 @@ cd0:    if (Exist) then
                         !At the beginning there is no rain
                         if (SecondsPassed < Me%RainStartTime(i, j)) then
                     
-                            CurrentFlux         = 0.0
+                            Me%CurrentPrecipitationFlux(i, j)         = 0.0
                 
                         !Rain during the RainDuration
                         elseif (SecondsPassed >= Me%RainStartTime(i, j) .and. &
@@ -5457,73 +5457,286 @@ cd0:    if (Exist) then
                         
                             !CurrentFlux
                             !m3/s               = m3/s                    * s      / s
-                            CurrentFlux         = PrecipitationFlux(i, j) * 3600.0 / Me%RainDuration(i, j)
+                            Me%CurrentPrecipitationFlux(i, j) = PrecipitationFlux(i, j) * 3600.0 / Me%RainDuration(i, j)
                         
                         else
                     
                             !Sets flux so total rain in hour will be correct
                             !m3/s               =   (m3/s * s - m3) / s
-                            CurrentFlux         =  (PrecipitationFlux(i, j) * 3600. - Me%AccRainHour(i, j)) / &
+                            Me%CurrentPrecipitationFlux(i, j)         =  (PrecipitationFlux(i, j) * 3600. - Me%AccRainHour(i, j)) / &
                                                     Me%CurrentDT
                         endif
                     
                         !Accumalted during period
                         !m3                 = m3                   + m3/s * s
-                        Me%AccRainHour(i, j)= Me%AccRainHour(i, j) + CurrentFlux * Me%CurrentDT
+                        Me%AccRainHour(i, j)= Me%AccRainHour(i, j) + Me%CurrentPrecipitationFlux(i, j) * Me%CurrentDT
                     endif
                 enddo
                 enddo
             endif
         endif
-        CurrentFluxPtr => Me%CurrentPrecipitationFlux
-    else
-        CurrentFluxPtr => PrecipitationFlux
     endif
         
     end subroutine ConcentrateRain
 
     !--------------------------------------------------------------------------
     
-    subroutine ComputeRainWaterBalance_WithIrrigation(CurrentFlux, IrrigationFlux)
+    subroutine ComputeWaterBalance(IsPresent, IrrigationFlux)
     !Arguments-------------------------------------------------------------
-    real, dimension(:, :), pointer, intent(in) :: CurrentFlux
     real, dimension(:, :), pointer, intent(in) :: IrrigationFlux
+    logical, intent(IN)                        :: IsPresent
+    !Local-----------------------------------------------------------------
+    real, dimension(:, :), pointer, intent(in) :: CurrentFlux
     !Begin-----------------------------------------------------------------
     if (Me%ComputeBasinWaterBalance) then
+        
+        if (Me%ConcentrateRain) then
+            CurrentFlux => Me%CurrentPrecipitationFlux
+        else
+            CurrentFlux => PrecipitationFlux
+        endif
         
         do j = Me%WorkSize%JLB, Me%WorkSize%JUB
         do i = Me%WorkSize%ILB, Me%WorkSize%IUB
             if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
                     
                 !    m3     =     m3      +     m3/s    *      s
-                Me%BWB%Rain = Me%BWB%Rain + CurrentFlux * Me%CurrentDT 
-                    
+                Me%BWB%Rain = Me%BWB%Rain + CurrentFlux(i,j) * Me%CurrentDT 
+                
+                if (IsPresent) then
                     !      m3         =         m3        +    m3/s    *      s
-                Me%BWB%Irrigation = Me%BWB%Irrigation + IrrigationFlux(i, j) * Me%CurrentDT
+                    Me%BWB%Irrigation = Me%BWB%Irrigation + IrrigationFlux(i, j) * Me%CurrentDT
+                endif
             endif   
         enddo
         enddo
     endif 
     
-    end subroutine ComputeRainWaterBalance_WithIrrigation
+    end subroutine ComputeWaterBalance
+    
+    !---------------------------------------------------------------------------
+    subroutine IntegrateIrrigationAndPrecipitation_CG(IsPresent, IrrigationFlux, PrecipitationFlux)
+    !Arguments-------------------------------------------------------------
+    real, dimension(:, :), pointer, intent(in) :: IrrigationFlux, PrecipitationFlux
+    logical, intent(IN)                        :: IsPresent
+    !Local-----------------------------------------------------------------
+    real, dimension(:, :), pointer)            :: CurrentFlux
+    !Begin-----------------------------------------------------------------
+        
+    if (IsPresent) then
+        CurrentFlux => Me%CurrentPrecipitationFlux
+    else
+        CurrentFlux => PrecipitationFlux
+    endif
+    
+    if (Me%Integration%Integrate) then
+        if (Me%Integration%IntegratePrecipitation .and. Me%Integration%IntegrateIrrigation .and. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    
+                    !mm                                = mm                                 + (m3/s * s / m2 * mm/m  )
+                    Me%Integration%Precipitation (i,j) = Me%Integration%Precipitation (i,j) + &
+                                                            (PrecipitationFlux(i,j) * Me%CurrentDT / Me%GridCellArea * &
+                                                            1000.0)
+                    
+                    !mm                             = mm                              + (m3/s * s / m3 * mm/m  )
+                    Me%Integration%Irrigation (i,j) = Me%Integration%Irrigation (i,j) + &
+                                                        (IrrigationFlux(i, j) * Me%CurrentDT / Me%GridCellArea * 1000.0)
+                    
+                    CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (Me%Integration%IntegratePrecipitation .and. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    !mm                                = mm                                 + (m3/s * s / m2 * mm/m  )
+                    Me%Integration%Precipitation (i,j) = Me%Integration%Precipitation (i,j) + &
+                                                         (PrecipitationFlux(i,j) * Me%CurrentDT / Me%GridCellArea * &
+                                                         1000.0)
+                    
+                    CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (Me%Integration%IntegratePrecipitation .and. .not. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    !mm                                = mm                                 + (m3/s * s / m2 * mm/m  )
+                    Me%Integration%Precipitation (i,j) = Me%Integration%Precipitation (i,j) + &
+                                                            (PrecipitationFlux(i,j) * Me%CurrentDT / Me%GridCellArea * &
+                                                            1000.0)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (.NOT. Me%Integration%IntegratePrecipitation .and. Me%Integration%IntegrateIrrigation .and. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    !mm                             = mm                              + (m3/s * s / m3 * mm/m  )
+                    Me%Integration%Irrigation (i,j) = Me%Integration%Irrigation (i,j) + &
+                                                        (IrrigationFlux(i, j) * Me%CurrentDT / Me%GridCellArea * 1000.0)
+                    
+                    CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (IsPresent) then
+            
+            call UpdateCurrentFluxWithIrrigation (CurrentFlux, IrrigationFlux)
+            
+        endif
+         
+    elseif (IsPresent) then
+       
+        call UpdateCurrentFluxWithIrrigation (CurrentFlux, IrrigationFlux)
+        
+    endif
+    
+    end subroutine IntegrateIrrigationAndPrecipitation_CG
+
     !--------------------------------------------------------------------------
     
-    subroutine ComputeRainWaterBalance(CurrentFlux)
+    subroutine IntegrateIrrigationAndPrecipitation_VG(IsPresent, IrrigationFlux, PrecipitationFlux)
     !Arguments-------------------------------------------------------------
-    real, dimension(:, :), pointer, intent(in) :: CurrentFlux
+    real, dimension(:, :), pointer, intent(in) :: IrrigationFlux, PrecipitationFlux
+    logical, intent(IN)                        :: IsPresent
+    !Local-----------------------------------------------------------------
+    real, dimension(:, :), pointer)            :: CurrentFlux
+    integer                                    :: i, j
     !Begin-----------------------------------------------------------------
-    if (Me%ComputeBasinWaterBalance) then
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then 
-                !    m3     =     m3      +     m3/s    *      s
-                Me%BWB%Rain = Me%BWB%Rain + CurrentFlux * Me%CurrentDT 
-            endif   
-        enddo
-        enddo
-    endif 
+        
+    if (IsPresent) then
+        CurrentFlux => Me%CurrentPrecipitationFlux
+    else
+        CurrentFlux => PrecipitationFlux
+    endif
     
-    end subroutine ComputeRainWaterBalance
+    if (Me%Integration%Integrate) then
+        if (Me%Integration%IntegratePrecipitation .and. Me%Integration%IntegrateIrrigation .and. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    
+                    !mm                                = mm                                 + (m3/s * s / m2 * mm/m  )
+                    Me%Integration%Precipitation (i,j) = Me%Integration%Precipitation (i,j) + &
+                                                            (PrecipitationFlux(i,j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j) * &
+                                                            1000.0)
+                    
+                    !mm                             = mm                              + (m3/s * s / m3 * mm/m  )
+                    Me%Integration%Irrigation (i,j) = Me%Integration%Irrigation (i,j) + &
+                                                        (IrrigationFlux(i, j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j) * 1000.0)
+                    
+                    CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (Me%Integration%IntegratePrecipitation .and. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    !mm                                = mm                                 + (m3/s * s / m2 * mm/m  )
+                    Me%Integration%Precipitation (i,j) = Me%Integration%Precipitation (i,j) + &
+                                                         (PrecipitationFlux(i,j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j) * &
+                                                         1000.0)
+                    
+                    CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (Me%Integration%IntegratePrecipitation .and. .not. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    !mm                                = mm                                 + (m3/s * s / m2 * mm/m  )
+                    Me%Integration%Precipitation (i,j) = Me%Integration%Precipitation (i,j) + &
+                                                            (PrecipitationFlux(i,j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j) * &
+                                                            1000.0)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (.NOT. Me%Integration%IntegratePrecipitation .and. Me%Integration%IntegrateIrrigation .and. IsPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    !mm                             = mm                              + (m3/s * s / m3 * mm/m  )
+                    Me%Integration%Irrigation (i,j) = Me%Integration%Irrigation (i,j) + &
+                                                        (IrrigationFlux(i, j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j) * 1000.0)
+                    
+                    CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        elseif (IsPresent) then
+            
+            call UpdateCurrentFluxWithIrrigation (CurrentFlux, IrrigationFlux)
+
+        endif
+         
+    elseif (IsPresent) then
+       
+        call UpdateCurrentFluxWithIrrigation (CurrentFlux, IrrigationFlux)
+        
+    endif
+    
+    end subroutine IntegrateIrrigationAndPrecipitation_VG
+
+    !--------------------------------------------------------------------------
+    
+    subroutine UpdateCurrentFluxWithIrrigation (CurrentFlux, IrrigationFlux)
+    !Arguments-------------------------------------------------------------
+    real, dimension(:, :), pointer), intent(inout)   :: CurrentFlux
+    real, dimension(:, :), pointer), intent(in)      :: IrrigationFlux
+    !Local-----------------------------------------------------------------
+    integer                                          :: i, j
+    !Begin----------------------------------------------------------------- 
+    !$OMP PARALLEL PRIVATE(I,J)
+    !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+    do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+    do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+        if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+            CurrentFlux(i, j) = CurrentFlux(i, j) + IrrigationFlux(i, j)
+        endif   
+    enddo
+    enddo
+    !$OMP END DO
+    !$OMP END PARALLEL
+    end subroutine UpdateCurrentFluxWithIrrigation
     !--------------------------------------------------------------------------
     
     subroutine InitiateGlobalMassVars
