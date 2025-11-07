@@ -5019,22 +5019,66 @@ cd0:    if (Exist) then
 #endif _SEWERGEMSENGINECOUPLER_   
  
 !--------------------------------------------------------------------------------------------------
- 
-#ifdef _SEWERGEMSENGINECOUPLER_
-    subroutine DividePrecipitation (PrecipitationFlux)
+    
+    subroutine DividePrecipitation (PrecipitationFlux, IrrigationFlux)
 
         !Arguments-------------------------------------------------------------
-        real, dimension(:, :), pointer                       :: PrecipitationFlux
+        real, dimension(:, :), pointer                      :: PrecipitationFlux
+        real, dimension(:, :), pointer                      :: IrrigationFlux
         !Local-----------------------------------------------------------------     
-        integer                                     :: STAT_CALL
+        integer                                             :: STAT_CALL
+        logical                                             :: IsIrrigationPresent
         !Begin-----------------------------------------------------------------
         
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation")
         
-        if (Me%GridIsConstant) then
-            call DividePrecipitation_CG(PrecipitationFlux)
+        if (present(IrrigationFlux)) then
+            Irri => IrrigationFlux
+            IsIrrigationPresent = .true.
         else
-            call DividePrecipitation_VG(PrecipitationFlux)
+            Irri => null()
+            IsIrrigationPresent = .false.    
+        endif
+        
+        !Now start global mass balance
+        call InitiateGlobalMassVars
+        
+        if (Me%NumberOftimeSeries > 0.or. Me%Output%Yes) then
+            NeedsOutput = .true.
+        endif
+        
+        if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+            call SetMatrixValue(Me%CurrentPrecipitationFlux, Me%Size, PrecipitationFlux)
+        endif
+        
+        !First, lets deal with concentrated Rain if needed. Returns modified PrecipitationFlux if concentrate Rain is true
+        call ConcentrateRain(PrecipitationFlux)
+        
+        !Now BasinWaterBalance
+        call ComputeWaterBalance(IsIrrigationPresent, Irri, PrecipitationFlux)
+        
+        if (Me%GridIsConstant) then
+            !Now deal with irrigation if present
+            call IntegrateIrrigationAndPrecipitation_CG (IsIrrigationPresent, Irri, PrecipitationFlux)
+            
+            !update precipitation fluxes as function or not of vegetation
+            call DividePrecipitation_CG(PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+            
+            !Update mass balances and global mass
+            if (Me%VerifyGlobalMass) then
+                call VerifyGlobalMass_CG(IsIrrigationPresent, PrecipitationFlux)
+            endif
+            
+        else
+            !Now deal with irrigation if present
+            call IntegrateIrrigationAndPrecipitation_VG (IsIrrigationPresent, Irri, PrecipitationFlux)
+            
+            call DividePrecipitation_VG(PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+            
+            !Update mass balances and global mass
+            if (Me%VerifyGlobalMass) then
+                call VerifyGlobalMass_VG(IsIrrigationPresent, PrecipitationFlux)
+            endif
         endif
         
         if (Me%ActiveRain) then
@@ -5162,142 +5206,20 @@ cd0:    if (Exist) then
     
     !--------------------------------------------------------------------------------------------------
     
-    subroutine DividePrecipitation_CG (PrecipitationFlux, IrrigationFlux)
+    subroutine DividePrecipitation_CG (PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
 
         !Arguments-------------------------------------------------------------
         real, dimension(:, :), pointer                       :: PrecipitationFlux
-        real, dimension(:, :), pointer, optional, intent(IN) :: IrrigationFlux
+        logical, intent(in)                                  :: NeedsOutput, IsIrrigationPresent
         !Local-----------------------------------------------------------------     
-        integer                                     :: i, j
-        real                                        :: GrossPrecipitation, CurrentFlux, AccumulatedRainfall
-        real                                        :: aux1, aux2, aux3
-        integer                                     :: Sum
-        logical                                     :: NeedsOutput
-        real, dimension(:, :), pointer              :: CurrentFluxPtr
-        real, dimension(:, :), pointer              :: Irri
-        logical                                     :: IsPresent  
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_CG")
         
-        Sum = 0
-        AccumulatedRainfall = 0.0
-        
-        if (present(IrrigationFlux)) then
-            Irri => IrrigationFlux
-            IsPresent = .true.
+        !Now call different methods if veg is on or off
+        if (Me%Coupled%Vegetation) then
+            call DividePrecipitationWithVeg_CG(PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
         else
-            Irri => null()
-            IsPresent = .false.    
-        endif
-        
-        !Now start global mass balance
-        call InitiateGlobalMassVars
-        
-        if (Me%Output%Yes) then
-            if (Me%CurrentTime >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
-                NeedsOutput = .true.
-            endif
-        endif
-        
-        if (Me%ConcentrateRain .OR. IsPresent) then
-            call SetMatrixValue(Me%CurrentPrecipitationFlux, Me%Size, PrecipitationFlux)
-        endif
-        
-        !First, lets deal with concentrated Rain if needed. Returns modified PrecipitationFlux if concentrate Rain is true
-        call ConcentrateRain(PrecipitationFlux)
-        
-        !Now BasinWaterBalance
-        call ComputeWaterBalance(IsPresent, Irri, PrecipitationFlux)
-        
-        !Now deal with irrigation if present
-        call IntegrateIrrigationAndPrecipitation_CG (IsPresent, Irri, PrecipitationFlux)
-        
-            
-        if (Me%NumberOftimeSeries > 0 .or. NeedsOutput) then
-            
-            aux1 = Me%CurrentDT / Me%GridCellArea
-            aux2 = 3600000.0 / Me%GridCellArea
-            aux3 = 3600000.0 / Me%CurrentDT
-        
-            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
-
-                    CurrentFlux = PrecipitationFlux(i, j)
-                    Me%CellHasRain(i,j) = 0
-                    if (CurrentFlux > 0.0) then
-                        Sum = Sum + 1
-                        !Precipitation Rate for (output only)
-                        !mm/ hour            m3/s                    / m2     * 1000 mm/m * 3600 s/h
-                        !Me%PrecipRate  (i,j) = CurrentFlux / Me%GridCellArea * 3600000.0
-                        Me%PrecipRate  (i,j) = CurrentFlux * aux2
-
-                        !Gross Rain 
-                        !m                 = m3/s        * s / m2
-                        GrossPrecipitation = CurrentFlux * aux1
-                        !Accumulated rainfall
-                        !m
-                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
-                    
-                        !mm/ hour                   m                       s         1000mm/m   *  3600s/h
-                        Me%ThroughRate(i, j) = GrossPrecipitation * aux3
-                    
-                        ! For now uncovered rain is total. it will be changed ir there are leafs
-                        Me%ThroughFall(i, j)    = GrossPrecipitation
-                    
-                        Me%CellHasRain(i,j) = 1
-                    endif
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-            if (Sum > 0) then
-                Me%ActiveRain = .true.
-            else
-                Me%ActiveRain = .false.
-            endif
-        else
-            aux1 = Me%CurrentDT / Me%GridCellArea
-            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, AccumulatedRainfall)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
-
-                    CurrentFlux = PrecipitationFlux(i, j)
-                    Me%CellHasRain(i,j) = 0
-                    if (CurrentFlux > 0.0) then
-
-                        Sum = Sum + 1
-                        !Gross Rain 
-                        !m                 = m3/s                    * s            /  m2
-                        !GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%GridCellArea
-                        GrossPrecipitation = CurrentFlux * aux1
-                        !Accumulated rainfall
-                        !m
-                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation * Me%GridCellArea
-                    
-                        ! For now uncovered rain is total. it will be changed ir there are leafs
-                        Me%ThroughFall(i, j)    = GrossPrecipitation
-                    
-                        Me%CellHasRain(i,j) = 1
-                    endif
-                endif
-            enddo
-            enddo
-            !$OMP END DO
-            !$OMP END PARALLEL
-            if (Sum > 0) then
-                Me%ActiveRain = .true.
-            else
-                Me%ActiveRain = .false.
-            endif
-            
-            Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
-            
+            call DividePrecipitationWithoutVeg_CG(PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
         endif
 
         if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_CG")
@@ -5306,49 +5228,381 @@ cd0:    if (Exist) then
     
     !--------------------------------------------------------------------------------------------------
     
-    subroutine DividePrecipitation_VG (PrecipitationFlux)
+    subroutine DividePrecipitation_VG (PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
 
         !Arguments-------------------------------------------------------------
         real, dimension(:, :), pointer                       :: PrecipitationFlux
-
-        !Local-----------------------------------------------------------------     
-        integer                                     :: i, j
-        real                                        :: GrossPrecipitation, CurrentFlux, Sum
-        real                                        :: aux3
-        logical                                     :: NeedsOutput
-        real(8)                                     :: AccumulatedRainfall
+        logical, intent(in)                                  :: NeedsOutput, IsIrrigationPresent
+        !Local-----------------------------------------------------------------
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitation_VG")
         
+        !Now call different methods if veg is on or off
+        if (Me%Coupled%Vegetation) then
+            call DividePrecipitationWithVeg_VG(PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+        else
+            call DividePrecipitationWithoutVeg_VG(PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+        endif
+
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_VG")
+
+    end subroutine DividePrecipitation_VG
+    
+    !--------------------------------------------------------------------------------------------------
+    
+    subroutine DividePrecipitationWithVeg_CG (PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+
+        !Arguments-------------------------------------------------------------
+        real, dimension(:, :), pointer                       :: PrecipitationFlux
+        logical, intent(in)                                  :: NeedsOutput, IsIrrigationPresent
+        !Local-----------------------------------------------------------------     
+        integer                                     :: i, j
+        real                                        :: GrossPrecipitation, AccumulatedRainfall, NewVolumeOnLeafs, OldVolumeOnLeafs
+        real                                        :: aux1, aux2, aux3, IniStoredInLeaves, FinStoredInLeaves
+        integer                                     :: Sum
+        real, dimension(:, :), pointer              :: CurrentFluxPtr
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitationWithVeg_CG")
+        
+        Sum = 0
+        AccumulatedRainfall = 0.0
+        IniStoredInLeaves = 0.0
+        FinStoredInLeaves = 0.0
+        
+        if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+            CurrentFluxPtr => Me%CurrentPrecipitationFlux
+        else
+            CurrentFluxPtr => PrecipitationFlux
+        endif
+            
+        aux1 = Me%CurrentDT / Me%GridCellArea
+        aux2 = 3600000.0 / Me%GridCellArea
+        aux3 = 3600000.0 / Me%CurrentDT
+        
+        !$OMP PARALLEL PRIVATE(I,J,GrossPrecipitation, OldVolumeOnLeafs, NewVolumeOnLeafs)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, IniStoredInLeaves, FinStoredInLeaves)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+
+                Me%CellHasRain(i,j) = 0
+                if (CurrentFluxPtr(i, j) /= 0.0) then
+                    Sum = Sum + 1
+                    !Precipitation Rate for (output only)
+                    !mm/ hour            m3/s                    / m2     * 1000 mm/m * 3600 s/h
+                    !Me%PrecipRate  (i,j) = CurrentFlux / Me%GridCellArea * 3600000.0
+                    Me%PrecipRate  (i,j) = CurrentFluxPtr(i, j) * aux2
+
+                    !Gross Rain 
+                    !m                 = m3/s        * s / m2
+                    GrossPrecipitation = CurrentFluxPtr(i, j) * aux1
+                    !Accumulated rainfall
+                    !m
+                    if (NeedsOutput) then
+                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                    else
+                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation
+                    endif
+                    !Vegetation influence
+                    Me%CoveredFractionOld(i,j) = Me%CoveredFraction(i, j)
+                    
+                    !Volume on Leaf (before leaf grow)
+                    !m3 = m * m2plant
+                    OldVolumeOnLeafs = Me%CanopyStorage(i, j) * Me%GridCellArea * Me%CoveredFraction(i, j)
+                    
+                    !Calculates Covered Fraction
+                    Me%CoveredFraction(i, j) = 1.0 - exp(-Me%ExtinctionCoef * Me%ExtVar%LeafAreaIndex(i, j))
+                    
+                    !Recalculates Canopy Storage Capacity (for the case that LAI is variable in time)
+                    !mH20 = m3H20/m2leaf * m2leaf/m2soil
+                    Me%CanopyStorageCapacity(i, j) = Me%ExtVar%SpecificLeafStorage(i, j) * Me%ExtVar%LeafAreaIndex(i, j)
+                    
+                    !Precipitations heights - heights are the same as gross (area different and volume different).
+                    !height * (areacov + areauncov) = same volume as gross volume
+                    !m         
+                    Me%RainUncovered(i, j)    = GrossPrecipitation 
+                    Me%RainCovered(i, j)      = GrossPrecipitation 
+                    
+                    !Throughfall on uncovered area - has to be transformed in height in total area
+                    !m = (m * m2plant)/m2cell
+                    Me%ThroughFall(i, j)      = Me%RainUncovered(i, j) * (1.0 - Me%CoveredFraction(i, j))               &
+                                                * Me%GridCellArea / Me%GridCellArea
+                    
+                    !New volumes on leafs is the old volume plus the gross rain on the covered fraction of the cell
+                    !m3 = m3 + (m*m2plant)
+                    NewVolumeOnLeafs = OldVolumeOnLeafs + Me%RainCovered(i, j) * Me%GridCellArea           &
+                                        * Me%CoveredFraction(i, j)
+                    
+                    Me%CanopyStorageOld(i,j) = Me%CanopyStorage(i, j)
+                    
+                    !If LAI exists plant can drip from leafs
+                    if (Me%CoveredFraction(i, j) > 0.0) then
+                        
+                        !m = m3 / m2plant
+                        Me%CanopyStorage(i, j) = NewVolumeOnLeafs / (Me%CoveredFraction(i, j) * Me%GridCellArea)
+                        
+                        !Calculates CanopyDrainage so that CanopyStorage as maximum is full
+                        if (Me%CanopyStorage(i, j) > Me%CanopyStorageCapacity(i, j)) then
+                            !Canopy drainage is height in terms of cell area and not in terms of plant area
+                            !m = (m * m2plant) / m2cell
+                            Me%CanopyDrainage(i,j) = ((Me%CanopyStorage(i, j) - Me%CanopyStorageCapacity(i, j))               &
+                                                        * (Me%CoveredFraction(i, j) * Me%GridCellArea))            &
+                                                        / Me%GridCellArea
+                            Me%CanopyStorage(i, j) = Me%CanopyStorageCapacity(i, j)
+                        else
+                            Me%CanopyDrainage(i,j) = 0.0
+                        endif
+                        
+                    else !plant may drip if this was the instant that lost the leafs (old volume not zero)
+                        
+                        !m = m3 / m2cell - water equally distributed because leafs disappeared
+                        Me%CanopyDrainage(i,j)     = NewVolumeOnLeafs / Me%GridCellArea
+!                        Me%ThroughFall  (i, j)     = Me%ThroughFall(i, j) + Me%CanopyDrainage(i,j)
+                        Me%CanopyStorage(i, j)     = 0.0
+                    endif
+                    
+                    if (Me%ComputeBasinWaterBalance) then
+                        !m3 = m3
+                        IniStoredInLeaves = IniStoredInLeaves + OldVolumeOnLeafs
+                        !The amount of water on leaves can change if there is evaporation from leaves.
+                        !In this case, the value in StoredInLeaves must be updated.
+                        !The new value will be the actual value calculated here minus the total evaporated from leaves.
+                        ! m3 = m3 + m * m2
+                        FinStoredInLeaves = FinStoredInLeaves + Me%CanopyStorage(i, j) * Me%GridCellArea
+                    endif
+
+                    !Adds Canopy drainage to Throughfall - both have the same area associated (cell area)
+                    !m
+                    Me%ThroughFall(i, j)   = Me%ThroughFall(i, j) + Me%CanopyDrainage(i,j) 
+                        
+                    if (Me%NumberOftimeSeries > 0) then
+                        !mm/ hour                   m                       s         1000mm/m   *  3600s/h
+                        Me%ThroughRate(i, j) = GrossPrecipitation * aux3
+                    endif
+                    
+                    Me%CellHasRain(i,j) = 1
+                endif
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        if (Sum > 0) then
+            Me%ActiveRain = .true.
+        else
+            Me%ActiveRain = .false.
+        endif
+        
+        if (Me%ComputeBasinWaterBalance) then
+            Me%BWB%IniStoredInLeaves = IniStoredInLeaves
+            Me%BWB%FinStoredInLeaves = FinStoredInLeaves
+        endif
+        Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
+            
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitationWithVeg_CG")
+
+    end subroutine DividePrecipitationWithVeg_CG
+    
+    !--------------------------------------------------------------------------------------------------
+    
+    subroutine DividePrecipitationWithVeg_VG (PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+
+        !Arguments-------------------------------------------------------------
+        real, dimension(:, :), pointer                       :: PrecipitationFlux
+        logical, intent(in)                                  :: NeedsOutput, IsIrrigationPresent
+        !Local-----------------------------------------------------------------     
+        integer                                     :: i, j
+        real                                        :: GrossPrecipitation, AccumulatedRainfall, NewVolumeOnLeafs, OldVolumeOnLeafs
+        real                                        :: aux1, aux2, aux3, IniStoredInLeaves, FinStoredInLeaves
+        integer                                     :: Sum
+        real, dimension(:, :), pointer              :: CurrentFluxPtr
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitationWithVeg_VG")
+        
+        Sum = 0
+        AccumulatedRainfall = 0.0
+        IniStoredInLeaves = 0.0
+        FinStoredInLeaves = 0.0
+        
+        if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+            CurrentFluxPtr => Me%CurrentPrecipitationFlux
+        else
+            CurrentFluxPtr => PrecipitationFlux
+        endif
+        aux1 = 3600000.0 / Me%CurrentDT
+        !$OMP PARALLEL PRIVATE(I,J,GrossPrecipitation, OldVolumeOnLeafs, NewVolumeOnLeafs)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, IniStoredInLeaves, FinStoredInLeaves)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+
+                Me%CellHasRain(i,j) = 0
+                if (CurrentFluxPtr(i, j) /= 0.0) then
+                    Sum = Sum + 1
+                    !Precipitation Rate for (output only)
+                    !mm/ hour            m3/s                    / m2     * 1000 mm/m * 3600 s/h
+                    !Me%PrecipRate  (i,j) = CurrentFlux / Me%GridCellArea * 3600000.0
+                    Me%PrecipRate  (i,j) = CurrentFluxPtr(i, j) * 3600000.0 / Me%ExtVar%GridCellArea(i, j)
+
+                    !Gross Rain 
+                    !m                 = m3/s        * s / m2
+                    GrossPrecipitation = CurrentFluxPtr(i, j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                    !Accumulated rainfall
+                    !m
+                    if (NeedsOutput) then
+                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                    else
+                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation
+                    endif
+                    !Vegetation influence
+                    Me%CoveredFractionOld(i,j) = Me%CoveredFraction(i, j)
+                    
+                    !Volume on Leaf (before leaf grow)
+                    !m3 = m * m2plant
+                    OldVolumeOnLeafs = Me%CanopyStorage(i, j) * Me%ExtVar%GridCellArea(i, j) * Me%CoveredFraction(i, j)
+                    
+                    !Calculates Covered Fraction
+                    Me%CoveredFraction(i, j) = 1.0 - exp(-Me%ExtinctionCoef * Me%ExtVar%LeafAreaIndex(i, j))
+                    
+                    !Recalculates Canopy Storage Capacity (for the case that LAI is variable in time)
+                    !mH20 = m3H20/m2leaf * m2leaf/m2soil
+                    Me%CanopyStorageCapacity(i, j) = Me%ExtVar%SpecificLeafStorage(i, j) * Me%ExtVar%LeafAreaIndex(i, j)
+                    
+                    !Precipitations heights - heights are the same as gross (area different and volume different).
+                    !height * (areacov + areauncov) = same volume as gross volume
+                    !m         
+                    Me%RainUncovered(i, j)    = GrossPrecipitation 
+                    Me%RainCovered(i, j)      = GrossPrecipitation 
+                    
+                    !Throughfall on uncovered area - has to be transformed in height in total area
+                    !m = (m * m2plant)/m2cell
+                    Me%ThroughFall(i, j)      = Me%RainUncovered(i, j) * (1.0 - Me%CoveredFraction(i, j))               &
+                                                * Me%ExtVar%GridCellArea(i, j) / Me%ExtVar%GridCellArea(i, j)
+                    
+                    !New volumes on leafs is the old volume plus the gross rain on the covered fraction of the cell
+                    !m3 = m3 + (m*m2plant)
+                    NewVolumeOnLeafs = OldVolumeOnLeafs + Me%RainCovered(i, j) * Me%ExtVar%GridCellArea(i, j)           &
+                                        * Me%CoveredFraction(i, j)
+                    
+                    Me%CanopyStorageOld(i,j) = Me%CanopyStorage(i, j)
+                    
+                    !If LAI exists plant can drip from leafs
+                    if (Me%CoveredFraction(i, j) > 0.0) then
+                        
+                        !m = m3 / m2plant
+                        Me%CanopyStorage(i, j) = NewVolumeOnLeafs / (Me%CoveredFraction(i, j) * Me%ExtVar%GridCellArea(i, j))
+                        
+                        !Calculates CanopyDrainage so that CanopyStorage as maximum is full
+                        if (Me%CanopyStorage(i, j) > Me%CanopyStorageCapacity(i, j)) then
+                            !Canopy drainage is height in terms of cell area and not in terms of plant area
+                            !m = (m * m2plant) / m2cell
+                            Me%CanopyDrainage(i,j) = ((Me%CanopyStorage(i, j) - Me%CanopyStorageCapacity(i, j))               &
+                                                        * (Me%CoveredFraction(i, j) * Me%ExtVar%GridCellArea(i, j)))            &
+                                                        / Me%ExtVar%GridCellArea(i, j)
+                            Me%CanopyStorage(i, j) = Me%CanopyStorageCapacity(i, j)
+                        else
+                            Me%CanopyDrainage(i,j) = 0.0
+                        endif
+                        
+                    else !plant may drip if this was the instant that lost the leafs (old volume not zero)
+                        
+                        !m = m3 / m2cell - water equally distributed because leafs disappeared
+                        Me%CanopyDrainage(i,j)     = NewVolumeOnLeafs / Me%ExtVar%GridCellArea(i, j)
+!                        Me%ThroughFall  (i, j)     = Me%ThroughFall(i, j) + Me%CanopyDrainage(i,j)
+                        Me%CanopyStorage(i, j)     = 0.0
+                    endif
+
+                    if (Me%ComputeBasinWaterBalance) then
+                        !m3 = m3
+                        IniStoredInLeaves = IniStoredInLeaves + OldVolumeOnLeafs
+                        !The amount of water on leaves can change if there is evaporation from leaves.
+                        !In this case, the value in StoredInLeaves must be updated.
+                        !The new value will be the actual value calculated here minus the total evaporated from leaves.
+                        ! m3 = m3 + m * m2
+                        FinStoredInLeaves = FinStoredInLeaves + Me%CanopyStorage(i, j) * Me%ExtVar%GridCellArea(i, j)
+                    endif
+                    
+                    !Adds Canopy drainage to Throughfall - both have the same area associated (cell area)
+                    !m
+                    Me%ThroughFall(i, j)   = Me%ThroughFall(i, j) + Me%CanopyDrainage(i,j) 
+                        
+                    if (Me%NumberOftimeSeries > 0) then
+                        !mm/ hour                   m                       s         1000mm/m   *  3600s/h
+                        Me%ThroughRate(i, j) = GrossPrecipitation * aux1
+                    endif
+                    
+                    Me%CellHasRain(i,j) = 1
+                endif
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        if (Sum > 0) then
+            Me%ActiveRain = .true.
+        else
+            Me%ActiveRain = .false.
+        endif
+            
+        Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
+        
+        if (Me%ComputeBasinWaterBalance) then
+            Me%BWB%IniStoredInLeaves = IniStoredInLeaves
+            Me%BWB%FinStoredInLeaves = FinStoredInLeaves
+        endif
+        
+
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitationWithVeg_VG")
+
+    end subroutine DividePrecipitationWithVeg_VG
+        
+    !--------------------------------------------------------------------------------------------------
+    
+    subroutine DividePrecipitationWithoutVeg_CG (PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+    
+        !Arguments-------------------------------------------------------------
+        real, dimension(:, :), pointer, intent(in)  :: PrecipitationFlux
+        logical, intent(in)                         :: NeedsOutput, IsIrrigationPresent
+        !Local-----------------------------------------------------------------     
+        integer                                     :: i, j
+        real                                        :: GrossPrecipitation, AccumulatedRainfall
+        real                                        :: aux1, aux2, aux3
+        integer                                     :: Sum
+        real, dimension(:, :), pointer              :: CurrentFluxPtr
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitationWithoutVeg_CG")
         Sum = 0
         AccumulatedRainfall = 0.0
         
-        if (Me%Output%Yes) then
-            if (Me%CurrentTime >= Me%OutPut%OutTime(Me%OutPut%NextOutPut)) then
-                NeedsOutput = .true.
-            endif
+        if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+            CurrentFluxPtr => Me%CurrentPrecipitationFlux
+        else
+            CurrentFluxPtr => PrecipitationFlux
         endif
             
-        if (Me%NumberOftimeSeries > 0 .or. NeedsOutput) then
-            aux3 = 3600000.0 / Me%CurrentDT
+        if (NeedsOutput) then
             
-            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
+            aux1 = Me%CurrentDT / Me%GridCellArea
+            aux2 = 3600000.0 / Me%GridCellArea
+            aux3 = 3600000.0 / Me%CurrentDT
+        
+            !$OMP PARALLEL PRIVATE(I,J,GrossPrecipitation)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
-
-                    CurrentFlux = PrecipitationFlux(i, j)
+    
                     Me%CellHasRain(i,j) = 0
-                    if (CurrentFlux > 0.0) then
+                    if (CurrentFluxPtr(i,j) > 0.0) then
                         Sum = Sum + 1
                         !Precipitation Rate for (output only)
-                        !mm/ hour            m3/s                    / m2                 * 1000 mm/m * 3600 s/h
-                        Me%PrecipRate  (i,j) = CurrentFlux / Me%ExtVar%GridCellArea(i, j) * 3600000.0
-
+                        !mm/ hour            m3/s                    / m2     * 1000 mm/m * 3600 s/h
+                        !Me%PrecipRate  (i,j) = CurrentFlux / Me%GridCellArea * 3600000.0
+                        Me%PrecipRate  (i,j) = CurrentFluxPtr(i,j) * aux2
+    
                         !Gross Rain 
-                        !m                 = m3/s                    * s            /  m2
-                        GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                        !m                 = m3/s        * s / m2
+                        GrossPrecipitation = CurrentFluxPtr(i,j) * aux1
                         !Accumulated rainfall
                         !m
                         Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
@@ -5356,7 +5610,6 @@ cd0:    if (Exist) then
                         !mm/ hour                   m                       s         1000mm/m   *  3600s/h
                         Me%ThroughRate(i, j) = GrossPrecipitation * aux3
                     
-                        ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
                     
                         Me%CellHasRain(i,j) = 1
@@ -5366,27 +5619,31 @@ cd0:    if (Exist) then
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
-            
+            if (Sum > 0) then
+                Me%ActiveRain = .true.
+            else
+                Me%ActiveRain = .false.
+            endif
         else
-            
-            !$OMP PARALLEL PRIVATE(I,J,CurrentFlux,GrossPrecipitation)
+            aux1 = Me%CurrentDT / Me%GridCellArea
+            !$OMP PARALLEL PRIVATE(I,J,GrossPrecipitation)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, AccumulatedRainfall)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
                 if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
-
-                    CurrentFlux = PrecipitationFlux(i, j)
+    
                     Me%CellHasRain(i,j) = 0
-                    if (CurrentFlux > 0.0) then
-
+                    if (CurrentFluxPtr(i,j) > 0.0) then
+    
+                        Sum = Sum + 1
                         !Gross Rain 
                         !m                 = m3/s                    * s            /  m2
-                        GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                        !GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%GridCellArea
+                        GrossPrecipitation = CurrentFluxPtr(i,j) * aux1
                         !Accumulated rainfall
                         !m
-                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation * Me%ExtVar%GridCellArea(i, j)
+                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation * Me%GridCellArea
                     
-                        ! For now uncovered rain is total. it will be changed ir there are leafs
                         Me%ThroughFall(i, j)    = GrossPrecipitation
                     
                         Me%CellHasRain(i,j) = 1
@@ -5396,16 +5653,289 @@ cd0:    if (Exist) then
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
+            if (Sum > 0) then
+                Me%ActiveRain = .true.
+            else
+                Me%ActiveRain = .false.
+            endif
             
             Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
-        endif        
-
-        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitation_VG")
-
-    end subroutine DividePrecipitation_VG
+            
+        endif
     
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitationWithoutVeg_CG")
     
-#endif _SEWERGEMSENGINECOUPLER_
+    end subroutine DividePrecipitationWithoutVeg_CG
+
+    !-------------------------------------------------------------------------------------------
+    
+    subroutine DividePrecipitationWithoutVeg_VG (PrecipitationFlux, IsIrrigationPresent, NeedsOutput)
+    
+        !Arguments-------------------------------------------------------------
+        real, dimension(:, :), pointer, intent(in)  :: PrecipitationFlux
+        logical, intent(in)                         :: NeedsOutput, IsIrrigationPresent
+        !Local-----------------------------------------------------------------     
+        integer                                     :: i, j
+        real                                        :: GrossPrecipitation, AccumulatedRainfall
+        real                                        :: aux1
+        integer                                     :: Sum
+        real, dimension(:, :), pointer              :: CurrentFluxPtr
+        !Begin-----------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleBasin", "DividePrecipitationWithoutVeg_VG")
+        Sum = 0
+        AccumulatedRainfall = 0.0
+        
+        if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+            CurrentFluxPtr => Me%CurrentPrecipitationFlux
+        else
+            CurrentFluxPtr => PrecipitationFlux
+        endif
+            
+        if (NeedsOutput) then
+            
+            aux1 = 3600000.0 / Me%CurrentDT
+        
+            !$OMP PARALLEL PRIVATE(I,J,GrossPrecipitation)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+    
+                    Me%CellHasRain(i,j) = 0
+                    if (CurrentFluxPtr(i,j) > 0.0) then
+                        Sum = Sum + 1
+                        !Precipitation Rate for (output only)
+                        !mm/ hour            m3/s                    / m2     * 1000 mm/m * 3600 s/h
+                        !Me%PrecipRate  (i,j) = CurrentFlux / Me%GridCellArea * 3600000.0
+                        Me%PrecipRate  (i,j) = CurrentFluxPtr(i,j) * 3600000.0 / Me%ExtVar%GridCellArea(i, j)
+    
+                        !Gross Rain 
+                        !m                 = m3/s        * s / m2
+                        GrossPrecipitation = CurrentFluxPtr(i,j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                        !Accumulated rainfall
+                        !m
+                        Me%AccRainfall(i, j) = Me%AccRainfall (i, j) + GrossPrecipitation
+                    
+                        !mm/ hour                   m                       s         1000mm/m   *  3600s/h
+                        Me%ThroughRate(i, j) = GrossPrecipitation * aux1
+                    
+                        Me%ThroughFall(i, j)    = GrossPrecipitation
+                    
+                        Me%CellHasRain(i,j) = 1
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+            if (Sum > 0) then
+                Me%ActiveRain = .true.
+            else
+                Me%ActiveRain = .false.
+            endif
+        else
+            
+            !$OMP PARALLEL PRIVATE(I,J,GrossPrecipitation)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : Sum, AccumulatedRainfall)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+    
+                    Me%CellHasRain(i,j) = 0
+                    if (CurrentFluxPtr(i,j) > 0.0) then
+    
+                        Sum = Sum + 1
+                        !Gross Rain 
+                        !m                 = m3/s                    * s            /  m2
+                        !GrossPrecipitation = CurrentFlux * Me%CurrentDT / Me%GridCellArea
+                        GrossPrecipitation = CurrentFluxPtr(i,j) * Me%CurrentDT / Me%ExtVar%GridCellArea(i, j)
+                        !Accumulated rainfall
+                        !m
+                        AccumulatedRainfall = AccumulatedRainfall + GrossPrecipitation * Me%ExtVar%GridCellArea(i, j)
+                    
+                        Me%ThroughFall(i, j)    = GrossPrecipitation
+                    
+                        Me%CellHasRain(i,j) = 1
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+            if (Sum > 0) then
+                Me%ActiveRain = .true.
+            else
+                Me%ActiveRain = .false.
+            endif
+            
+            Me%TotalCumulativeRainfallVolume = Me%TotalCumulativeRainfallVolume + AccumulatedRainfall
+            
+        endif
+    
+        if (MonitorPerformance) call StopWatch ("ModuleBasin", "DividePrecipitationWithoutVeg_VG")
+    
+    end subroutine DividePrecipitationWithoutVeg_VG
+    
+    !--------------------------------------------------------------------------
+    
+    subroutine VerifyGlobalMass_CG (IsIrrigationPresent, PrecipitationFlux)
+    !Arguments-------------------------------------------------------------
+    logical, intent(in)                         :: IsIrrigationPresent
+    real, dimension(:, :), pointer, intent(in)  :: PrecipitationFlux
+    !Locals----------------------------------------------------------------
+    integer                                     :: i, j
+    real                                        :: RainInVeg, DrainageFromVeg, TotalRainIn, RainDirect, RainRunoff
+    real                                        :: AreaFraction
+    !Begin-----------------------------------------------------------------
+    
+    if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+        CurrentFluxPtr => Me%CurrentPrecipitationFlux
+    else
+        CurrentFluxPtr => PrecipitationFlux
+    endif
+    
+    if (Me%Coupled%Vegetation) then
+        RainInVeg = 0.0
+        DrainageFromVeg = 0.0
+        TotalRainIn = 0.0
+        RainDirect = 0.0
+        RainDirect = 0.0
+        RainRunoff = 0.0
+        !$OMP PARALLEL PRIVATE(I,J, AreaFraction)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : RainInVeg, DrainageFromVeg, TotalRainIn, RainDirect, RainRunoff)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                TotalRainIn = TotalRainIn + CurrentFluxPtr(i,j) * Me%CurrentDT
+        
+                !m3 = m3 + (m * m2plant) - rain covered is height in plant area
+                RainInVeg     = RainInVeg + (Me%RainCovered(i, j) * Me%GridCellArea * Me%CoveredFraction(i, j))
+                !m3 = m3 + (m * m2cell) - Canopy drainage is height in cell area                   
+                DrainageFromVeg = DrainageFromVeg + (Me%CanopyDrainage(i,j) * Me%GridCellArea)
+                
+                AreaFraction = 1 - Me%CoveredFraction(i,j)
+                !Rain in uncovered area
+                RainDirect = RainDirect + Me%RainUncovered(i,j) * AreaFraction * Me%GridCellArea
+                !Total rain arriving at the runoff -> uncovered + drainage
+                RainRunoff = RainRunoff + Me%ThroughFall(i, j) * Me%GridCellArea
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+        Me%MB%RainInVeg = RainInVeg
+        Me%MB%DrainageFromVeg = DrainageFromVeg
+    else
+        TotalRainIn = 0.0
+        RainDirect = 0.0
+        RainRunoff = 0.0
+        AreaFraction = 1.0
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : TotalRainIn, RainDirect, RainRunoff)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                TotalRainIn = TotalRainIn + CurrentFluxPtr(i,j) * Me%CurrentDT
+                
+                !Rain in uncovered area
+                RainDirect = RainDirect + Me%RainUncovered(i,j) * AreaFraction * Me%GridCellArea
+                !Total rain arriving at the runoff -> uncovered + drainage
+                RainRunoff = RainRunoff + Me%ThroughFall(i, j) * Me%GridCellArea
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+    endif
+    
+    Me%MB%TotalRainIn = TotalRainIn
+    Me%MB%RainDirect = RainDirect
+    Me%MB%RainRunoff = RainRunoff
+    
+    end subroutine VerifyGlobalMass_CG
+    
+    !--------------------------------------------------------------------------
+    
+    subroutine VerifyGlobalMass_VG (IsIrrigationPresent, PrecipitationFlux)
+    !Arguments-------------------------------------------------------------
+    logical, intent(in)                         :: IsIrrigationPresent
+    real, dimension(:, :), pointer, intent(in)  :: PrecipitationFlux
+    !Locals----------------------------------------------------------------
+    integer                                     :: i, j
+    real                                        :: RainInVeg, DrainageFromVeg, TotalRainIn, RainDirect, RainRunoff
+    real                                        :: AreaFraction
+    !Begin-----------------------------------------------------------------
+    
+    if (Me%ConcentrateRain .OR. IsIrrigationPresent) then
+        CurrentFluxPtr => Me%CurrentPrecipitationFlux
+    else
+        CurrentFluxPtr => PrecipitationFlux
+    endif
+    
+    if (Me%Coupled%Vegetation) then
+        RainInVeg = 0.0
+        DrainageFromVeg = 0.0
+        TotalRainIn = 0.0
+        RainDirect = 0.0
+        RainDirect = 0.0
+        RainRunoff = 0.0
+        !$OMP PARALLEL PRIVATE(I,J, AreaFraction)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : RainInVeg, DrainageFromVeg, TotalRainIn, RainDirect, RainRunoff)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                TotalRainIn = TotalRainIn + CurrentFluxPtr(i,j) * Me%CurrentDT
+        
+                !m3 = m3 + (m * m2plant) - rain covered is height in plant area
+                RainInVeg     = RainInVeg + (Me%RainCovered(i, j) * Me%ExtVar%GridCellArea(i, j) * Me%CoveredFraction(i, j))
+                !m3 = m3 + (m * m2cell) - Canopy drainage is height in cell area                   
+                DrainageFromVeg = DrainageFromVeg + (Me%CanopyDrainage(i,j) * Me%ExtVar%GridCellArea(i, j))
+                
+                AreaFraction = 1 - Me%CoveredFraction(i,j)
+                !Rain in uncovered area
+                RainDirect = RainDirect + Me%RainUncovered(i,j) * AreaFraction * Me%ExtVar%GridCellArea(i, j)
+                !Total rain arriving at the runoff -> uncovered + drainage
+                RainRunoff = RainRunoff + Me%ThroughFall(i, j) * Me%ExtVar%GridCellArea(i, j)
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+        Me%MB%RainInVeg = RainInVeg
+        Me%MB%DrainageFromVeg = DrainageFromVeg
+    else
+        TotalRainIn = 0.0
+        RainDirect = 0.0
+        RainRunoff = 0.0
+        AreaFraction = 1.0
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ) REDUCTION(+ : TotalRainIn, RainDirect, RainRunoff)
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                TotalRainIn = TotalRainIn + CurrentFluxPtr(i,j) * Me%CurrentDT
+                
+                !Rain in uncovered area
+                RainDirect = RainDirect + Me%RainUncovered(i,j) * AreaFraction * Me%ExtVar%GridCellArea(i, j)
+                !Total rain arriving at the runoff -> uncovered + drainage
+                RainRunoff = RainRunoff + Me%ThroughFall(i, j) * Me%ExtVar%GridCellArea(i, j)
+            endif
+        enddo
+        enddo
+        !$OMP END DO
+        !$OMP END PARALLEL
+        
+    endif
+    
+    Me%MB%TotalRainIn = TotalRainIn
+    Me%MB%RainDirect = RainDirect
+    Me%MB%RainRunoff = RainRunoff
+    
+    end subroutine VerifyGlobalMass_VG
+    
     !--------------------------------------------------------------------------
 
     subroutine ConcentrateRain (PrecipitationFlux)
@@ -5481,12 +6011,12 @@ cd0:    if (Exist) then
 
     !--------------------------------------------------------------------------
     
-    subroutine ComputeWaterBalance(IsPresent, IrrigationFlux)
+    subroutine ComputeWaterBalance(IsIrrigationPresent, IrrigationFlux, PrecipitationFlux)
     !Arguments-------------------------------------------------------------
-    real, dimension(:, :), pointer, intent(in) :: IrrigationFlux
-    logical, intent(IN)                        :: IsPresent
+    real, dimension(:, :), pointer, intent(in) :: IrrigationFlux, PrecipitationFlux 
+    logical, intent(in)                        :: IsIrrigationPresent
     !Local-----------------------------------------------------------------
-    real, dimension(:, :), pointer, intent(in) :: CurrentFlux
+    real, dimension(:, :), pointer             :: CurrentFlux
     !Begin-----------------------------------------------------------------
     if (Me%ComputeBasinWaterBalance) then
         
@@ -5496,20 +6026,39 @@ cd0:    if (Exist) then
             CurrentFlux => PrecipitationFlux
         endif
         
-        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
-        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-            if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+        if (IsIrrigationPresent) then
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
                     
-                !    m3     =     m3      +     m3/s    *      s
-                Me%BWB%Rain = Me%BWB%Rain + CurrentFlux(i,j) * Me%CurrentDT 
+                    !    m3     =     m3      +     m3/s    *      s
+                    Me%BWB%Rain = Me%BWB%Rain + CurrentFlux(i,j) * Me%CurrentDT 
                 
-                if (IsPresent) then
                     !      m3         =         m3        +    m3/s    *      s
                     Me%BWB%Irrigation = Me%BWB%Irrigation + IrrigationFlux(i, j) * Me%CurrentDT
-                endif
-            endif   
-        enddo
-        enddo
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        else
+            !$OMP PARALLEL PRIVATE(I,J)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if(Me%ExtVar%BasinPoints (i,j) == BasinPoint) then
+                    
+                    !    m3     =     m3      +     m3/s    *      s
+                    Me%BWB%Rain = Me%BWB%Rain + CurrentFlux(i,j) * Me%CurrentDT 
+                endif   
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        endif
+        
     endif 
     
     end subroutine ComputeWaterBalance
