@@ -834,7 +834,6 @@ Module ModuleRunOff
         integer, dimension(:,:), pointer            :: RiverNodeMap             => null() !i,j indexes of grid cell of river points where interaction occurs (for external model)
         real, dimension(:,:), pointer               :: MarginRiverLevel         => null() !river level at margin points
         real, dimension(:,:), pointer               :: MarginFlowToChannels     => null() !flow to channels at margin points
-        real(4), dimension(:,:), pointer            :: Teste_real4     => null()
         
         real                                        :: MinSlope                 = null_real
         logical                                     :: AdjustSlope              = .false.
