@@ -10307,7 +10307,7 @@ F2D3D:      if (CurrentHDF%From2Dto3D) then
     
 !--------------------------------------------------------------------------
     
-    subroutine GetInitializationMethod (FillMatrixID, RemainsConstant, STAT)
+    subroutine GetInitializationMethod (FillMatrixID, InitializationMethod, STAT)
 
         !Arguments-------------------------------------------------------------
         integer                                         :: FillMatrixID
