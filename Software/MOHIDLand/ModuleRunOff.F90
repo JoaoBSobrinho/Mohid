@@ -1775,7 +1775,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                            OutPutsOn   = Me%OutPut%Yes,                                  &
                            STAT        = STAT_CALL)
         Me%OutPut%NextOutPut = 1    
-#ifdef _SEWERGEMSENGINECOUPLER_
+        
         call GetData(Me%OutPut%SinglePrecision,                             &
                      Me%ObjEnterData, iflag,                                &  
                      keyword      = 'OUTPUT_SINGLEPRECISION',               &
@@ -1784,16 +1784,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                      Default      = .true.,                                 &
                      STAT         = STAT_CALL)                                  
         if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR445'
-#else
-        call GetData(Me%OutPut%SinglePrecision,                             &
-                     Me%ObjEnterData, iflag,                                &  
-                     keyword      = 'OUTPUT_SINGLEPRECISION',               &
-                     ClientModule = 'ModuleRunOff',                         &
-                     SearchType   = FromFile,                               &
-                     Default      = .false.,                                &
-                     STAT         = STAT_CALL)                                  
-        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR446'
-#endif _SEWERGEMSENGINECOUPLER_
+
         !Output for restart
         call GetOutPutTime(Me%ObjEnterData,                                             &
                            CurrentTime  = Me%ExtVar%Now,                                &
@@ -1852,7 +1843,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             Me%OverLandCoefficientDelta  = null_real
             Me%OverLandCoefficientX      = null_real
             Me%OverLandCoefficientY      = null_real
-#ifdef _SEWERGEMSENGINECOUPLER_
+            
             call ConstructFillMatrix  ( PropertyID       = Me%OverLandCoefficientID,     &
                                         EnterDataID      = Me%ObjEnterData,              &
                                         TimeID           = Me%ObjTime,                   &
@@ -1864,27 +1855,12 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                                         Topography       = .true.,                       &
                                         STAT             = STAT_CALL)
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0490'
-#else
-            call ConstructFillMatrix  ( PropertyID       = Me%OverLandCoefficientID,     &
-                                        EnterDataID      = Me%ObjEnterData,              &
-                                        TimeID           = Me%ObjTime,                   &
-                                        HorizontalGridID = Me%ObjHorizontalGrid,         &
-                                        ExtractType      = FromBlock,                    &
-                                        PointsToFill2D   = Me%ExtVar%BasinPoints,        &
-                                        Matrix2D         = Me%OverLandCoefficient,       &
-                                        TypeZUV          = TypeZ_,                       &
-                                        STAT             = STAT_CALL)
-            if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0490'
-#endif _SEWERGEMSENGINECOUPLER_
-
 
             call KillFillMatrix(Me%OverLandCoefficientID%ObjFillMatrix, STAT = STAT_CALL)
             if (STAT_CALL  /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0500'
             
             call Block_Unlock(Me%ObjEnterData, ClientNumber, STAT = STAT_CALL) 
             if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR0501'
-
-
 
             !Check that manning values entered are not zero or negative
             do j = Me%Size%JLB, Me%Size%JUB
@@ -2365,7 +2341,7 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
          
         endif
         
-        !Write Velocities at grid faces
+        !Write Fluxes at grid faces (NOT VELOCITIES yet)
         call GetData(Me%Output%Faces,                                              &
                         Me%ObjEnterData, iflag,                                    &
                         SearchType   = FromFile,                                   &
@@ -5487,16 +5463,15 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
         allocate(Me%myWaterVolumeOld     (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%MassError            (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
 
-
-
-#ifdef _SEWERGEMSENGINECOUPLER_
-        call SetMatrixValue(Me%myWaterLevel, Me%Size, 0.0)
-        call SetMatrixValue(Me%myWaterLevel, Me%Size, Me%ExtVar%Topography, Me%ExtVar%BasinPoints)
-        call SetMatrixValue(Me%myWaterColumn, Me%Size, 0.0)
-#else
-        call SetMatrixValue(Me%myWaterLevel, Me%Size, null_real)
-        call SetMatrixValue(Me%myWaterColumn, Me%Size, null_real)
-#endif _SEWERGEMSENGINECOUPLER_
+        if (Me%OutPut%SinglePrecision) then
+            call SetMatrixValue(Me%myWaterLevel, Me%Size, 0.0)
+            call SetMatrixValue(Me%myWaterLevel, Me%Size, Me%ExtVar%Topography, Me%ExtVar%BasinPoints)
+            call SetMatrixValue(Me%myWaterColumn, Me%Size, 0.0)
+        else
+            call SetMatrixValue(Me%myWaterLevel, Me%Size, null_real)
+            call SetMatrixValue(Me%myWaterColumn, Me%Size, null_real)
+        endif
+        
         call SetMatrixValue(Me%myWaterVolume, Me%Size, 0.0)        !For OpenMI
         call SetMatrixValue(Me%myWaterColumnOld, Me%Size, 0.0)
         call SetMatrixValue(Me%myWaterVolumeOld, Me%Size, 0.0)
@@ -5592,7 +5567,10 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             
         else
             
-            allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            if (Me%HasRunoffProperties) then
+                allocate(Me%myWaterColumnAfterTransport (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, null_real)
+            endif
             
             allocate (Me%CenterFlowX    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%CenterFlowY    (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -5605,7 +5583,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue_1D)
             allocate (Me%Output%VelocityAtMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
             allocate (Me%Output%MaxFloodRisk (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB)) 
             
-            call SetMatrixValue(Me%myWaterColumnAfterTransport, Me%Size, null_real)
             call SetMatrixValue(Me%Output%MaxFlowModulus, Me%Size, null_real)
             call SetMatrixValue(Me%Output%MaxWaterColumn, Me%Size, Me%MinimumWaterColumn)
             call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
