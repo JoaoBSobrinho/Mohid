@@ -1062,13 +1062,13 @@ Module ModuleFunctions
             !$OMP END PARALLEL
         else
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 Matrix (i, j) = ValueX
             enddo
             enddo
-            !$OMP END DO NOWAIT
+            !$OMP END DO
             !$OMP END PARALLEL
         endif
         if (MonitorPerformance) call StopWatch ("ModuleFunctions", "SetMatrixValues2D_R8_Constant")
@@ -1107,13 +1107,13 @@ Module ModuleFunctions
             !$OMP END PARALLEL
         else
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 Matrix (i, j) = ValueX
             enddo
             enddo
-            !$OMP END DO NOWAIT
+            !$OMP END DO
             !$OMP END PARALLEL
         endif
 
