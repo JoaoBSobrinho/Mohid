@@ -11540,7 +11540,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     if (Me%myWaterColumn(i   , j-1) > AlmostZero .and. Me%myWaterColumn(i   , j) > AlmostZero) then
                         ! X-face advective contributions
                         XRightAdv4 = 0.0
-                        if ((Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i, j+1) == 2)) then
+                        if ((Me%ComputeFaceU(i, j+1) == 1) then
                             if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
                                 if (Qf > 0.0) then
@@ -11551,7 +11551,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                         endif
                         XLeftAdv4 = 0.0
-                        if ((Me%ComputeFaceU(i, j-1) + Me%ComputeFaceU(i, j) == 2)) then
+                        if ((Me%ComputeFaceU(i, j-1) == 1)) then
                             if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j-1) + Me%FlowXOld(i, j)) / 2.0
                                 if (Qf > 0.0) then
@@ -11607,11 +11607,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     else
                         Me%AdvectionTermU(i,j) = 0.0
                     endif
-                else
-                    if (Me%ComputeFaceU(i, j) /= Compute) then
-                        Me%VelModFaceU(i, j) = 0.0
-                        Me%AdvectionTermU(i,j) = 0.0
-                    end if
                 endif
 
                 ! V-face velocity magnitude (single-precision compute)
@@ -11643,7 +11638,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     ! V-face advection (mirror of U-face logic)
                     if (Me%myWaterColumn(i-1, j) > AlmostZero .and. Me%myWaterColumn(i   , j) > AlmostZero) then
                         XRightAdvV4 = 0.0
-                        if (Me%ComputeFaceV(i, j) + Me%ComputeFaceV(i+1, j) == 2) then
+                        if (Me%ComputeFaceV(i+1, j) == 1) then
                             if ((Me%FlowYOld(i, j) * Me%FlowYOld(i+1, j)) >= 0.0) then
                                 Qf = (Me%FlowYOld(i, j) + Me%FlowYOld(i+1, j)) / 2.0
                                 if (Qf > 0.0) then
@@ -11655,7 +11650,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
 
                         XLeftAdvV4 = 0.0
-                        if (Me%ComputeFaceV(i-1, j) + Me%ComputeFaceV(i, j) == 2) then
+                        if (Me%ComputeFaceV(i-1, j) == 1) then
                             if ((Me%FlowYOld(i-1, j) * Me%FlowYOld(i, j)) >= 0.0) then
                                 Qf = (Me%FlowYOld(i-1, j) + Me%FlowYOld(i, j)) / 2.0
                                 if (Qf > 0.0) then
