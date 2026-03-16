@@ -798,6 +798,8 @@ Module ModuleRunOff
         integer, dimension(:,:), pointer            :: DFourSinkPoint           => null() !Point which can't drain with in X/Y only
         integer, dimension(:,:), pointer            :: StabilityPoints          => null() !Points where models check stability
         type(T_PropertyID)                          :: OverLandCoefficientID, NoAdvectionZonesID
+        real(8), dimension(:,:), pointer            :: AdvectionTermU
+        real(8), dimension(:,:), pointer            :: AdvectionTermV
         
         logical                                     :: StormWaterModel          = .false. !If connected to SWMM
         real                                        :: StormWaterModelDT        = -null_real
@@ -11486,15 +11488,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                             :: i, j, n
         integer                                             :: CHUNK
         ! Use single precision temporaries to reduce memory traffic (cached loads)
-        real(4)                                             :: U4, V4, Uavg4, Vavg4
-        real(4)                                             :: XLeftAdv4, XRightAdv4, YTopAdv4, YBottomAdv4
-        real(4)                                             :: XLeftAdvV4, XRightAdvV4, YTopAdvV4, YBottomAdvV4
+        real(8)                                             :: U4, V4, Uavg4, Vavg4
+        real(8)                                             :: XLeftAdv4, XRightAdv4, YTopAdv4, YBottomAdv4
+        real(8)                                             :: XLeftAdvV4, XRightAdvV4, YTopAdvV4, YBottomAdvV4
         real(8)                                             :: Qf ! small temporary needs double when coming from double arrays
-        real(8)                                             :: areaUij_d, areaVij_d, areaUip1_d, areaVim1_d
-        real(8)                                             :: flowXij_d, flowYij_d, flowXim1_d, flowYip1_d
-        real(8)                                             :: myWaterColumn_im1j, myWaterColumn_ij, myWaterColumn_ijm1
-        logical                                             :: cfU, cfV
-
         !Bounds
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
@@ -11508,67 +11505,48 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         ! Parallel region with local cached temporaries. Demonstrate SIMD on inner loop.
         !$OMP PARALLEL PRIVATE(I,J,n, U4, Vavg4, V4, Uavg4, XLeftAdv4, XRightAdv4, YTopAdv4, YBottomAdv4, & 
-        !$OMP                      XLeftAdvV4, XRightAdvV4, YTopAdvV4, YBottomAdvV4, Qf, &
-        !$OMP                      areaUij_d, areaVij_d, areaUip1_d, areaVim1_d, &
-        !$OMP                      flowXij_d, flowYij_d, flowXim1_d, flowYip1_d, &
-        !$OMP                      myWaterColumn_im1j, myWaterColumn_ij, myWaterColumn_ijm1, cfU, cfV)
+        !$OMP                      XLeftAdvV4, XRightAdvV4, YTopAdvV4, YBottomAdvV4, Qf)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             !$OMP SIMD
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                ! Cache commonly used double-precision values to avoid multiple pointer dereferences
-                areaUij_d       = Me%AreaU(i, j)
-                areaVij_d       = Me%AreaV(i, j)
-                if (i+1 <= Me%Size%IUB) areaUip1_d = Me%AreaU(i+1, j) else areaUip1_d = 0.0
-                if (j-1 >= Me%Size%JLB) areaVim1_d = Me%AreaV(i, j-1) else areaVim1_d = 0.0
-
-                flowXij_d       = Me%FlowXOld(i, j)
-                flowYij_d       = Me%FlowYOld(i, j)
-                if (i-1 >= Me%Size%ILB) flowXim1_d = Me%FlowXOld(i-1, j) else flowXim1_d = 0.0
-                if (j+1 <= Me%Size%JUB) flowYip1_d = Me%FlowYOld(i, j+1) else flowYip1_d = 0.0
-
-                myWaterColumn_im1j = Me%myWaterColumn(i-1, j)
-                myWaterColumn_ij   = Me%myWaterColumn(i   , j)
-                myWaterColumn_ijm1 = Me%myWaterColumn(i   , j-1)
-
-                ! Compute U-face velocity magnitude (single-precision compute)
                 if (Me%ComputeFaceU(i, j) == Compute) then
                     Vavg4 = 0.0
                     n = 0
                     if (Me%ComputeFaceV(i, j) == Compute) then
-                        Vavg4 = real(Me%FlowYOld(i,  j  )/Me%AreaV(i,  j  ), kind=4)
+                        Vavg4 = Me%FlowYOld(i,  j  )/Me%AreaV(i, j)
                         n = n + 1
                     endif
                     if (Me%ComputeFaceV(i+1, j) == Compute) then
-                        Vavg4 = Vavg4 + real(Me%FlowYOld(i+1,j  ) / Me%AreaV(i+1,j  ), kind=4)
+                        Vavg4 = Vavg4 + Me%FlowYOld(i+1,j  ) / Me%AreaV(i+1,j  )
                         n = n + 1
                     endif
                     if (Me%ComputeFaceV(i+1, j-1) == Compute) then
-                        Vavg4 = Vavg4 + real(Me%FlowYOld(i+1,j-1) / Me%AreaV(i+1,j-1), kind=4)
+                        Vavg4 = Vavg4 + Me%FlowYOld(i+1,j-1) / Me%AreaV(i+1,j-1)
                         n = n + 1
                     endif
                     if (Me%ComputeFaceV(i, j-1) == Compute) then
-                        Vavg4 = Vavg4 + real(Me%FlowYOld(i,  j-1)/Me%AreaV(i,  j-1), kind=4)
+                        Vavg4 = Vavg4 + Me%FlowYOld(i,  j-1)/Me%AreaV(i,  j-1)
                         n = n + 1
                     endif
                     if (n > 0) Vavg4 = Vavg4 / n
 
-                    U4 = real(flowXij_d / areaUij_d, kind=4)
+                    U4 = Me%FlowXOld(i, j) / Me%AreaU(i, j)
 
                     ! Use explicit sqrt on single precision temporaries (faster vectorized math on many compilers)
                     Me%VelModFaceU(i, j) = sqrt( U4*U4 + Vavg4*Vavg4 )
 
                     ! Compute advection-rate for U-face (per unit time) using cached loads
-                    if (myWaterColumn_ijm1 > AlmostZero .and. myWaterColumn_ij > AlmostZero) then
+                    if (Me%myWaterColumn(i   , j-1) > AlmostZero .and. Me%myWaterColumn(i   , j) > AlmostZero) then
                         ! X-face advective contributions
                         XRightAdv4 = 0.0
                         if ((Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i, j+1) == 2)) then
                             if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
                                 if (Qf > 0.0) then
-                                    XRightAdv4 = real(Me%FlowXOld(i, j)   * Me%FlowXOld(i, j) / Me%AreaU(i, j), kind=4)
+                                    XRightAdv4 = Me%FlowXOld(i, j)   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
                                 else
-                                    XRightAdv4 = real(Me%FlowXOld(i, j+1) * Me%FlowXOld(i, j+1) / Me%AreaU(i, j+1), kind=4)
+                                    XRightAdv4 = Me%FlowXOld(i, j+1) * Me%FlowXOld(i, j+1) / Me%AreaU(i, j+1)
                                 endif
                             endif
                         endif
@@ -11577,9 +11555,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             if ((Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j-1) + Me%FlowXOld(i, j)) / 2.0
                                 if (Qf > 0.0) then
-                                    XLeftAdv4 = real(Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j-1) / Me%AreaU(i, j-1), kind=4)
+                                    XLeftAdv4 = Me%FlowXOld(i, j-1) * Me%FlowXOld(i, j-1) / Me%AreaU(i, j-1)
                                 else
-                                    XLeftAdv4 = real(Me%FlowXOld(i, j) * Me%FlowXOld(i, j) / Me%AreaU(i, j), kind=4)
+                                    XLeftAdv4 = Me%FlowXOld(i, j) * Me%FlowXOld(i, j) / Me%AreaU(i, j)
                                 endif
                             endif
                         endif
@@ -11590,15 +11568,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             if ((Me%FlowYOld(i+1, j-1) * Me%FlowYOld(i+1, j)) >= 0.0) then
                                 Qf = (Me%FlowYOld(i+1, j-1) + Me%FlowYOld(i+1, j)) / 2.0
                                 if (Qf > 0.0) then
-                                    YTopAdv4 = real(Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j), kind=4)
+                                    YTopAdv4 = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
                                 elseif (Qf < 0.0) then
                                     if(Me%ComputeFaceU(i+1,j) == Compute) then
-                                        YTopAdv4 = real(Qf * Me%FlowXOld(i+1, j) / Me%AreaU(i+1, j), kind=4)
+                                        YTopAdv4 = Qf * Me%FlowXOld(i+1, j) / Me%AreaU(i+1, j)
                                     else
                                         if(Me%ComputeFaceU(i+1, j-1)== Compute)then
-                                            YTopAdv4 = real(Qf * Me%FlowXOld(i+1, j-1) / Me%AreaU(i+1, j-1), kind=4)
+                                            YTopAdv4 = Qf * Me%FlowXOld(i+1, j-1) / Me%AreaU(i+1, j-1)
                                         elseif(Me%ComputeFaceU(i+1, j+1) == Compute)then
-                                            YTopAdv4 = real(Qf * Me%FlowXOld(i+1, j+1) / Me%AreaU(i+1, j+1), kind=4)
+                                            YTopAdv4 = Qf * Me%FlowXOld(i+1, j+1) / Me%AreaU(i+1, j+1)
                                         endif
                                     endif
                                 endif
@@ -11611,21 +11589,21 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 Qf = (Me%FlowYOld(i, j-1) + Me%FlowYOld(i, j)) / 2.0
                                 if (Qf > 0.0)then
                                     if(Me%ComputeFaceU(i-1,j) == Compute) then
-                                        YBottomAdv4 = real(Qf   * Me%FlowXOld(i-1, j) / Me%AreaU(i-1, j), kind=4)
+                                        YBottomAdv4 = Qf   * Me%FlowXOld(i-1, j) / Me%AreaU(i-1, j)
                                     else
                                         if(Me%ComputeFaceU(i-1, j-1) == Compute)then
-                                            YBottomAdv4 = real(Qf * Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1), kind=4)
+                                            YBottomAdv4 = Qf * Me%FlowXOld(i-1, j-1) / Me%AreaU(i-1, j-1)
                                         elseif(Me%ComputeFaceU(i-1, j+1) == Compute)then
-                                            YBottomAdv4 = real(Qf * Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1), kind=4)
+                                            YBottomAdv4 = Qf * Me%FlowXOld(i-1, j+1) / Me%AreaU(i-1, j+1)
                                         endif
                                     endif
                                 elseif ((Qf < 0.0)) then
-                                    YBottomAdv4 = real(Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j), kind=4)
+                                    YBottomAdv4 = Qf   * Me%FlowXOld(i, j) / Me%AreaU(i, j)
                                 endif
                             endif
                         endif
 
-                        Me%AdvectionTermU(i,j) = real((XLeftAdv4 - XRightAdv4) / Me%DX, kind=8) + real((YBottomAdv4 - YTopAdv4) / Me%DY, kind=8)
+                        Me%AdvectionTermU(i,j) = (XLeftAdv4 - XRightAdv4) / Me%DX + (YBottomAdv4 - YTopAdv4) / Me%DY
                     else
                         Me%AdvectionTermU(i,j) = 0.0
                     endif
@@ -11641,37 +11619,37 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Uavg4 = 0.0
                     n = 0
                     if (Me%ComputeFaceU(i, j) == Compute) then
-                        Uavg4 = real(Me%FlowXOld(i   ,j)/Me%AreaU(i  ,j   ), kind=4)
+                        Uavg4 = Me%FlowXOld(i   ,j)/Me%AreaU(i, j)
                         n = n + 1
                     endif
                     if (Me%ComputeFaceU(i-1, j) == Compute) then
-                        Uavg4 = Uavg4 + real(Me%FlowXOld(i-1,j )/Me%AreaU(i-1,j   ), kind=4)
+                        Uavg4 = Uavg4 + Me%FlowXOld(i-1,j )/Me%AreaU(i-1,j   )
                         n = n + 1
                     endif
                     if (Me%ComputeFaceU(i-1, j+1) == Compute) then
-                        Uavg4 = Uavg4 + real(Me%FlowXOld(i-1,j+1)/Me%AreaU(i-1,j+1), kind=4)
+                        Uavg4 = Uavg4 + Me%FlowXOld(i-1,j+1)/Me%AreaU(i-1,j+1)
                         n = n + 1
                     endif
                     if (Me%ComputeFaceU(i, j+1) == Compute) then
-                        Uavg4 = Uavg4 + real(Me%FlowXOld(i  ,j+1)/Me%AreaU(i  ,j+1), kind=4)
+                        Uavg4 = Uavg4 + Me%FlowXOld(i  ,j+1)/Me%AreaU(i  ,j+1)
                         n = n + 1
                     endif
                     if (n > 0) Uavg4 = Uavg4 / n
 
-                    V4 = real(flowYij_d / areaVij_d, kind=4)
+                    V4 = Me%FlowYOld(i, j) / Me%AreaV(i, j)
 
                     Me%VelModFaceV(i, j) = sqrt( Uavg4*Uavg4 + V4*V4 )
 
                     ! V-face advection (mirror of U-face logic)
-                    if (myWaterColumn_im1j > AlmostZero .and. myWaterColumn_ij > AlmostZero) then
+                    if (Me%myWaterColumn(i-1, j) > AlmostZero .and. Me%myWaterColumn(i   , j) > AlmostZero) then
                         XRightAdvV4 = 0.0
                         if (Me%ComputeFaceV(i, j) + Me%ComputeFaceV(i+1, j) == 2) then
                             if ((Me%FlowYOld(i, j) * Me%FlowYOld(i+1, j)) >= 0.0) then
                                 Qf = (Me%FlowYOld(i, j) + Me%FlowYOld(i+1, j)) / 2.0
                                 if (Qf > 0.0) then
-                                    XRightAdvV4 = real(Me%FlowYOld(i, j) * Me%FlowYOld(i, j) / Me%AreaV(i, j), kind=4)
+                                    XRightAdvV4 = Me%FlowYOld(i, j) * Me%FlowYOld(i, j) / Me%AreaV(i, j)
                                 else
-                                    XRightAdvV4 = real(Me%FlowYOld(i+1, j) * Me%FlowYOld(i+1, j) / Me%AreaV(i+1, j), kind=4)
+                                    XRightAdvV4 = Me%FlowYOld(i+1, j) * Me%FlowYOld(i+1, j) / Me%AreaV(i+1, j)
                                 endif
                             endif
                         endif
@@ -11681,9 +11659,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             if ((Me%FlowYOld(i-1, j) * Me%FlowYOld(i, j)) >= 0.0) then
                                 Qf = (Me%FlowYOld(i-1, j) + Me%FlowYOld(i, j)) / 2.0
                                 if (Qf > 0.0) then
-                                    XLeftAdvV4 = real(Me%FlowYOld(i-1, j) * Me%FlowYOld(i-1, j) / Me%AreaV(i-1, j), kind=4)
+                                    XLeftAdvV4 = Me%FlowYOld(i-1, j) * Me%FlowYOld(i-1, j) / Me%AreaV(i-1, j)
                                 else
-                                    XLeftAdvV4 = real(Me%FlowYOld(i, j) * Me%FlowYOld(i, j) / Me%AreaV(i, j), kind=4)
+                                    XLeftAdvV4 = Me%FlowYOld(i, j) * Me%FlowYOld(i, j) / Me%AreaV(i, j)
                                 endif
                             endif
                         endif
@@ -11693,15 +11671,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             if ((Me%FlowXOld(i, j+1) * Me%FlowXOld(i, j)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j+1) + Me%FlowXOld(i, j)) / 2.0
                                 if (Qf > 0.0) then
-                                    YTopAdvV4 = real(Qf * Me%FlowYOld(i, j) / Me%AreaV(i, j), kind=4)
+                                    YTopAdvV4 = Qf * Me%FlowYOld(i, j) / Me%AreaV(i, j)
                                 elseif (Qf < 0.0) then
                                     if(Me%ComputeFaceV(i, j+1) == Compute) then
-                                        YTopAdvV4 = real(Qf * Me%FlowYOld(i, j+1) / Me%AreaV(i, j+1), kind=4)
+                                        YTopAdvV4 = Qf * Me%FlowYOld(i, j+1) / Me%AreaV(i, j+1)
                                     else
                                         if(Me%ComputeFaceV(i-1, j+1) == Compute) then
-                                            YTopAdvV4 = real(Qf * Me%FlowYOld(i-1, j+1) / Me%AreaV(i-1, j+1), kind=4)
+                                            YTopAdvV4 = Qf * Me%FlowYOld(i-1, j+1) / Me%AreaV(i-1, j+1)
                                         elseif(Me%ComputeFaceV(i+1, j+1) == Compute) then
-                                            YTopAdvV4 = real(Qf * Me%FlowYOld(i+1, j+1) / Me%AreaV(i+1, j+1), kind=4)
+                                            YTopAdvV4 = Qf * Me%FlowYOld(i+1, j+1) / Me%AreaV(i+1, j+1)
                                         endif
                                     endif
                                 endif
@@ -11714,21 +11692,21 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j-1)) / 2.0
                                 if (Qf > 0.0)then
                                     if(Me%ComputeFaceV(i, j-1) == Compute) then
-                                        YBottomAdvV4 = real(Qf * Me%FlowYOld(i, j-1) / Me%AreaV(i, j-1), kind=4)
+                                        YBottomAdvV4 = Qf * Me%FlowYOld(i, j-1) / Me%AreaV(i, j-1)
                                     else
                                         if(Me%ComputeFaceV(i+1, j-1) == Compute) then
-                                            YBottomAdvV4 = real(Qf * Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1), kind=4)
+                                            YBottomAdvV4 = Qf * Me%FlowYOld(i+1, j-1) / Me%AreaV(i+1, j-1)
                                         elseif(Me%ComputeFaceV(i-1, j-1) == Compute) then
-                                            YBottomAdvV4 = real(Qf * Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1), kind=4)
+                                            YBottomAdvV4 = Qf * Me%FlowYOld(i-1, j-1) / Me%AreaV(i-1, j-1)
                                         endif
                                     endif
                                 elseif ((Qf < 0.0)) then
-                                    YBottomAdvV4 = real(Qf * Me%FlowYOld(i, j) / Me%AreaV(i, j), kind=4)
+                                    YBottomAdvV4 = Qf * Me%FlowYOld(i, j) / Me%AreaV(i, j)
                                 endif
                             endif
                         endif
 
-                        Me%AdvectionTermV(i,j) = real((XLeftAdvV4 - XRightAdvV4) / Me%DX, kind=8) + real((YBottomAdvV4 - YTopAdvV4) / Me%DY, kind=8)
+                        Me%AdvectionTermV(i,j) = (XLeftAdvV4 - XRightAdvV4) / Me%DX + (YBottomAdvV4 - YTopAdvV4) / Me%DY
                     else
                         Me%AdvectionTermV(i,j) = 0.0
                     endif
