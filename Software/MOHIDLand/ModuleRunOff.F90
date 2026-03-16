@@ -11508,7 +11508,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP                      XLeftAdvV4, XRightAdvV4, YTopAdvV4, YBottomAdvV4, Qf)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-            !$OMP SIMD
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
                 if (Me%ComputeFaceU(i, j) == Compute) then
                     Vavg4 = 0.0
