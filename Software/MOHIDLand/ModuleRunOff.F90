@@ -11508,7 +11508,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP                      XLeftAdvV4, XRightAdvV4, YTopAdvV4, YBottomAdvV4, Qf)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-            !$OMP SIMD
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
                 if (Me%ComputeFaceU(i, j) == Compute) then
                     Vavg4 = 0.0
@@ -11715,6 +11714,298 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
 
     end subroutine ComputeFaceVelocityModulus
+    
+    subroutine ComputeFaceVelocityModulus_SemWaterColumn
+
+    !Arguments-------------------------------------------------------------
+
+        !Local-----------------------------------------------------------------
+        integer                                             :: ILB, IUB, JLB, JUB
+        integer                                             :: i, j, n_faces
+        integer                                             :: ComputeFaceU, ComputeFaceV
+        integer                                             :: CHUNK
+        ! Use single precision temporaries to reduce memory traffic (cached loads)
+        real(8)                                             :: Uavg, Vavg
+        real(8)                                             :: XLeftAdv, XRightAdv, YTopAdv, YBottomAdv
+        real(8)                                             :: XLeftAdvV, XRightAdvV, YTopAdvV, YBottomAdvV
+        REAL(8)                                             :: FlowX, FlowY
+        REAL(8)                                             :: FlowX_Left, FlowX_Right, FlowX_Top, FlowX_Bottom
+        REAL(8)                                             :: FlowX_TopLeft, FlowX_TopRight, FlowX_BottomLeft, FlowX_BottomRight
+        REAL(8)                                            :: FlowY_Left, FlowY_Right, FlowY_Top, FlowY_Bottom
+        REAL(8)                                             :: FlowY_TopLeft, FlowY_TopRight, FlowY_BottomLeft, FlowY_BottomRight
+        REAL(8)                                             :: AreaU, AreaV
+        real(8)                                            :: AreaU_Left, AreaU_Right, AreaU_Top, AreaU_Bottom
+        REAL(8)                                             :: AreaU_TopLeft, AreaU_TopRight, AreaU_BottomLeft, AreaU_BottomRight
+        REAL(8)                                            :: AreaV_Left, AreaV_Right, AreaV_Top, AreaV_Bottom
+        REAL(8)                                             :: AreaV_TopLeft, AreaV_TopRight, AreaV_BottomLeft, AreaV_BottomRight
+        REAL(8)                                             :: VelocityU, VelocityV
+        REAL(8)                                             :: VelocityU_Left, VelocityU_Right, VelocityU_Top, VelocityU_Bottom
+        REAL(8)                                            :: VelocityU_TopLeft, VelocityU_TopRight, VelocityU_BottomLeft, VelocityU_BottomRight
+        real(8)                                             :: VelocityV_Left, VelocityV_Right, VelocityV_Top, VelocityV_Bottom
+        REAL(8)                                            :: VelocityV_TopLeft, VelocityV_TopRight, VelocityV_BottomLeft, VelocityV_BottomRight
+        real(8)                                             :: Qf ! small temporary needs double when coming from double arrays
+
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocityModulus_SemWaterColumn")
+
+        ! Parallel region with local cached temporaries. Demonstrate SIMD on inner loop.
+        !$OMP PARALLEL PRIVATE(I,J,n_faces, Vavg, Uavg, Qf, XLeftAdv, XRightAdv, YTopAdv, YBottomAdv, & 
+        !$OMP XLeftAdvV, XRightAdvV, YTopAdvV, YBottomAdvV, FlowX, FlowY, FlowX_Left, FlowX_Right, FlowX_Top, FlowX_Bottom, &
+        !$OMP FlowX_TopLeft, FlowX_TopRight, FlowX_BottomLeft, FlowX_BottomRight, &
+        !$OMP FlowY_Left, FlowY_Right, FlowY_Top, FlowY_Bottom, &
+        !$OMP FlowY_TopLeft, FlowY_TopRight, FlowY_BottomLeft, FlowY_BottomRight, &
+        !$OMP AreaU, AreaV, AreaU_Left, AreaU_Right, AreaU_Top, AreaU_Bottom, &
+        !$OMP AreaU_TopLeft, AreaU_TopRight, AreaU_BottomLeft, AreaU_BottomRight, &
+        !$OMP AreaV_Left, AreaV_Right, AreaV_Top, AreaV_Bottom, &
+        !$OMP AreaV_TopLeft, AreaV_TopRight, AreaV_BottomLeft, AreaV_BottomRight, &
+        !$OMP VelocityU, VelocityV, &
+        !$OMP VelocityU_Left, VelocityU_Right, VelocityU_Top, VelocityU_Bottom, &
+        !$OMP VelocityU_TopLeft, VelocityU_TopRight, VelocityU_BottomLeft, VelocityU_BottomRight, &
+        !$OMP VelocityV_Left, VelocityV_Right, VelocityV_Top, VelocityV_Bottom, &
+        !$OMP VelocityV_TopLeft, VelocityV_TopRight, VelocityV_BottomLeft, VelocityV_BottomRight, &
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                ComputeFaceU = Me%ComputeFaceU(i, j)
+                ComputeFaceV = Me%ComputeFaceV(i, j)
+                if (ComputeFaceU == Compute .OR. ComputeFaceV) then
+                    
+                    FlowX = Me%FlowXOld(i, j)
+                    FlowX_Left = Me%FlowXOld(i, j-1)
+                    FlowX_Right = Me%FlowXOld(i, j+1)
+                    FlowX_Bottom = Me%FlowXOld(i-1, j)
+                    FlowX_Top = Me%FlowXOld(i+1, j)
+                    FlowX_TopLeft = Me%FlowXOld(i+1, j-1)
+                    FlowX_TopRight = Me%FlowXOld(i+1, j+1)
+                    FlowX_BottomLeft = Me%FlowXOld(i-1, j-1)
+                    FlowX_BottomRight = Me%FlowXOld(i-1, j+1)
+                    
+                    AreaU = Me%AreaU(i, j)
+                    AreaU_Left = Me%AreaU(i, j-1)
+                    AreaU_Right = Me%AreaU(i, j+1)
+                    AreaU_Top = Me%AreaU(i+1, j)
+                    AreaU_Bottom = Me%AreaU(i-1, j)
+                    AreaU_TopLeft = Me%AreaU(i+1, j-1)
+                    AreaU_TopRight = Me%AreaU(i+1, j+1)
+                    AreaU_BottomLeft = Me%AreaU(i-1, j-1)
+                    AreaU_BottomRight = Me%AreaU(i-1, j+1)
+                    
+                    VelocityU = FlowX / AreaU
+                    VelocityU_Left = FlowX_Left / AreaU_Left
+                    VelocityU_Right = FlowX_Right / AreaU_Right
+                    VelocityU_Top = FlowX_Top / AreaU_Top
+                    VelocityU_Bottom = FlowX_Bottom / AreaU_Bottom
+                    VelocityU_TopLeft = FlowX_TopLeft / AreaU_TopLeft
+                    VelocityU_TopRight = FlowX_TopRight / AreaU_TopRight
+                    VelocityU_BottomLeft = FlowX_BottomLeft / AreaU_BottomLeft
+                    VelocityU_BottomRight = FlowX_BottomRight / AreaU_BottomRight
+                    
+                    
+                    FlowY = Me%FlowYOld(i, j)
+                    FlowY_Bottom = Me%FlowYOld(i-1, j)
+                    FlowY_Top = Me%FlowYOld(i+1, j)
+                    FlowY_Left = Me%FlowYOld(i, j-1)
+                    FlowY_Right = Me%FlowYOld(i, j+1)
+                    FlowY_TopLeft = Me%FlowYOld(i+1, j-1)
+                    FlowY_TopRight = Me%FlowYOld(i+1, j+1)
+                    FlowY_BottomLeft = Me%FlowYOld(i-1, j-1)
+                    FlowY_BottomRight = Me%FlowYOld(i-1, j+1)
+                    
+                    AreaV = Me%AreaV(i, j)
+                    AreaV_Left = Me%AreaV(i, j-1)
+                    AreaV_Right = Me%AreaV(i, j+1)
+                    AreaV_Top = Me%AreaV(i+1, j)
+                    AreaV_Bottom = Me%AreaV(i-1, j)
+                    AreaV_TopLeft = Me%AreaV(i+1, j-1)
+                    AreaV_TopRight = Me%AreaV(i+1, j+1)
+                    AreaV_BottomLeft = Me%AreaV(i-1, j-1)
+                    AreaV_BottomRight = Me%AreaV(i-1, j+1)
+                    
+                    VelocityV = FlowY / AreaV
+                    VelocityV_Left = FlowY_Left / AreaV_Left
+                    VelocityV_Right = FlowY_Right / AreaV_Right
+                    VelocityV_Top = FlowY_Top / AreaV_Top
+                    VelocityV_Bottom = FlowY_Bottom / AreaV_Bottom
+                    VelocityV_TopLeft = FlowY_TopLeft / AreaV_TopLeft
+                    VelocityV_TopRight = FlowY_TopRight / AreaV_TopRight
+                    VelocityV_BottomLeft = FlowY_BottomLeft / AreaV_BottomLeft
+                    VelocityV_BottomRight = FlowY_BottomRight / AreaV_BottomRight
+
+                endif
+                
+                
+                if (ComputeFaceU == Compute) then
+
+                    Vavg = 0.0
+                    n_faces = ComputeFaceV + Me%ComputeFaceV(i+1, j) + Me%ComputeFaceV(i+1, j-1) + Me%ComputeFaceV(i, j-1)
+                    if (n_faces > 0) then
+                        Vavg = (VelocityV + VelocityV_Top + VelocityV_TopLeft + VelocityV_Left) / n_faces
+                    endif
+
+                    ! Use explicit sqrt on single precision temporaries (faster vectorized math on many compilers)
+                    Me%VelModFaceU(i, j) = sqrt( VelocityU*VelocityU + Vavg*Vavg )
+
+                    ! Compute advection-rate for U-face (per unit time) using cached loads
+                    ! X-face advective contributions
+                    XRightAdv = 0.0
+                    if ((Me%ComputeFaceU(i, j+1) == 1) then
+                        if ((FlowX * FlowX_Right) >= 0.0) then
+                            Qf = (FlowX + FlowX) / 2.0
+                            if (Qf > 0.0) then
+                                XRightAdv = FlowX * VelocityU
+                            else
+                                XRightAdv = FlowX_Right * VelocityU_Right
+                            endif
+                        endif
+                    endif
+                    XLeftAdv = 0.0
+                    if ((Me%ComputeFaceU(i, j-1) == 1)) then
+                        if ((FlowX_Left * FlowX) >= 0.0) then
+                            Qf = (FlowX_Left + FlowX) / 2.0
+                            if (Qf > 0.0) then
+                                XLeftAdv = FlowX_Left * VelocityU_Left
+                            else
+                                XLeftAdv = FlowX * VelocityU
+                            endif
+                        endif
+                    endif
+
+                    ! Y-face contributions for X-face advection
+                    YTopAdv = 0.0
+                    if (Me%ComputeFaceV(i+1, j-1) +  Me%ComputeFaceV(i+1, j) > 0) then
+                        if ((FlowY_TopLeft * FlowY_Top) >= 0.0) then
+                            Qf = (FlowY_TopLeft + FlowY_Top) / 2.0
+                            if (Qf > 0.0) then
+                                YTopAdv = Qf   * VelocityU
+                            elseif (Qf < 0.0) then
+                                if(Me%ComputeFaceU(i+1,j) == Compute) then
+                                    YTopAdv = Qf * VelocityU_Top
+                                else
+                                    if(Me%ComputeFaceU(i+1, j-1)== Compute)then
+                                        YTopAdv = Qf * VelocityU_TopLeft
+                                    elseif(Me%ComputeFaceU(i+1, j+1) == Compute)then
+                                        YTopAdv = Qf * VelocityU_TopRight
+                                    endif
+                                endif
+                            endif
+                        endif
+                    endif
+
+                    YBottomAdv =  0.0
+                    if (Me%ComputeFaceV(i, j-1) +  ComputeFaceV > 0) then
+                        if ((FlowY_Left * FlowY) >= 0.0) then
+                            Qf = (FlowY_Left + FlowY) / 2.0
+                            if (Qf > 0.0)then
+                                if(Me%ComputeFaceU(i-1,j) == Compute) then
+                                    YBottomAdv = Qf * VelocityU_Bottom
+                                else
+                                    if(Me%ComputeFaceU(i-1, j-1) == Compute)then
+                                        YBottomAdv = Qf * VelocityU_BottomLeft
+                                    elseif(Me%ComputeFaceU(i-1, j+1) == Compute)then
+                                        YBottomAdv = Qf * VelocityU_BottomRight
+                                    endif
+                                endif
+                            elseif ((Qf < 0.0)) then
+                                YBottomAdv = Qf * VelocityU
+                            endif
+                        endif
+                    endif
+
+                    Me%AdvectionTermU(i,j) = (XLeftAdv - XRightAdv) / Me%DX + (YBottomAdv - YTopAdv) / Me%DY
+                else
+                    Me%AdvectionTermU(i,j) = 0.0
+                endif
+
+                ! V-face velocity magnitude (single-precision compute)
+                if (ComputeFaceV == Compute) then
+                    
+                    Uavg = 0.0
+                    n_faces = ComputeFaceU + Me%ComputeFaceU(i-1, j) + Me%ComputeFaceU(i-1, j+1) + Me%ComputeFaceU(i, j+1)
+                    if (n_faces > 0) then
+                        Uavg = (VelocityU + VelocityU_Bottom + VelocityU_BottomRight + VelocityU_Right) / n_faces
+                    endif
+
+                    Me%VelModFaceV(i, j) = sqrt( Uavg*Uavg + VelocityV*VelocityV )
+
+                    ! V-face advection (mirror of U-face logic)
+                    XRightAdvV = 0.0
+                    if (Me%ComputeFaceV(i+1, j) == 1) then
+                        if ((FlowY * FlowY_Top) >= 0.0) then
+                            Qf = (FlowY + FlowY_Top) / 2.0
+                            if (Qf > 0.0) then
+                                XRightAdvV = FlowY * VelocityV
+                            else
+                                XRightAdvV = FlowY_Top * VelocityV_Top
+                            endif
+                        endif
+                    endif
+
+                    XLeftAdvV = 0.0
+                    if (Me%ComputeFaceV(i-1, j) == 1) then
+                        if ((FlowY_Bottom * FlowY) >= 0.0) then
+                            Qf = (FlowY_Bottom + FlowY) / 2.0
+                            if (Qf > 0.0) then
+                                XLeftAdvV4 = FlowY_Bottom * VelocityV_Bottom
+                            else
+                                XLeftAdvV4 = FlowY * VelocityV
+                            endif
+                        endif
+                    endif
+
+                    YTopAdvV = 0.0
+                    if (Me%ComputeFaceU(i, j+1) + ComputeFaceU) then
+                        if (FlowY_Right * FlowY) >= 0.0) then
+                            Qf = (FlowY_Right + FlowY) / 2.0
+                            if (Qf > 0.0) then
+                                YTopAdvV = Qf * VelocityV
+                            elseif (Qf < 0.0) then
+                                if(Me%ComputeFaceV(i, j+1) == Compute) then
+                                    YTopAdvV = Qf * VelocityV_Right
+                                else
+                                    if(Me%ComputeFaceV(i-1, j+1) == Compute) then
+                                        YTopAdvV = Qf * VelocityV_BottomRight
+                                    elseif(Me%ComputeFaceV(i+1, j+1) == Compute) then
+                                        YTopAdvV = Qf * VelocityV_TopRight
+                                    endif
+                                endif
+                            endif
+                        endif
+                    endif
+
+                    YBottomAdvV = 0.0
+                    if (ComputeFaceU + Me%ComputeFaceU(i, j-1) > 0) then
+                        if ((FlowX * FlowX_Left) >= 0.0) then
+                            Qf = (FlowX + FlowX_Left) / 2.0
+                            if (Qf > 0.0)then
+                                if(Me%ComputeFaceV(i, j-1) == Compute) then
+                                    YBottomAdvV = Qf * VelocityV_Left
+                                else
+                                    if(Me%ComputeFaceV(i+1, j-1) == Compute) then
+                                        YBottomAdvV = Qf * VelocityV_TopLeft
+                                    elseif(Me%ComputeFaceV(i-1, j-1) == Compute) then
+                                        YBottomAdvV = Qf * VelocityV_BottomLeft
+                                    endif
+                                endif
+                            elseif ((Qf < 0.0)) then
+                                YBottomAdvV = Qf * VelocityV
+                            endif
+                        endif
+                    endif
+
+                    Me%AdvectionTermV(i,j) = (XLeftAdvV - XRightAdvV) / Me%DX + (YBottomAdvV - YTopAdvV) / Me%DY
+                else
+                    Me%AdvectionTermV(i,j) = 0.0
+                endif
+
+            end do
+        end do
+        !$OMP END DO
+        !$OMP END PARALLEL
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeFaceVelocityModulus_SemWaterColumn")
+
+    end subroutine ComputeFaceVelocityModulus_SemWaterColumn
     
     !-------------------------------------------------------------------------
     
