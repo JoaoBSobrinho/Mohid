@@ -7989,6 +7989,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer                                     :: Niter, iter, i, j
         integer                                     :: n_restart
         logical                                     :: firstRestart
+        REAL(8) dimension(:, :), pointer            :: myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
         call Ready(RunOffID, ready_)
@@ -8146,12 +8147,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                 case (DiffusionWave_)
                                     call KinematicWave  ()            !Slope based on surface
                                 case (DynamicWave_)
-                                    if(Me%Optimization) then
-                                         call ComputeFaceVelocityModulus
-                                    else
-                                        call ComputeFaceVelocityModulus_original
-                                    endif
-                                    call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
+                                    
+                                    !if(Me%Optimization) then
+                                    call ComputeFaceVelocityModulus_original
+                                         
+                                    !call ComputeFaceVelocityModulus
+                                    !else
+                                        !call ComputeFaceVelocityModulus_original
+                                    !endif
+                                    !call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
+                                    call DynamicWaveXX_default_CG_original (Me%CV%CurrentDT)
                                     !write(*,*) 'Start DynamicWaveXX set in Runoff Module'
                                     !
                                     !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8160,7 +8165,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     !enddo
                                     !enddo
                                     !write(*,*) 'End DynamicWaveXX set in Runoff Module'
-                                    call DynamicWaveYY    (Me%CV%CurrentDT)
+                                    !call DynamicWaveYY    (Me%CV%CurrentDT)
+                                    call DynamicWaveYY_default_CG_original    (Me%CV%CurrentDT)
                                     !write(*,*) 'Start DynamicWaveYY set in Runoff Module'
                                     !
                                     !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8169,6 +8175,19 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     !enddo
                                     !enddo
                                     !write(*,*) 'End DynamicWaveYY set in Runoff Module'
+                                    
+                                    myWaterVolume_OriginalMethod = Me%myWaterVolume
+                                    myWaterColumn_OriginalMethod = Me%myWaterColumn
+                                    lFlowX_OriginalMethod = Me%lFlowX
+                                    lFlowY_OriginalMethod = Me%lFlowY
+                                    
+                                    !call ComputeFaceVelocityModulus_SemWaterColumn
+                                    call ComputeFaceVelocityModulus
+                                    
+                                    call DynamicWaveXX_default_CG (Me%CV%CurrentDT)
+                                    
+                                    call DynamicWaveYY_default_CG (Me%CV%CurrentDT)
+                                    
                                     call SetWorkSize                            
                             end select
 
@@ -8184,6 +8203,32 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                         
                             !Updates waterlevels, based on fluxes
                             call UpdateWaterLevels(Restart, Me%CV%CurrentDT)
+                            
+                            writeLog = .false.
+                            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                                    if (Abs(Me%myWaterVolume(i, j)) - ABS(myWaterVolume_OriginalMethod(i,j)) > 1E-10) then
+                                        writeLog = .true.
+                                    endif
+                                    if (Abs(Me%myWaterColumn(i, j)) - abs(myWaterColumn_OriginalMethod(i,j)) > 1E-10) then
+                                        writeLog = .true.
+                                    endif
+                                    if (Abs(Abs(Me%lFlowX(i, j)) - abs(lFlowX_OriginalMethod(i,j))) > 1E-10) then
+                                        writeLog = .true.
+                                    endif
+                                    if (Abs(Abs(Me%lFlowY(i, j)) - abs(lFlowY_OriginalMethod(i,j))) > 1E-10) then
+                                        writeLog = .true.
+                                    endif
+                                    if (writeLog) then
+                                        write(*,*) 'OPTIMIZED i, j, waterVolume, waterColumn, lFlowX, lFlowY', i, j, Me%myWaterVolume(i, j), Me%myWaterColumn(i, j), Me%lFlowX(i, j), Me%lFlowY(i, j)
+                                        write(*,*) 'ORIGINAL  i, j, waterVolume, waterColumn, lFlowX, lFlowY', i, j, myWaterVolume_OriginalMethod(i,j), myWaterColumn_OriginalMethod(i,j), lFlowX_OriginalMethod(i,j), lFlowY_OriginalMethod(i,j)
+                                        !writeLog = .false.
+                                        stop
+                                    endif
+                                    
+                                enddo
+                            enddo
+                            
                             
                             call CheckStability(Restart)
                     
@@ -11539,7 +11584,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     if (Me%myWaterColumn(i   , j-1) > AlmostZero .and. Me%myWaterColumn(i   , j) > AlmostZero) then
                         ! X-face advective contributions
                         XRightAdv4 = 0.0
-                        if ((Me%ComputeFaceU(i, j+1) == 1) then
+                        if (Me%ComputeFaceU(i, j+1) == 1) then
                             if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
                                 if (Qf > 0.0) then
@@ -11763,7 +11808,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP VelocityU_Left, VelocityU_Right, VelocityU_Top, VelocityU_Bottom, &
         !$OMP VelocityU_TopLeft, VelocityU_TopRight, VelocityU_BottomLeft, VelocityU_BottomRight, &
         !$OMP VelocityV_Left, VelocityV_Right, VelocityV_Top, VelocityV_Bottom, &
-        !$OMP VelocityV_TopLeft, VelocityV_TopRight, VelocityV_BottomLeft, VelocityV_BottomRight, &
+        !$OMP VelocityV_TopLeft, VelocityV_TopRight, VelocityV_BottomLeft, VelocityV_BottomRight)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -11849,7 +11894,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     ! Compute advection-rate for U-face (per unit time) using cached loads
                     ! X-face advective contributions
                     XRightAdv = 0.0
-                    if ((Me%ComputeFaceU(i, j+1) == 1) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                         if ((FlowX * FlowX_Right) >= 0.0) then
                             Qf = (FlowX + FlowX) / 2.0
                             if (Qf > 0.0) then
@@ -11946,16 +11991,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         if ((FlowY_Bottom * FlowY) >= 0.0) then
                             Qf = (FlowY_Bottom + FlowY) / 2.0
                             if (Qf > 0.0) then
-                                XLeftAdvV4 = FlowY_Bottom * VelocityV_Bottom
+                                XLeftAdvV = FlowY_Bottom * VelocityV_Bottom
                             else
-                                XLeftAdvV4 = FlowY * VelocityV
+                                XLeftAdvV = FlowY * VelocityV
                             endif
                         endif
                     endif
 
                     YTopAdvV = 0.0
                     if (Me%ComputeFaceU(i, j+1) + ComputeFaceU) then
-                        if (FlowY_Right * FlowY) >= 0.0) then
+                        if (FlowY_Right * FlowY >= 0.0) then
                             Qf = (FlowY_Right + FlowY) / 2.0
                             if (Qf > 0.0) then
                                 YTopAdvV = Qf * VelocityV
@@ -14781,7 +14826,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                     if (WaterVolume < AllmostZeroNegative) then
                         Restart = .true.
-                    else if (WaterVolume < 0.0) then  
+                        write(*,*) "Negative water volume at cell ", i, j, " with value ", WaterVolume
+                        stop
+                    else if (WaterVolume < 0.0) then
+                        write(*,*) "Negative water volume at cell ", i, j, " with value ", WaterVolume
+                        stop
                         Me%myWaterVolume (i, j) = 0.0                 
                     endif
                 
