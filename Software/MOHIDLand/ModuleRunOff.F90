@@ -8192,7 +8192,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     
                                     call DynamicWaveYY_default_CG (Me%CV%CurrentDT)
                                     
-                                    call SetWorkSize                            
+                                    call SetWorkSize
+                                    
+                                    deallocate(myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod)
                             end select
 
 
