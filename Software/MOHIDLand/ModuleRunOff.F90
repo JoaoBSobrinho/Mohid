@@ -7989,6 +7989,9 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         integer                                     :: Niter, iter, i, j
         integer                                     :: n_restart
         logical                                     :: firstRestart
+        logical                                     :: firstRestart, writeLog
+        REAL(8), dimension(:, :), allocatable            :: myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod
+
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
         call Ready(RunOffID, ready_)
@@ -8146,12 +8149,19 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                 case (DiffusionWave_)
                                     call KinematicWave  ()            !Slope based on surface
                                 case (DynamicWave_)
-                                    if(Me%Optimization) then
-                                         call ComputeFaceVelocityModulus
-                                    else
-                                        call ComputeFaceVelocityModulus_original
-                                    endif
-                                    call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
+                                    allocate(myWaterVolume_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                                    allocate(myWaterColumn_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                                    allocate(lFlowX_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                                    allocate(lFlowY_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+									!if(Me%Optimization) then
+                                    call ComputeFaceVelocityModulus_original
+                                         
+                                    !call ComputeFaceVelocityModulus
+                                    !else
+                                        !call ComputeFaceVelocityModulus_original
+                                    !endif
+                                    !call DynamicWaveXX    (Me%CV%CurrentDT)   !Consider Advection, Friction and Pressure
+                                    call DynamicWaveXX_default_CG_original (Me%CV%CurrentDT)
                                     !write(*,*) 'Start DynamicWaveXX set in Runoff Module'
                                     !
                                     !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8160,7 +8170,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     !enddo
                                     !enddo
                                     !write(*,*) 'End DynamicWaveXX set in Runoff Module'
-                                    call DynamicWaveYY    (Me%CV%CurrentDT)
+                                    !call DynamicWaveYY    (Me%CV%CurrentDT)
+                                    call DynamicWaveYY_default_CG_original    (Me%CV%CurrentDT)
                                     !write(*,*) 'Start DynamicWaveYY set in Runoff Module'
                                     !
                                     !do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -8169,7 +8180,21 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     !enddo
                                     !enddo
                                     !write(*,*) 'End DynamicWaveYY set in Runoff Module'
-                                    call SetWorkSize                            
+                                    
+                                    myWaterVolume_OriginalMethod = Me%myWaterVolume
+                                    myWaterColumn_OriginalMethod = Me%myWaterColumn
+                                    lFlowX_OriginalMethod = Me%lFlowX
+                                    lFlowY_OriginalMethod = Me%lFlowY
+                                    
+                                    !call ComputeFaceVelocityModulus_SemWaterColumn
+                                    call ComputeFaceVelocityModulus
+                                    
+                                    call DynamicWaveXX_default_CG (Me%CV%CurrentDT)
+                                    
+                                    call DynamicWaveYY_default_CG (Me%CV%CurrentDT)
+                                    
+                                    call SetWorkSize
+                                    deallocate(myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod)
                             end select
 
 
@@ -11539,7 +11564,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     if (Me%myWaterColumn(i   , j-1) > AlmostZero .and. Me%myWaterColumn(i   , j) > AlmostZero) then
                         ! X-face advective contributions
                         XRightAdv4 = 0.0
-                        if ((Me%ComputeFaceU(i, j+1) == 1) then
+                        if (Me%ComputeFaceU(i, j+1) == 1) then
                             if ((Me%FlowXOld(i, j) * Me%FlowXOld(i, j+1)) >= 0.0) then
                                 Qf = (Me%FlowXOld(i, j) + Me%FlowXOld(i, j+1)) / 2.0
                                 if (Qf > 0.0) then
@@ -11824,7 +11849,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     ! Compute advection-rate for U-face (per unit time) using cached loads
                     ! X-face advective contributions
                     XRightAdv = 0.0
-                    if ((Me%ComputeFaceU(i, j+1) == 1) then
+                    if (Me%ComputeFaceU(i, j+1) == 1) then
                         if ((FlowX * FlowX_Right) >= 0.0) then
                             Qf = (FlowX + FlowX) / 2.0
                             if (Qf > 0.0) then
@@ -11921,16 +11946,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         if ((FlowY_Bottom * FlowY) >= 0.0) then
                             Qf = (FlowY_Bottom + FlowY) / 2.0
                             if (Qf > 0.0) then
-                                XLeftAdvV4 = FlowY_Bottom * FlowY_Bottom / AreaV_Bottom
+                                XLeftAdvV = FlowY_Bottom * FlowY_Bottom / AreaV_Bottom
                             else
-                                XLeftAdvV4 = FlowY * VelocityV
+                                XLeftAdvV = FlowY * VelocityV
                             endif
                         endif
                     endif
 
                     YTopAdvV = 0.0
                     if (Me%ComputeFaceU(i, j+1) + ComputeFaceU) then
-                        if (FlowY_Right * FlowY) >= 0.0) then
+                        if (FlowY_Right * FlowY >= 0.0) then
                             Qf = (FlowY_Right + FlowY) / 2.0
                             if (Qf > 0.0) then
                                 YTopAdvV = Qf * VelocityV
