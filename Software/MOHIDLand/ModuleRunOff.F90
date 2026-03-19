@@ -7988,8 +7988,8 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         logical                                     :: Restart
         integer                                     :: Niter, iter, i, j
         integer                                     :: n_restart
-        logical                                     :: firstRestart
-        REAL(8) dimension(:, :), pointer            :: myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod
+        logical                                     :: firstRestart, writeLog
+        REAL(8), dimension(:, :), allocatable            :: myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
         call Ready(RunOffID, ready_)
@@ -8148,6 +8148,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     call KinematicWave  ()            !Slope based on surface
                                 case (DynamicWave_)
                                     
+                                    allocate(myWaterVolume_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                                    allocate(myWaterColumn_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                                    allocate(lFlowX_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+                                    allocate(lFlowY_OriginalMethod (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
                                     !if(Me%Optimization) then
                                     call ComputeFaceVelocityModulus_original
                                          
@@ -11765,7 +11769,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                             :: ILB, IUB, JLB, JUB
         integer                                             :: i, j, n_faces
         integer                                             :: ComputeFaceU, ComputeFaceV
         integer                                             :: CHUNK
@@ -12104,7 +12107,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real                                        :: Advection, Qf, WetPerimeter
         real(8)                                     :: CriticalFlow
         real                                        :: Margin1, Margin2
-        integer                                     :: CHUNK, dj
+        integer                                     :: dj
         real                                        :: MaxBottom, WaterDepth, dVol
 
 
