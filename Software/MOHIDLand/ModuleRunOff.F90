@@ -11877,6 +11877,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
+        integer                                             :: ILB, IUB, JLB, JUB
         integer                                             :: i, j, n_faces
         integer                                             :: ComputeFaceU, ComputeFaceV
         integer                                             :: CHUNK
@@ -11895,10 +11896,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         REAL(8)                                            :: AreaV_Left, AreaV_Right, AreaV_Top, AreaV_Bottom
         REAL(8)                                             :: AreaV_TopLeft, AreaV_TopRight, AreaV_BottomLeft, AreaV_BottomRight
         REAL(8)                                             :: VelocityU, VelocityV
-        REAL(8)                                             :: VelocityU_Left, VelocityU_Right, VelocityU_Top, VelocityU_Bottom
-        REAL(8)                                            :: VelocityU_TopLeft, VelocityU_TopRight, VelocityU_BottomLeft, VelocityU_BottomRight
-        real(8)                                             :: VelocityV_Left, VelocityV_Right, VelocityV_Top, VelocityV_Bottom
-        REAL(8)                                            :: VelocityV_TopLeft, VelocityV_TopRight, VelocityV_BottomLeft, VelocityV_BottomRight
         real(8)                                             :: Qf ! small temporary needs double when coming from double arrays
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
@@ -11915,11 +11912,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP AreaU_TopLeft, AreaU_TopRight, AreaU_BottomLeft, AreaU_BottomRight, &
         !$OMP AreaV_Left, AreaV_Right, AreaV_Top, AreaV_Bottom, &
         !$OMP AreaV_TopLeft, AreaV_TopRight, AreaV_BottomLeft, AreaV_BottomRight, &
-        !$OMP VelocityU, VelocityV, &
-        !$OMP VelocityU_Left, VelocityU_Right, VelocityU_Top, VelocityU_Bottom, &
-        !$OMP VelocityU_TopLeft, VelocityU_TopRight, VelocityU_BottomLeft, VelocityU_BottomRight, &
-        !$OMP VelocityV_Left, VelocityV_Right, VelocityV_Top, VelocityV_Bottom, &
-        !$OMP VelocityV_TopLeft, VelocityV_TopRight, VelocityV_BottomLeft, VelocityV_BottomRight)
+        !$OMP VelocityU, VelocityV)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -11947,16 +11940,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     AreaU_BottomLeft = Me%AreaU(i-1, j-1)
                     AreaU_BottomRight = Me%AreaU(i-1, j+1)
                     
-                    VelocityU = FlowX / AreaU
-                    VelocityU_Left = FlowX_Left / AreaU_Left
-                    VelocityU_Right = FlowX_Right / AreaU_Right
-                    VelocityU_Top = FlowX_Top / AreaU_Top
-                    VelocityU_Bottom = FlowX_Bottom / AreaU_Bottom
-                    VelocityU_TopLeft = FlowX_TopLeft / AreaU_TopLeft
-                    VelocityU_TopRight = FlowX_TopRight / AreaU_TopRight
-                    VelocityU_BottomLeft = FlowX_BottomLeft / AreaU_BottomLeft
-                    VelocityU_BottomRight = FlowX_BottomRight / AreaU_BottomRight
-                    
+                    VelocityU = FlowX / AreaU                    
                     
                     FlowY = Me%FlowYOld(i, j)
                     FlowY_Bottom = Me%FlowYOld(i-1, j)
@@ -11979,14 +11963,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     AreaV_BottomRight = Me%AreaV(i-1, j+1)
                     
                     VelocityV = FlowY / AreaV
-                    VelocityV_Left = FlowY_Left / AreaV_Left
-                    VelocityV_Right = FlowY_Right / AreaV_Right
-                    VelocityV_Top = FlowY_Top / AreaV_Top
-                    VelocityV_Bottom = FlowY_Bottom / AreaV_Bottom
-                    VelocityV_TopLeft = FlowY_TopLeft / AreaV_TopLeft
-                    VelocityV_TopRight = FlowY_TopRight / AreaV_TopRight
-                    VelocityV_BottomLeft = FlowY_BottomLeft / AreaV_BottomLeft
-                    VelocityV_BottomRight = FlowY_BottomRight / AreaV_BottomRight
 
                 endif
                 
@@ -11996,7 +11972,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Vavg = 0.0
                     n_faces = ComputeFaceV + Me%ComputeFaceV(i+1, j) + Me%ComputeFaceV(i+1, j-1) + Me%ComputeFaceV(i, j-1)
                     if (n_faces > 0) then
-                        Vavg = (VelocityV + VelocityV_Top + VelocityV_TopLeft + VelocityV_Left) / n_faces
+                        Vavg = (VelocityV + FlowY_Top / AreaV_Top + FlowY_TopLeft / AreaV_TopLeft + FlowY_Left / AreaV_Left) / n_faces
                     endif
 
                     ! Use explicit sqrt on single precision temporaries (faster vectorized math on many compilers)
@@ -12007,11 +11983,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     XRightAdv = 0.0
                     if (Me%ComputeFaceU(i, j+1) == 1) then
                         if ((FlowX * FlowX_Right) >= 0.0) then
-                            Qf = (FlowX + FlowX) / 2.0
+                            Qf = (FlowX + FlowX_Right) / 2.0
                             if (Qf > 0.0) then
                                 XRightAdv = FlowX * VelocityU
                             else
-                                XRightAdv = FlowX_Right * VelocityU_Right
+                                XRightAdv = FlowX_Right * FlowX_Right / AreaU_Right
                             endif
                         endif
                     endif
@@ -12020,7 +11996,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         if ((FlowX_Left * FlowX) >= 0.0) then
                             Qf = (FlowX_Left + FlowX) / 2.0
                             if (Qf > 0.0) then
-                                XLeftAdv = FlowX_Left * VelocityU_Left
+                                XLeftAdv = FlowX_Left * FlowX_Left / AreaU_Left
                             else
                                 XLeftAdv = FlowX * VelocityU
                             endif
@@ -12036,12 +12012,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                 YTopAdv = Qf   * VelocityU
                             elseif (Qf < 0.0) then
                                 if(Me%ComputeFaceU(i+1,j) == Compute) then
-                                    YTopAdv = Qf * VelocityU_Top
+                                    YTopAdv = Qf * FlowX_Top / AreaU_Top
                                 else
                                     if(Me%ComputeFaceU(i+1, j-1)== Compute)then
-                                        YTopAdv = Qf * VelocityU_TopLeft
+                                        YTopAdv = Qf * FlowX_TopLeft / AreaU_TopLeft
                                     elseif(Me%ComputeFaceU(i+1, j+1) == Compute)then
-                                        YTopAdv = Qf * VelocityU_TopRight
+                                        YTopAdv = Qf * FlowX_TopRight / AreaU_TopRight
                                     endif
                                 endif
                             endif
@@ -12054,12 +12030,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             Qf = (FlowY_Left + FlowY) / 2.0
                             if (Qf > 0.0)then
                                 if(Me%ComputeFaceU(i-1,j) == Compute) then
-                                    YBottomAdv = Qf * VelocityU_Bottom
+                                    YBottomAdv = Qf * FlowX_Bottom / AreaU_Bottom
                                 else
                                     if(Me%ComputeFaceU(i-1, j-1) == Compute)then
-                                        YBottomAdv = Qf * VelocityU_BottomLeft
+                                        YBottomAdv = Qf * FlowX_BottomLeft / AreaU_BottomLeft
                                     elseif(Me%ComputeFaceU(i-1, j+1) == Compute)then
-                                        YBottomAdv = Qf * VelocityU_BottomRight
+                                        YBottomAdv = Qf * FlowX_BottomRight / AreaU_BottomRight
                                     endif
                                 endif
                             elseif ((Qf < 0.0)) then
@@ -12079,77 +12055,96 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Uavg = 0.0
                     n_faces = ComputeFaceU + Me%ComputeFaceU(i-1, j) + Me%ComputeFaceU(i-1, j+1) + Me%ComputeFaceU(i, j+1)
                     if (n_faces > 0) then
-                        Uavg = (VelocityU + VelocityU_Bottom + VelocityU_BottomRight + VelocityU_Right) / n_faces
+                        Uavg = (VelocityU + FlowX_Bottom / AreaU_Bottom + FlowX_BottomRight / AreaU_BottomRight + FlowX_Right / AreaU_Right) / n_faces
                     endif
 
                     Me%VelModFaceV(i, j) = sqrt( Uavg*Uavg + VelocityV*VelocityV )
 
                     ! V-face advection (mirror of U-face logic)
-                    XRightAdvV = 0.0
-                    if (Me%ComputeFaceV(i+1, j) == 1) then
-                        if ((FlowY * FlowY_Top) >= 0.0) then
-                            Qf = (FlowY + FlowY_Top) / 2.0
-                            if (Qf > 0.0) then
-                                XRightAdvV = FlowY * VelocityV
-                            else
-                                XRightAdvV = FlowY_Top * VelocityV_Top
-                            endif
-                        endif
-                    endif
+                        YTopAdv = 0.0
+                        if (Me%ComputeFaceV(i+1, j) == 1) then 
+                        
+                            if ((FlowY * FlowY_Top) >= 0.0) then
+                            
+                                Qf = (FlowY + FlowY_Top) / 2.0
 
-                    XLeftAdvV = 0.0
-                    if (Me%ComputeFaceV(i-1, j) == 1) then
-                        if ((FlowY_Bottom * FlowY) >= 0.0) then
-                            Qf = (FlowY_Bottom + FlowY) / 2.0
-                            if (Qf > 0.0) then
-                                XLeftAdvV = FlowY_Bottom * VelocityV_Bottom
-                            else
-                                XLeftAdvV = FlowY * VelocityV
-                            endif
-                        endif
-                    endif
-
-                    YTopAdvV = 0.0
-                    if (Me%ComputeFaceU(i, j+1) + ComputeFaceU) then
-                        if (FlowY_Right * FlowY >= 0.0) then
-                            Qf = (FlowY_Right + FlowY) / 2.0
-                            if (Qf > 0.0) then
-                                YTopAdvV = Qf * VelocityV
-                            elseif (Qf < 0.0) then
-                                if(Me%ComputeFaceV(i, j+1) == Compute) then
-                                    YTopAdvV = Qf * VelocityV_Right
+                                if (Qf > 0.0) then
+                                    YTopAdv = FlowY   * VelocityV
                                 else
-                                    if(Me%ComputeFaceV(i-1, j+1) == Compute) then
-                                        YTopAdvV = Qf * VelocityV_BottomRight
-                                    elseif(Me%ComputeFaceV(i+1, j+1) == Compute) then
-                                        YTopAdvV = Qf * VelocityV_TopRight
-                                    endif
+                                    YTopAdv = FlowY_Top * FlowY_Top / AreaV_Top
                                 endif
                             endif
                         endif
-                    endif
+                    
+                        !Face YV(i,j)
+                        YBottomAdv = 0.0
+                        if ((Me%ComputeFaceV(i-1, j) == 1)) then 
 
-                    YBottomAdvV = 0.0
-                    if (ComputeFaceU + Me%ComputeFaceU(i, j-1) > 0) then
-                        if ((FlowX * FlowX_Left) >= 0.0) then
-                            Qf = (FlowX + FlowX_Left) / 2.0
-                            if (Qf > 0.0)then
-                                if(Me%ComputeFaceV(i, j-1) == Compute) then
-                                    YBottomAdvV = Qf * VelocityV_Left
+                            if (FlowY_Bottom * FlowY) >= 0.0) then
+                            
+                                Qf = (FlowY_Bottom + FlowY) / 2.0
+
+                                if (Qf > 0.0) then
+                                    YBottomAdv = FlowY_Bottom * FlowY_Bottom / AreaV_Bottom
                                 else
-                                    if(Me%ComputeFaceV(i+1, j-1) == Compute) then
-                                        YBottomAdvV = Qf * VelocityV_TopLeft
-                                    elseif(Me%ComputeFaceV(i-1, j-1) == Compute) then
-                                        YBottomAdvV = Qf * VelocityV_BottomLeft
+                                    YBottomAdv = FlowY * VelocityV
+                                endif
+                            endif
+                        endif                
+                    
+                        XRightAdv = 0.0
+                        if (Me%ComputeFaceU(i, j+1) +  Me%ComputeFaceU(i-1, j+1) .gt. 0) then
+                        
+                            !if flows in same direction, advection is computed                        
+                            if ((FlowX_Right * FlowX_BottomRight) .ge. 0.0) then
+                            
+                                Qf = (FlowX_Right + FlowX_BottomRight) / 2.0
+                            
+                                if (Qf > 0.0) then
+                                    XRightAdv = Qf   * VelocityV
+                                elseif (Qf < 0.0)then
+                                
+                                    if(Me%ComputeFaceV(i,j+1) == Compute) then
+                                        XRightAdv = Qf   * FlowY_Right / AreaV_Right
+                                    else
+                                        if(Me%ComputeFaceV(i-1, j+1) == Compute)then
+                                            XRightAdv = Qf   *  FlowY_BottomRight / AreaV_BottomRight
+                                        elseif(Me%ComputeFaceV(i+1, j+1) == Compute)then
+                                            XRightAdv = Qf   * FlowY_TopRight / AreaV_TopRight
+                                        endif
                                     endif
                                 endif
-                            elseif ((Qf < 0.0)) then
-                                YBottomAdvV = Qf * VelocityV
                             endif
-                        endif
-                    endif
+                        endif       
 
-                    Me%AdvectionTermV(i,j) = (XLeftAdvV - XRightAdvV) / Me%DX + (YBottomAdvV - YTopAdvV) / Me%DY
+                        XLeftAdv = 0.0
+                        if (Me%ComputeFaceU(i, j) +  Me%ComputeFaceU(i-1, j) > 0) then
+                        
+                            !if flows in same direction, advection is computed                        
+                            if ((FlowX * FlowX_Bottom) >= 0.0) then
+                            
+                                Qf = (FlowX + FlowX_Bottom) / 2.0
+                            
+                                if (Qf > 0.0)then
+                                    if(Me%ComputeFaceV(i,j-1) == Compute) then
+                                        XLeftAdv = Qf   * FlowY_Left / AreaV_Left
+                                    else
+                                        if(Me%ComputeFaceV(i+1, j-1) == Compute)then
+                                            XLeftAdv = Qf * FlowY_TopLeft / AreaV_TopLeft 
+                                        elseif(Me%ComputeFaceV(i-1, j-1) == Compute)then
+                                            XLeftAdv = Qf * FlowY_BottomLeft / AreaV_BottomLeft
+                                        else
+                                            XLeftAdv = 0.0
+                                        endif
+                                   
+                                    endif
+                                elseif (Qf < 0.0) then
+                                    XLeftAdv = Qf   * VelocityV
+                                endif
+                            endif
+                        endif 
+
+                        Me%AdvectionTermV(i,j) = (XLeftAdv - XRightAdv) / Me%DX + (YBottomAdv - YTopAdv) / Me%DY
                 else
                     Me%AdvectionTermV(i,j) = 0.0
                 endif
