@@ -11912,7 +11912,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP AreaU_TopLeft, AreaU_TopRight, AreaU_BottomLeft, AreaU_BottomRight, &
         !$OMP AreaV_Left, AreaV_Right, AreaV_Top, AreaV_Bottom, &
         !$OMP AreaV_TopLeft, AreaV_TopRight, AreaV_BottomLeft, AreaV_BottomRight, &
-        !$OMP VelocityU, VelocityV)
+        !$OMP VelocityU, VelocityV, ComputeFaceU, ComputeFaceV)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
