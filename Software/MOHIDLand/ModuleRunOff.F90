@@ -11969,13 +11969,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 if (ComputeFaceU == Compute) then
 
-                    Vavg = 0.0
                     n_faces = ComputeFaceV + Me%ComputeFaceV(i+1, j) + Me%ComputeFaceV(i+1, j-1) + Me%ComputeFaceV(i, j-1)
                     if (n_faces > 0) then
-                        Vavg = (VelocityV + FlowY_Top / AreaV_Top + FlowY_TopLeft / AreaV_TopLeft + FlowY_Left / AreaV_Left) / n_faces
+                        Vavg = (ComputeFaceV * VelocityV + &
+                                Me%ComputeFaceV(i+1, j) * (FlowY_Top / AreaV_Top) + &
+                                Me%ComputeFaceV(i+1, j-1) * (FlowY_TopLeft / AreaV_TopLeft) + &
+                                Me%ComputeFaceV(i, j-1) * (FlowY_Left / AreaV_Left)) / n_faces
+                    else
+                        Vavg = 0.0
                     endif
 
-                    ! Use explicit sqrt on single precision temporaries (faster vectorized math on many compilers)
                     Me%VelModFaceU(i, j) = sqrt( VelocityU*VelocityU + Vavg*Vavg )
 
                     ! Compute advection-rate for U-face (per unit time) using cached loads
@@ -12052,10 +12055,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 ! V-face velocity magnitude (single-precision compute)
                 if (ComputeFaceV == Compute) then
                     
-                    Uavg = 0.0
                     n_faces = ComputeFaceU + Me%ComputeFaceU(i-1, j) + Me%ComputeFaceU(i-1, j+1) + Me%ComputeFaceU(i, j+1)
                     if (n_faces > 0) then
-                        Uavg = (VelocityU + FlowX_Bottom / AreaU_Bottom + FlowX_BottomRight / AreaU_BottomRight + FlowX_Right / AreaU_Right) / n_faces
+                        Uavg = (ComputeFaceU * VelocityU + &
+                                Me%ComputeFaceU(i-1, j) * (FlowX_Bottom / AreaU_Bottom) + &
+                                Me%ComputeFaceU(i-1, j+1) * (FlowX_BottomRight / AreaU_BottomRight) + &
+                                Me%ComputeFaceU(i, j+1) * (FlowX_Right / AreaU_Right)) / n_faces
+                    else
+                        Uavg = 0.0
                     endif
 
                     Me%VelModFaceV(i, j) = sqrt( Uavg*Uavg + VelocityV*VelocityV )
