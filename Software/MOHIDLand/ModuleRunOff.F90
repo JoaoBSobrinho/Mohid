@@ -12518,12 +12518,12 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real(8)                                     :: CriticalFlow
         real                                        :: Margin1, Margin2
         integer                                     :: dj
-        real                                        :: MaxBottom, WaterDepth, dVol
+        real                                        :: MaxBottom, WaterDepth, dVol, localDT_x_Gravity
 
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX_default_CG")        
                 
-        
+        localDT_x_Gravity = LocalDT * Gravity
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter, dVol, &
@@ -12583,11 +12583,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 !Pressure
                 !m3/s             = s  * m/s2    * m2   * m/m
-                Pressure          = LocalDT * Gravity * Me%AreaU(i, j) * Slope
+                Pressure          = localDT_x_Gravity * Me%AreaU(i, j) * Slope
 
                 !FRICTION - semi-implicit -----------------------------------------------
                 
-                Friction = LocalDT * Gravity * &
+                Friction = localDT_x_Gravity * &
                            Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
                            (HydraulicRadius ** (4./3.)) 
                 
@@ -12938,7 +12938,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real(8)                                     :: CriticalFlow
         real                                        :: Margin1, Margin2
         integer                                     :: CHUNK, dj
-        real                                        :: MaxBottom, WaterDepth, dVol
+        real                                        :: MaxBottom, WaterDepth, dVol, localDT_x_Gravity
 
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "DynamicWaveXX_default_VG")
@@ -12950,6 +12950,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !    write(*,*) "Flow em I J = ", i, j, Me%lFlowX(i, j)
         !enddo
         !enddo
+        localDT_x_Gravity = LocalDT * Gravity
         !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter, dVol, &
@@ -13009,11 +13010,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
                 !Pressure
                 !m3/s             = s  * m/s2    * m2   * m/m
-                Pressure          = LocalDT * Gravity * Me%AreaU(i, j) * Slope
+                Pressure          = localDT_x_Gravity * Me%AreaU(i, j) * Slope
 
                 !FRICTION - semi-implicit -----------------------------------------------
                 
-                Friction = LocalDT * Gravity * &
+                Friction = localDT_x_Gravity * &
                            Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
                            (HydraulicRadius ** (4./3.)) 
                 
