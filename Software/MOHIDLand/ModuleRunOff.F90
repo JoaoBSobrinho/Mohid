@@ -8459,6 +8459,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                 !Ungets external variables
                 call ReadUnLockExternalVar (StaticOnly = .false.)
+                
+                !Make sure that if there is no rainfall or infiltration, the flag is set to false to avoid unwanted calculations in next iterations
+                Me%HasRainFall = .false.
+                Me%HasInfiltration = .false.
             endif
 
             STAT_ = SUCCESS_
@@ -10950,10 +10954,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END PARALLEL
         
         nullify (Me%RainFall)
-        Me%HasRainFall = .false.
         if (.not. Me%HasInfiltration) nullify (Me%CellHasRain)
         nullify (Me%InfiltrationRate)
-        Me%HasInfiltration = .false.
         
        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall_Infiltration")
     end subroutine ModifyRainFall_Infiltration
