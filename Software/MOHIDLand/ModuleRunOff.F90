@@ -11219,8 +11219,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: i, j, MaxJUB, MinJLB, MinILB, MaxIUB
         integer                                     :: CHUNK
         logical                                     :: foundfirst_i
+        LOGICAL                                     :: SkipILB, SkipJLB
+        LOGICAL                                     :: SkipIUB, SkipJUB
     
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+        SkipILB = .false.
+        SkipJLB = .false.
+        SkipIUB = .false.
+        SkipJUB = .false.
+        
+        if (Me%CurrentWorkSize%ILB - Me%WorkSize%ILB < 3) SkipILB = .true.
+        if (Me%WorkSize%IUB - Me%CurrentWorkSize%IUB < 3) SkipIUB = .true.
+        if (Me%CurrentWorkSize%JLB - Me%WorkSize%JLB < 3) SkipJLB = .true.
+        if (Me%WorkSize%JUB - Me%CurrentWorkSize%JUB < 3) SkipJUB = .true.
+        
+        if (SkipILB .AND. SkipIUB .AND. SkipJLB .AND. SkipJUB) return
+        
         Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
         Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
         Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
