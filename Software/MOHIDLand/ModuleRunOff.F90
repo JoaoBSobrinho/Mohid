@@ -934,6 +934,7 @@ Module ModuleRunOff
         type (T_Size2D)                             :: Size
         type (T_Size2D)                             :: WorkSize
         type (T_Size2D)                             :: CurrentWorkSize
+        type (T_Size2D)                             :: BasinPointsWorkSize
         
         type(T_NodeGridPoint    ), pointer          :: FirstNodeGridPoint        => null()
         type(T_NodeGridPoint    ), pointer          :: LastNodeGridPoint         => null()
@@ -1154,6 +1155,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             else
                 call ComputeNextDT (Me%CV%NextNiteration)
             endif
+            
+            call SetWorkSize(.true.)
 
             call ReadUnLockExternalVar (StaticOnly = .false.)
             !Returns ID
@@ -4939,10 +4942,15 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
         
         endif
         
-        Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
-        Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
-        Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
-        Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+        Me%CurrentWorkSize%ILB = Me%WorkSize%IUB !Make sure setworksize does not skip on constructor
+        Me%CurrentWorkSize%IUB = Me%WorkSize%ILB
+        Me%CurrentWorkSize%JLB = Me%WorkSize%JUB
+        Me%CurrentWorkSize%JUB = Me%WorkSize%JLB
+
+        Me%BasinPointsWorkSize%ILB = Me%WorkSize%ILB
+        Me%BasinPointsWorkSize%IUB = Me%WorkSize%IUB
+        Me%BasinPointsWorkSize%JLB = Me%WorkSize%JLB
+        Me%BasinPointsWorkSize%JUB = Me%WorkSize%JUB
                 
     end subroutine InitializeVariables
 
@@ -11213,14 +11221,16 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
 
-    subroutine SetWorkSize
+    subroutine SetWorkSize (Constructor)
         !Arguments-------------------------------------------------------------
+        LOGICAL, intent(IN), optional                 :: Constructor
         !Local-----------------------------------------------------------------
         integer                                     :: i, j, MaxJUB, MinJLB, MinILB, MaxIUB
         integer                                     :: CHUNK
         logical                                     :: foundfirst_i
         LOGICAL                                     :: SkipILB, SkipJLB
         LOGICAL                                     :: SkipIUB, SkipJUB
+        integer, pointer                             :: MapMatrix(:,:)
     
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
         SkipILB = .false.
@@ -11228,17 +11238,17 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         SkipIUB = .false.
         SkipJUB = .false.
         
-        if (Me%CurrentWorkSize%ILB - Me%WorkSize%ILB < 3) SkipILB = .true.
-        if (Me%WorkSize%IUB - Me%CurrentWorkSize%IUB < 3) SkipIUB = .true.
-        if (Me%CurrentWorkSize%JLB - Me%WorkSize%JLB < 3) SkipJLB = .true.
-        if (Me%WorkSize%JUB - Me%CurrentWorkSize%JUB < 3) SkipJUB = .true.
+        if (Me%CurrentWorkSize%ILB - Me%BasinPointsWorkSize%ILB < 5) SkipILB = .true.
+        if (Me%BasinPointsWorkSize%IUB - Me%CurrentWorkSize%IUB < 5) SkipIUB = .true.
+        if (Me%CurrentWorkSize%JLB - Me%BasinPointsWorkSize%JLB < 5) SkipJLB = .true.
+        if (Me%BasinPointsWorkSize%JUB - Me%CurrentWorkSize%JUB < 5) SkipJUB = .true.
         
         if (SkipILB .AND. SkipIUB .AND. SkipJLB .AND. SkipJUB) return
         
-        Me%CurrentWorkSize%ILB = Me%WorkSize%ILB
-        Me%CurrentWorkSize%IUB = Me%WorkSize%IUB
-        Me%CurrentWorkSize%JLB = Me%WorkSize%JLB
-        Me%CurrentWorkSize%JUB = Me%WorkSize%JUB
+        Me%CurrentWorkSize%ILB = Me%BasinPointsWorkSize%ILB
+        Me%CurrentWorkSize%IUB = Me%BasinPointsWorkSize%IUB
+        Me%CurrentWorkSize%JLB = Me%BasinPointsWorkSize%JLB
+        Me%CurrentWorkSize%JUB = Me%BasinPointsWorkSize%JUB
         
         if (.not. Me%HasRainFall) then
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
@@ -11248,12 +11258,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             MaxIUB = Me%WorkSize%ILB
             MaxJUB = Me%WorkSize%JLB
             
+            if (present(Constructor)) then
+                MapMatrix => Me%ExtVar%BasinPoints
+            else
+                MapMatrix => Me%ActivePoints
+            endif
+            
             !$OMP PARALLEL PRIVATE(I,J, foundfirst_i)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:MinJLB, MinILB) REDUCTION(MAX:MaxJUB, MaxIUB)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do j = Me%BasinPointsWorkSize%JLB, Me%BasinPointsWorkSize%JUB
                 foundfirst_i = .false.
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
-                if (Me%ActivePoints(i,j) == 1) then
+            do i = Me%BasinPointsWorkSize%ILB, Me%BasinPointsWorkSize%IUB
+                if (MapMatrix(i,j) == 1) then
                     if (.not. foundfirst_i) then
                         MinILB = min(MinILB, i-1)
                         MinJLB = min(MinJLB, j-1)
@@ -11267,10 +11283,18 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO
             !$OMP END PARALLEL
     
-            Me%CurrentWorkSize%JLB = max(MinJLB, Me%WorkSize%JLB)
-            Me%CurrentWorkSize%JUB = min(MaxJUB, Me%WorkSize%JUB)
-            Me%CurrentWorkSize%ILB = max(MinILB, Me%WorkSize%ILB)
-            Me%CurrentWorkSize%IUB = min(MaxIUB, Me%WorkSize%IUB)
+            if (present(Constructor)) then
+                Me%BasinPointsWorkSize%JLB = max(MinJLB, Me%WorkSize%JLB)
+                Me%BasinPointsWorkSize%JUB = min(MaxJUB, Me%WorkSize%JUB)
+                Me%BasinPointsWorkSize%ILB = max(MinILB, Me%WorkSize%ILB)
+                Me%BasinPointsWorkSize%IUB = min(MaxIUB, Me%WorkSize%IUB)
+            else
+                
+                Me%CurrentWorkSize%JLB = max(MinJLB, Me%WorkSize%JLB)
+                Me%CurrentWorkSize%JUB = min(MaxJUB, Me%WorkSize%JUB)
+                Me%CurrentWorkSize%ILB = max(MinILB, Me%WorkSize%ILB)
+                Me%CurrentWorkSize%IUB = min(MaxIUB, Me%WorkSize%IUB)
+            endif
             
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
         endif
