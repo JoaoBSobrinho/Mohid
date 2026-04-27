@@ -7277,9 +7277,9 @@ i0:     if(Me%Dim == Dim2D)then
                     if (.not. CurrentHDF%Extrapolate .and. GetDDecompON(Me%ObjHorizontalGrid)) then
                     
                         write (*,*) 'You are running in parallel in domain decomposition mode'
-                        write (*,*) 'Need to use option EXTRAPOLATE : 1'
+                        write (*,*) 'Should use option EXTRAPOLATE : 1'
                         write(*,*)'Property '//trim(Me%PropertyID%Name)     
-                        stop 'ReadOptionsHDFinput - ModuleFillMatrix - ERR285'
+                        !stop 'ReadOptionsHDFinput - ModuleFillMatrix - ERR285'
                         
                     endif
 
@@ -7368,9 +7368,9 @@ i0:     if(Me%Dim == Dim2D)then
                 if (.not. CurrentHDF%SpatialInterpolON .and. GetDDecompON(Me%ObjHorizontalGrid)) then
                     
                     write (*,*) 'You are running in parallel in domain decomposition mode'
-                    write (*,*) 'Need to use option SPATIAL_INTERPOL : 1'
+                    write (*,*) 'Should use option SPATIAL_INTERPOL : 1'
                     write(*,*)'Property '//trim(Me%PropertyID%Name)
-                    stop 'ReadOptionsHDFinput - ModuleFillMatrix - ERR325'
+                    !stop 'ReadOptionsHDFinput - ModuleFillMatrix - ERR325'
                     
                 endif                
 
@@ -9215,7 +9215,11 @@ F2D3D:      if (CurrentHDF%From2Dto3D) then
                         if (CurrentHDF%NoData(icount)) then
                             if (CurrentHDF%Extrapolate) then
                                 !NeedToExtrapolate = .true.
+                                do k = Me%WorkSize3D%KLB, Me%WorkSize3D%KUB
+                                    if (Me%PointsToFill3D(i,j,k) == WaterPoint) then
                                 Matrix3D(i, j, k) = Me%DefaultValue(1)
+                                    endif
+                                enddo                                
                             else
                                 write(*,*) 'No data in 2D cell I=',i + di, 'J=',j + dj
                                 stop 'ModifyField4DInterpol - ModuleFillMatrix - ERR60'

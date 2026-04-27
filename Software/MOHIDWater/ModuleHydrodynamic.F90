@@ -1743,6 +1743,8 @@ Module ModuleHydrodynamic
                                                      ProfileON          = .false., &
                                                     TurbineON           = .false.
 
+         logical                                  :: Corners3D          = .false. 
+
          logical                                  :: Simple             = .false.
          logical                                  :: MohidJetON         = .false.  
          logical                                  :: MohidJetONWindow   = .false. 
@@ -1795,6 +1797,8 @@ Module ModuleHydrodynamic
          real,          dimension(:,:,:), pointer :: Wave3D_FBreakingAccelU, Wave3D_FBreakingAccelV
          real,          dimension(:,:,:), pointer :: Wave3D_FVortexAccelU, Wave3D_FVortexAccelV
          real,          dimension(:,:,:), pointer :: Wave3D_FPressureAccelU, Wave3D_FPressureAccelV
+
+         
 
     end type T_OutPut
 
@@ -8963,6 +8967,29 @@ cd21:   if (Baroclinic) then
         if (STAT_CALL /= SUCCESS_)                                               &
             call SetError(FATAL_, INTERNAL_, 'Construct_Numerical_Options - Hydrodynamic - ERR1221')
 
+        !<BeginKeyword>
+            !Keyword          : OUTPUT_CORNERS_3D
+            !<BeginDescription>
+               !
+               !Checks if outputs in the grid hdf5 output corners 3D
+               !
+            !<EndDescription>
+            !Type             : logical
+            !Default          : .false. 
+            !File keyword     : IN_DAD3D
+            !Multiple Options : .true. , .false.
+            !Search Type      : From File
+        !<EndKeyword>
+        call GetData(Me%Output%Corners3D,                                               &
+                     Me%ObjEnterData, iflag,                                            &
+                     keyword    = 'OUTPUT_CORNERS_3D',                                  &
+                     Default    = .false.,                                              &
+                     SearchType = FromFile,                                             &
+                     ClientModule ='ModuleHydrodynamic',                                &
+                     STAT       = STAT_CALL)
+        if (STAT_CALL /= SUCCESS_)                                                      &
+            call SetError(FATAL_, INTERNAL_, 'Construct_Numerical_Options - Hydrodynamic - ERR1230.')        
+
 
     End Subroutine Construct_Numerical_Options
 
@@ -8993,10 +9020,6 @@ cd21:   if (Baroclinic) then
             stop "OperationalModelDefaultOptions - Hydrodynamic - ERR10"
         endif
 
-        Me%ComputeOptions%AssimilaOneField = .false.
-
-        if (Me%ComputeOptions%OperationalDefault) then
-
             call GetData(Me%ComputeOptions%AssimilaOneField,                            &
                           Me%ObjEnterData, iflag,                                       &
                           keyword      = 'ASSIMILA_ONE_FIELD',                          &
@@ -9009,6 +9032,7 @@ cd21:   if (Baroclinic) then
                 stop "OperationalModelDefaultOptions - Hydrodynamic - ERR20"
             endif
 
+        if (Me%ComputeOptions%OperationalDefault) then
 
             !Advection of momentum
             !ADV_METHOD_H             : 4
@@ -13445,6 +13469,8 @@ i1:         if (CoordON) then
         allocate (Me%TidePotential%Beta     (NComp))
         allocate (Me%TidePotential%m        (NComp))
         allocate (Me%TidePotential%L        (0:2  ))
+
+        Me%TidePotential%Arguments(1: NComp) = 0.
 
 !
 ! ---> Compute
@@ -29005,6 +29031,10 @@ ifa:    if (Me%ComputeOptions%LocalSolution == AssimilationField_ .or.          
             LocalVel2D_Y      (:,:) = 0.
             AssimilaWaterLevel(:,:) = 0.
 
+            if (Me%ComputeOptions%AssimilaOneField) then
+                NFieldsSSH = 1
+            endif
+
 diL:        do iL =1, NFieldsSSH
 
                 !call GetAssimilationList(WaterLevel = PropertyID)
@@ -29034,7 +29064,7 @@ diL:        do iL =1, NFieldsSSH
                 call SetError (FATAL_, INTERNAL_, "WaterLevel_FlatherLocalSolution - Hydrodynamic - ERR070")
 
             if (Me%ComputeOptions%AssimilaOneField) then
-                NFieldsUV2D = 0
+                !NFieldsUV2D = 0
             endif
 
 
@@ -29046,7 +29076,14 @@ diL:        do iL =1, NFieldsSSH
                 call SetError (FATAL_, INTERNAL_, "WaterLevel_FlatherLocalSolution - Hydrodynamic - ERR080")
 
             if (Me%ComputeOptions%AssimilaOneField) then
+                if (NFieldsUV2D > 0) then
+                    !If exist at least a solution of barotropic velocities is the assumed the only one to be read
+                    NFieldsUV2D = 1
+                    NFieldsUV3D = 0
+                else
+                    !If no barotropic velocities exist is the assumed the first vel3D solution the only one to be read
                 NFieldsUV3D = 1
+            endif
             endif
 
             if (NFieldsUV3D + NFieldsUV2D /= NFieldsSSH) then
@@ -41408,6 +41445,7 @@ Subroutine Compute_WaveToOceanMomentum_Walstra
         EqAmp          => Me%TidePotential%Amplitude
         Freq           => Me%TidePotential%Frequency
         AstroArg       => Me%TidePotential%Arguments
+        
         m              => Me%TidePotential%m
         L              => Me%TidePotential%L
 
@@ -41472,6 +41510,12 @@ Subroutine Compute_WaveToOceanMomentum_Walstra
 
             AstroArg(M3 ) = -3*s0 + 3*h0 + 180.
 
+            !Conversion of Degrees in Radians
+            do n = 1, Ncomp
+              AstroArg(n) = AstroArg(n) * Pi / 180.
+            enddo
+            
+
         else if (Me%TidePotential%Algorithm == Lefevre) then
 
             !time in Junlian centuries (36525 days)
@@ -41496,7 +41540,7 @@ Subroutine Compute_WaveToOceanMomentum_Walstra
 
             !Lefevre, 2001 do not make reference to the phase corrections (+- 90degrees)
             !However this corrections are made in the ModuleToga (Foreman Tidal Analysis package)
-            !and are also maed by Kantha e Clayson, 2000.
+            !and are also made by Kantha e Clayson, 2000.
             ! + Tau
             AstroArg(K1 ) =  s0         + 90.
             AstroArg(O1 ) =  - s0         - 90.
@@ -41509,12 +41553,14 @@ Subroutine Compute_WaveToOceanMomentum_Walstra
             AstroArg(N2 ) = -   s0 +   p0
             AstroArg(K2 ) = 2*s0
 
-        endif
-
         !Conversion of Degrees in Radians
-        do n = 1, Ncomp
+            do n = 1, 11
           AstroArg(n) = AstroArg(n) * Pi / 180.
         enddo
+
+
+        endif
+
 
         !$ CHUNK = CHUNK_J(JLB, JUB)
         !griflet: needs to privatize array L2
@@ -52515,7 +52561,9 @@ cd2:            if (WaterPoints3D(i  , j  ,k)== WaterPoint .and.                
                              "m", Array3D = SZZ, OutputNumber = Index, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'Write_HDF5_Format - ModuleHydrodynamic - ERR60'
 
+        if (Me%Output%Corners3D) then
         call Write_HDF5_Format_3D_Corners(ObjHDF5 = ObjHDF5, OutputNumber = Index)
+        endif
 
 
         !Writes OpenPoints
@@ -53519,7 +53567,7 @@ cd3:        if (Me%ComputeOptions%Residual) then
 
                     Aux3D(ILB:IUB,JLB:JUB,k) = Value2D(ILB:IUB,JLB:JUB)
 
-                else
+                elseif (k < WorkKUB) then
                     Aux3D(ILB:IUB,JLB:JUB,k) = Aux3D(ILB:IUB,JLB:JUB,k+1)
                 endif
 
