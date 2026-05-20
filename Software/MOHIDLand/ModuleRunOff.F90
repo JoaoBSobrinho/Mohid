@@ -800,6 +800,10 @@ Module ModuleRunOff
         type(T_PropertyID)                          :: OverLandCoefficientID, NoAdvectionZonesID
         real(8), dimension(:,:), pointer            :: AdvectionTermU
         real(8), dimension(:,:), pointer            :: AdvectionTermV
+        integer, dimension(:), allocatable          :: ActivePointsI
+        integer, dimension(:), allocatable          :: ActivePointsJ
+        integer                                     :: NumberOfActivePoints      = 0
+        integer                                     :: NumberOfBasinPoints      = 0
         
         logical                                     :: StormWaterModel          = .false. !If connected to SWMM
         real                                        :: StormWaterModelDT        = -null_real
@@ -5332,6 +5336,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
         !Local-----------------------------------------------------------------
         real(4)  :: ZeroValue = 0.0
         real(4)  :: Aux
+        integer   :: i, j, basinPointCounter
         !Begin-----------------------------------------------------------------
         
         if (Me%HydrodynamicApproximation == FVFluxVectorSplitting_) then
@@ -5411,6 +5416,24 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_Y          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+        
+        !Construct inital Active Points baseline
+        
+        allocate(Me%ActivePointsI(SIZE(Me%ExtVar%BasinPoints,1) * SIZE(Me%ExtVar%BasinPoints,2)))
+        allocate(Me%ActivePointsJ(SIZE(Me%ExtVar%BasinPoints,1) * SIZE(Me%ExtVar%BasinPoints,2)))
+        
+        basinPointCounter = 0
+        do j= Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i= Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ExtVar%BasinPoints(i, j) == 1) then
+                basinPointCounter = basinPointCounter + 1
+                Me%ActivePointsI(basinPointCounter) = i
+                Me%ActivePointsJ(basinPointCounter) = j
+            endif
+        enddo
+        enddo
+        
+        Me%NumberOfBasinPoints = basinPointCounter
 
         call SetMatrixValue(Me%iFlowX, Me%Size, 0.0)
         call SetMatrixValue(Me%iFlowY, Me%Size, 0.0)
@@ -7996,12 +8019,16 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         real                                        :: SumDT, TotalDischargeFlowVolume_entry
         logical                                     :: Restart, Restart_entry
         integer                                     :: Niter, iter, i, j
-        integer                                     :: n_restart
+        integer                                     :: n_restart, n_ActivePoints
         logical                                     :: firstRestart, writeLog
         REAL(8), dimension(:, :), allocatable            :: myWaterVolume_OriginalMethod, myWaterColumn_OriginalMethod, lFlowX_OriginalMethod, lFlowY_OriginalMethod
         REAL(8), dimension(:, :), allocatable            :: myWaterVolume_Original, myWaterColumn_Original, lFlowX_Original, lFlowY_Original
         integer, dimension(:, :), allocatable            :: ActivePoints_OriginalMethod, ActivePoints_Left_OriginalMethod
         integer, dimension(:, :), allocatable            :: ActivePoints_Original, ActivePoints_Left_Original
+        real(8), dimension(:,:), pointer            :: myWaterColumnOld_Original
+        real(8), dimension(:,:), pointer            :: InitialFlowX_Original
+        real(8), dimension(:,:), pointer            :: InitialFlowY_Original
+        integer                                    :: n, ActivePointCounter
         !----------------------------------------------------------------------
         STAT_ = UNKNOWN_
         call Ready(RunOffID, ready_)
@@ -8059,16 +8086,100 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 if (Me%Compute) then
                     
+                    if (Me%HasRainFall == .false.) then
+                        call setActivePointsMapArray(activePointCounter)
+                        Me%NumberOfActivePoints = activePointCounter
+                    else
+                        !use the one computed at construct
+                        Me%NumberOfActivePoints = Me%NumberOfBasinPoints
+                    endif
+                    
+                    Me%NumberOfActivePoints = activePointCounter
+                    
+                    !----------------------------------------------------------------------
+                    !Method 1 - Original: SetMatrixValue with ActivePoints mask
+                    !----------------------------------------------------------------------
+                    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetMatrixValue_Original")
+                    
                     call SetMatrixValue(Me%myWaterColumnOld, Me%CurrentWorkSize, Me%myWaterColumn, Me%ActivePoints)
                     
                     if (Me%Restarted) then
-                        call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%iFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%iFlowY, Me%ActivePoints)
-                        
+                        call SetMatrixValue(Me%InitialFlowX, Me%CurrentWorkSize, Me%iFlowX, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowY, Me%CurrentWorkSize, Me%iFlowY, Me%ActivePoints)
                     else
-                        call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowX, Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
+                        call SetMatrixValue(Me%InitialFlowY, Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
                     endif
+                    
+                    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetMatrixValue_Original")
+                    
+                    !----------------------------------------------------------------------
+                    !Method 2 - New: Direct indexing via ActivePointsI/ActivePointsJ arrays
+                    !----------------------------------------------------------------------
+                    !Save results from Method 1 for comparison
+                    allocate(myWaterColumnOld_Original (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                    allocate(InitialFlowX_Original     (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                    allocate(InitialFlowY_Original     (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                    
+                    myWaterColumnOld_Original = Me%myWaterColumnOld
+                    InitialFlowX_Original     = Me%InitialFlowX
+                    InitialFlowY_Original     = Me%InitialFlowY
+                    
+                    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetMatrixValue_ActivePointsArray")
+                    
+                    if (Me%Restarted) then
+                        !$OMP PARALLEL PRIVATE(i,j,n)
+                        !$OMP DO SCHEDULE(STATIC)
+                        do n = 1, Me%NumberOfActivePoints
+                            i = Me%ActivePointsI(n)
+                            j = Me%ActivePointsJ(n)
+                            Me%myWaterColumnOld(i, j) = Me%myWaterColumn(i, j)
+                            Me%InitialFlowX(i, j) = Me%iFlowX(i, j)
+                            Me%InitialFlowY(i, j) = Me%iFlowY(i, j)
+
+                        enddo
+                        !$OMP END DO
+                        !$OMP END PARALLEL
+                    else
+                        !$OMP PARALLEL PRIVATE(i,j,n)
+                        !$OMP DO SCHEDULE(STATIC)
+                        do n = 1, Me%NumberOfActivePoints
+                            i = Me%ActivePointsI(n)
+                            j = Me%ActivePointsJ(n)
+                            Me%myWaterColumnOld(i, j) = Me%myWaterColumn(i, j)
+                            Me%InitialFlowX(i, j) = Me%lFlowX(i, j)
+                            Me%InitialFlowY(i, j) = Me%lFlowY(i, j)
+                        enddo
+                        !$OMP END DO
+                        !$OMP END PARALLEL
+                    endif
+                    
+                    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetMatrixValue_ActivePointsArray")
+                    
+                    !----------------------------------------------------------------------
+                    !Compare results of Method 1 and Method 2
+                    !----------------------------------------------------------------------
+                    do n = 1, Me%NumberOfActivePoints
+                        i = Me%ActivePointsI(n)
+                        j = Me%ActivePointsJ(n)
+                        if (Abs(Me%myWaterColumnOld(i, j) - myWaterColumnOld_Original(i, j)) > 1E-10) then
+                            write(*,*) 'myWaterColumnOld mismatch at i, j = ', i, j
+                            write(*,*) 'Method1 = ', myWaterColumnOld_Original(i, j), ' Method2 = ', Me%myWaterColumnOld(i, j)
+                            stop 'ModifyRunOff - SetMatrixValue comparison - ERR01'
+                        endif
+                        if (Abs(Me%InitialFlowX(i, j) - InitialFlowX_Original(i, j)) > 1E-10) then
+                            write(*,*) 'InitialFlowX mismatch at i, j = ', i, j
+                            write(*,*) 'Method1 = ', InitialFlowX_Original(i, j), ' Method2 = ', Me%InitialFlowX(i, j)
+                            stop 'ModifyRunOff - SetMatrixValue comparison - ERR02'
+                        endif
+                        if (Abs(Me%InitialFlowY(i, j) - InitialFlowY_Original(i, j)) > 1E-10) then
+                            write(*,*) 'InitialFlowY mismatch at i, j = ', i, j
+                            write(*,*) 'Method1 = ', InitialFlowY_Original(i, j), ' Method2 = ', Me%InitialFlowY(i, j)
+                            stop 'ModifyRunOff - SetMatrixValue comparison - ERR03'
+                        endif
+                    enddo
+                    
+                    deallocate(myWaterColumnOld_Original, InitialFlowX_Original, InitialFlowY_Original)
                     
                     !Set 1D River level in river boundary cells
                     !From External model or DN
@@ -8463,6 +8574,14 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 
                 call ComputeNextDT (Niter)
                 
+                if (Me%HasRainFall == .false.) then
+                    call setActivePointsMapArray(activePointCounter)
+                    Me%NumberOfActivePoints = activePointCounter
+                else
+                    !use the one computed at construct
+                    Me%NumberOfActivePoints = Me%NumberOfBasinPoints
+                endif
+                
                 call Outputs
 
                 !Ungets external variables
@@ -8483,6 +8602,28 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (present(STAT)) STAT = STAT_
         
     end subroutine ModifyRunOff
+    
+    !-------------------------------------------------------------------------------------------
+    
+    subroutine setActivePointsMapArray(activePointCounter)
+    
+    !locals---------------------------------------------------------------------
+    integer :: i, j
+    integer, intent(out) :: activePointCounter
+    if (MonitorPerformance) call StartWatch ("ModuleRunOff", "setActivePointsMapArray")
+    
+    activePointCounter = 0
+    do j= Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+    do i= Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+        if (Me%ActivePoints(i, j) == 1) then
+            activePointCounter = activePointCounter + 1
+            Me%ActivePointsI(activePointCounter) = i
+            Me%ActivePointsJ(activePointCounter) = j
+        endif
+    enddo
+    enddo
+    if (MonitorPerformance) call StopWatch ("ModuleRunOff", "setActivePointsMapArray")
+    end subroutine setActivePointsMapArray
     
     !---------------------------------------------------------------------------
     !> @author Ricardo Birjukovs Canelas - Bentley Systems
@@ -11958,7 +12099,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
                 ComputeFaceU = Me%ComputeFaceU(i, j)
                 ComputeFaceV = Me%ComputeFaceV(i, j)
-                if (ComputeFaceU == Compute .OR. ComputeFaceV) then
+                if (ComputeFaceU == Compute .OR. ComputeFaceV == Compute) then
                     
                     FlowX = Me%FlowXOld(i, j)
                     FlowX_Left = Me%FlowXOld(i, j-1)
