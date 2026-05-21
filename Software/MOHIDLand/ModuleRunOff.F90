@@ -804,6 +804,7 @@ Module ModuleRunOff
         integer, dimension(:), allocatable          :: ActivePointsJ
         integer                                     :: NumberOfActivePoints      = 0
         integer                                     :: NumberOfBasinPoints      = 0
+        logical                                     :: ActivePointsNeedUpdate   = .true.
         
         logical                                     :: StormWaterModel          = .false. !If connected to SWMM
         real                                        :: StormWaterModelDT        = -null_real
@@ -8087,14 +8088,15 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 if (Me%Compute) then
                     
                     if (Me%HasRainFall == .false.) then
-                        call setActivePointsMapArray(activePointCounter)
-                        Me%NumberOfActivePoints = activePointCounter
+                        if (Me%ActivePointsNeedUpdate) then
+                            call setActivePointsMapArray(activePointCounter)
+                            Me%NumberOfActivePoints   = activePointCounter
+                            Me%ActivePointsNeedUpdate = .false.
+                        endif
                     else
                         !use the one computed at construct
                         Me%NumberOfActivePoints = Me%NumberOfBasinPoints
                     endif
-                    
-                    Me%NumberOfActivePoints = activePointCounter
                     
                     !----------------------------------------------------------------------
                     !Method 1 - Original: SetMatrixValue with ActivePoints mask
@@ -8338,6 +8340,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                                     Me%lFlowX = lFlowX_Original
                                     Me%lFlowY = lFlowY_Original
                                     Me%ActivePoints = ActivePoints_Original
+                                    Me%ActivePointsNeedUpdate = .true.
                                     Me%ActivePoints_Left = ActivePoints_Left_Original
                                     call ComputeFaceVelocityModulus_SemWaterColumn_Vel
                                     !call ComputeFaceVelocityModulus
@@ -8575,8 +8578,11 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call ComputeNextDT (Niter)
                 
                 if (Me%HasRainFall == .false.) then
-                    call setActivePointsMapArray(activePointCounter)
-                    Me%NumberOfActivePoints = activePointCounter
+                    if (Me%ActivePointsNeedUpdate) then
+                        call setActivePointsMapArray(activePointCounter)
+                        Me%NumberOfActivePoints   = activePointCounter
+                        Me%ActivePointsNeedUpdate = .false.
+                    endif
                 else
                     !use the one computed at construct
                     Me%NumberOfActivePoints = Me%NumberOfBasinPoints
@@ -11004,6 +11010,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
            
         enddo
 
+         Me%ActivePointsNeedUpdate = .true.
+
          if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyWaterDischarges")
 
 
@@ -11101,6 +11109,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
         endif
         !$OMP END PARALLEL
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         nullify (Me%RainFall)
         if (.not. Me%HasInfiltration) nullify (Me%CellHasRain)
@@ -11354,6 +11364,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
         endif
         
+        Me%ActivePointsNeedUpdate = .true.
     
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
     
@@ -11707,6 +11718,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo              
         !$OMP END DO NOWAIT
         !$OMP END PARALLEL
+    
+        Me%ActivePointsNeedUpdate = .true.
     
     end subroutine KinematicWave
     
@@ -12846,6 +12859,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX_default_CG")
         
         
@@ -13093,6 +13108,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo        
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX_default_CG_original")
         
@@ -13349,6 +13366,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo        
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX_default_VG")
         !write(*,*) "Entrada "
@@ -13682,6 +13701,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo        
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX_CG")
         
@@ -14017,6 +14038,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveXX_VG")
         
         !write(*,*) "Saida "
@@ -14231,6 +14254,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo         
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY_default_CG")
         
@@ -14491,6 +14516,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY_default_CG_original")
         
         
@@ -14750,6 +14777,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo         
         !$OMP END DO
         !$OMP END PARALLEL
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY_default_VG")
         
@@ -15069,6 +15098,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY_CG")
         
         
@@ -15387,6 +15418,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END DO
         !$OMP END PARALLEL
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "DynamicWaveYY_VG")
         
         
@@ -15481,6 +15514,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO
         endif
         !$OMP END PARALLEL        
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "UpdateWaterLevels")
 
@@ -15579,6 +15614,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         enddo
     
+
+        Me%ActivePointsNeedUpdate = .true.
 
     end subroutine RouteDFourPoints_v3
 
@@ -15729,6 +15766,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         enddo
     
+
+        Me%ActivePointsNeedUpdate = .true.
 
     end subroutine RouteDFourPoints
 
@@ -15895,6 +15934,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 if (STAT_CALL /= SUCCESS_) stop 'ComputeStormWaterModel - ModuleRunOff - ERR200'
             endif
         endif
+        
+        Me%ActivePointsNeedUpdate = .true.
         
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeStormWaterModel")
 
@@ -16140,6 +16181,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
         !if (MonitorPerformance) call StopWatch ("ModuleRunOff", "OpenChannelFlow")
     
+        Me%ActivePointsNeedUpdate = .true.
+    
 #endif _SEWERGEMSENGINECOUPLER_
     
     end subroutine OpenChannelFlow
@@ -16312,6 +16355,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             STAT_CALL = SewerGEMSEngine_setNodeSurchargeDepth(Me%Inlets(n)%SWMM_ID, Me%myWaterColumn (i, j))
             if (STAT_CALL /= SUCCESS_) stop 'setInlets_SewerGems - ModuleRunOff - ERR20'
         enddo
+        Me%ActivePointsNeedUpdate = .true.
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine setInlets_SewerGems
     
@@ -16395,6 +16439,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (STAT_CALL /= SUCCESS_) stop 'setHeadWalls_SewerGems - ModuleRunOff - ERR20'
         enddo
         nullify (iFlowX, iflowY)
+        Me%ActivePointsNeedUpdate = .true.
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine setHeadWalls_SewerGems
     
@@ -16542,6 +16587,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
 
 500     format(1x, f13.2, 1x, 3(1x, e20.12e3))
+        Me%ActivePointsNeedUpdate = .true.
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine FlowFromToInlets
     
@@ -16635,6 +16681,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         enddo
 
 600     format(1x, f13.2, 1x, 3(1x, e20.12e3))
+        Me%ActivePointsNeedUpdate = .true.
 #endif _SEWERGEMSENGINECOUPLER_
     end subroutine FlowFromHeadWalls
     
@@ -16947,6 +16994,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsActiveState, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'FlowFromChannels - ModuleRunOff - ERR010'        
    
+        Me%ActivePointsNeedUpdate = .true.
     
     end subroutine FlowFromChannels
     
@@ -17060,6 +17108,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
         enddo         
       
+
+        Me%ActivePointsNeedUpdate = .true.
 
     end subroutine OverLandChannelInteraction_6_NewMapping    
     
@@ -17200,6 +17250,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsSurfaceWidth, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'FlowFromChannels - ModuleRunOff - ERR020'        
+
+        Me%ActivePointsNeedUpdate = .true.
 
     end subroutine OverLandChannelInteraction_6    
     
@@ -17352,6 +17404,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         call UnGetDrainageNetwork (Me%ObjDrainageNetwork, ChannelsSurfaceWidth, STAT = STAT_CALL)
         if (STAT_CALL /= SUCCESS_) stop 'FlowFromChannels - ModuleRunOff - ERR020'        
 
+        Me%ActivePointsNeedUpdate = .true.
     
     end subroutine OverLandChannelInteraction_2
     
@@ -17871,6 +17924,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (BoundaryFlowVolume /= 0.0) Me%Compute = .true.
         endif
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ImposeBoundaryValue_CG")
         
     end subroutine ImposeBoundaryValue_CG
@@ -18100,6 +18155,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (BoundaryFlowVolume /= 0.0) Me%Compute = .true.
         endif
         
+        Me%ActivePointsNeedUpdate = .true.
+        
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ImposeBoundaryValue_VG")
         
     end subroutine ImposeBoundaryValue_VG
@@ -18217,6 +18274,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (BoundaryFlowVolume /= 0.0) Me%Compute = .true.
         endif
     
+        Me%ActivePointsNeedUpdate = .true.
+    
     end subroutine ImposeBoundaryValue_v2_VG      
     !--------------------------------------------------------------------------
     
@@ -18312,6 +18371,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (.not. Me%Compute) then
             if (BoundaryFlowVolume /= 0.0) Me%Compute = .true.
         endif
+    
+        Me%ActivePointsNeedUpdate = .true.
     
     end subroutine ImposeBoundaryValue_v2_CG     
     !--------------------------------------------------------------------------
