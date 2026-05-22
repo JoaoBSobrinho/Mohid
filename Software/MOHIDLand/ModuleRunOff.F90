@@ -19443,7 +19443,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: ILB, IUB, JLB, JUB
         real, dimension(6)  , target                :: AuxTime
         real, dimension(:)  , pointer               :: TimePointer
-        integer                                     :: dis, i, j
+        integer                                     :: dis, i, j, n
         logical                                     :: dbg = .false.
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
 
@@ -19468,15 +19468,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (Me%Output%CumulativeFlowVolume) then
         
             !Update cumulativeFlowVolume. Must do it every time step and before output
-            !$OMP PARALLEL PRIVATE(i,j)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
-            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                if (Me%ActivePoints(i,j) == 1) then
-                    Me%CumulativeFlowX_R4(i, j) = Me%CumulativeFlowX_R4(i, j) + iFlowX(i, j) * Me%ExtVar%DT
-                    Me%CumulativeFlowY_R4(i, j) = Me%CumulativeFlowY_R4(i, j) + iFlowY(i, j) * Me%ExtVar%DT
-                endif
-            enddo
+            !$OMP PARALLEL PRIVATE(i,j,n)
+            !$OMP DO SCHEDULE(STATIC)
+            do n = 1, Me%NumberOfActivePoints
+                i = Me%ActivePointsI(n)
+                j = Me%ActivePointsJ(n)
+                Me%CumulativeFlowX_R4(i, j) = Me%CumulativeFlowX_R4(i, j) + iFlowX(i, j) * Me%ExtVar%DT
+                Me%CumulativeFlowY_R4(i, j) = Me%CumulativeFlowY_R4(i, j) + iFlowY(i, j) * Me%ExtVar%DT
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
@@ -20173,7 +20171,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFloodingAll_R4
 
         !Locals----------------------------------------------------------------
-        integer                                 :: i, j, n
+        integer                                 :: i, j, n, nAP
         integer                                 :: STAT_CALL
         real, dimension(:,:), pointer           :: ChannelsWaterLevel, ChannelsVelocity
         real, dimension(:,:), pointer           :: ChannelsTopArea
@@ -20201,11 +20199,58 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             ComputePoints => Me%ActivePoints
         endif
         
-        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, n)
-        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:Sum)
-        do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-        do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-            if (ComputePoints(i, j) == BasinPoint) then
+        if (FloodWaterColumnLimit > Me%MinimumWaterColumn) then
+            !Use OpenPoints - 2D scan
+            !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, n)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:Sum)
+            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                if (ComputePoints(i, j) == BasinPoint) then
+                    WaterColumn = Me%myWaterColumn(i, j)
+                    !Water Column of overland flow
+                    if (WaterColumn > Me%Output%MaxWaterColumn_R4(i, j)) then
+                        Me%Output%MaxWaterColumn_R4(i, j) = WaterColumn
+                                                        
+                        !Velocity at MaxWater column
+                        Me%Output%VelocityAtMaxWaterColumn_R4(i,j) =  Me%VelocityModulus_R4 (i, j)
+                                        
+                        Me%Output%TimeOfMaxWaterColumn(i,j) = ElapsedTime
+                                                       
+                    endif
+                                                
+                    FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
+                    Me%Output%MaxFloodRisk_R4(i,j) = max(Me%Output%MaxFloodRisk_R4(i,j), FloodRisk)
+                        
+                    do n = 1, NFloodPeriodLimits
+                        if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+                            Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+                        endif
+                    enddo
+                        
+                    if(WaterColumn > Me%Output%FloodArrivalWaterColumnLimit)then
+
+                        if (Me%GridIsConstant) then
+                            Sum = Sum + Me%GridCellArea
+                        else
+                            Sum = Sum + Me%ExtVar%GridCellArea(i,j)
+                        endif
+                            
+                        if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                            Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
+                        endif
+                    endif                      
+                endif
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        else
+            !Use ActivePoints - 1D indexed scan
+            !$OMP PARALLEL PRIVATE(I,J, nAP, FloodRisk, WaterColumn, n)
+            !$OMP DO SCHEDULE(STATIC) REDUCTION(+:Sum)
+            do nAP = 1, Me%NumberOfActivePoints
+                i = Me%ActivePointsI(nAP)
+                j = Me%ActivePointsJ(nAP)
                 WaterColumn = Me%myWaterColumn(i, j)
                 !Water Column of overland flow
                 if (WaterColumn > Me%Output%MaxWaterColumn_R4(i, j)) then
@@ -20239,11 +20284,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
                     endif
                 endif                      
-            endif
-        enddo
-        enddo
-        !$OMP END DO
-        !$OMP END PARALLEL
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+        endif
         
         Me%Output%TotalFloodedArea = Sum
 
@@ -20513,7 +20557,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFloodPeriod
 
         !Locals----------------------------------------------------------------
-        integer                                 :: i, j, n
+        integer                                 :: i, j, n, nAP
         integer                                 :: CHUNK
         real                                    :: WaterColumn
 
@@ -20543,19 +20587,17 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                    if (Me%ActivePoints(i,j) == Compute) then
-                        WaterColumn = Me%myWaterColumn(i, j)
-                        do n = 1, Me%Output%nFloodPeriodLimits
-                            if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
-                                Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
-                            endif
-                        enddo
-                    endif
-                enddo
+                !$OMP PARALLEL PRIVATE(I,J, nAP, n, WaterColumn)
+                !$OMP DO SCHEDULE(STATIC)
+                do nAP = 1, Me%NumberOfActivePoints
+                    i = Me%ActivePointsI(nAP)
+                    j = Me%ActivePointsJ(nAP)
+                    WaterColumn = Me%myWaterColumn(i, j)
+                    do n = 1, Me%Output%nFloodPeriodLimits
+                        if (WaterColumn > Me%Output%FloodPeriodWaterColumnLimits(n)) then
+                            Me%Output%FloodPeriods(i, j, n) = Me%Output%FloodPeriods(i, j, n) + Me%ExtVar%DT
+                        endif
+                    enddo
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
@@ -20577,16 +20619,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J, n, WaterColumn)
-                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
-                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                    if (Me%ActivePoints(i,j) == Compute) then
-                        if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
-                            Me%Output%FloodPeriods(i, j, 1) = Me%Output%FloodPeriods(i, j, 1) + Me%ExtVar%DT
-                        endif
+                !$OMP PARALLEL PRIVATE(I,J, nAP)
+                !$OMP DO SCHEDULE(STATIC)
+                do nAP = 1, Me%NumberOfActivePoints
+                    i = Me%ActivePointsI(nAP)
+                    j = Me%ActivePointsJ(nAP)
+                    if (Me%myWaterColumn(i, j) > Me%Output%FloodPeriodWaterColumnLimit) then
+                        Me%Output%FloodPeriods(i, j, 1) = Me%Output%FloodPeriods(i, j, 1) + Me%ExtVar%DT
                     endif
-                enddo
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
@@ -20602,7 +20642,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     subroutine OutputFloodArrivalTime
 
         !Locals----------------------------------------------------------------
-        integer                                 :: ILB,IUB, JLB, JUB, i, j
+        integer                                 :: ILB,IUB, JLB, JUB, i, j, n
         integer                                 :: CHUNK
         real                                    :: Sum
 
@@ -20623,44 +20663,36 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if (Me%GridIsConstant) then
         
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                if (Me%ActivePoints(i,j) == Compute) then
+            !$OMP PARALLEL PRIVATE(I,J,n)
+            !$OMP DO SCHEDULE(STATIC) REDUCTION(+:sum)
+            do n = 1, Me%NumberOfActivePoints
+                i = Me%ActivePointsI(n)
+                j = Me%ActivePointsJ(n)
+                if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
 
-                    if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
+                    Sum = Sum + Me%GridCellArea
 
-                        Sum = Sum + Me%GridCellArea
-
-                        if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
-                            Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
-                        endif
+                    if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                        Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
                     endif
                 endif
-            enddo
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
         else
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-   
-                if (Me%ActivePoints(i,j) == Compute) then
+            !$OMP PARALLEL PRIVATE(I,J,n)
+            !$OMP DO SCHEDULE(STATIC) REDUCTION(+:sum)
+            do n = 1, Me%NumberOfActivePoints
+                i = Me%ActivePointsI(n)
+                j = Me%ActivePointsJ(n)
+                if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
 
-                    if(Me%myWaterColumn(i, j) > Me%Output%FloodArrivalWaterColumnLimit)then
+                    Sum = Sum + Me%ExtVar%GridCellArea(i,j)
 
-                        Sum = Sum + Me%ExtVar%GridCellArea(i,j)
-
-                        if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
-                            Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
-                        endif
+                    if(Me%Output%FloodArrivalTime(i, j) < 0.0)then
+                        Me%Output%FloodArrivalTime(i, j) = Me%ExtVar%Now - Me%BeginTime
                     endif
                 endif
-
-            enddo
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
@@ -20779,7 +20811,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, CHUNK
+        integer                                     :: i, j, n, CHUNK
         real(8)                                     :: Sum
 
         !Begin-----------------------------------------------------------------
@@ -20787,22 +20819,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunoff", "CalculateTotalStoredVolume")
         if (Me%HydrodynamicApproximation /= FVFluxVectorSplitting_) then
             !FVS computes it in UpdateFVSOutputVariables
-            CHUNK = ChunkJ
-
             Sum = 0.0
 
-            !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:sum)
-            do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
-            do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                    
-                if (Me%ActivePoints(i, j) == 1) then
-                    !m3 = m3  + m3
-                    Sum = Sum + Me%MyWaterVolume(i, j)
-
-                endif
-
-            enddo
+            !$OMP PARALLEL PRIVATE(I,J,n)
+            !$OMP DO SCHEDULE(STATIC) REDUCTION(+:sum)
+            do n = 1, Me%NumberOfActivePoints
+                i = Me%ActivePointsI(n)
+                j = Me%ActivePointsJ(n)
+                !m3 = m3  + m3
+                Sum = Sum + Me%MyWaterVolume(i, j)
             enddo
             !$OMP END DO
             !$OMP END PARALLEL
