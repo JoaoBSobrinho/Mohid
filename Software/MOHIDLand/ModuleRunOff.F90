@@ -11577,7 +11577,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 
                 Friction = LocalDT * Gravity * &
                            Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
-                           (HydraulicRadius ** (4./3.)) 
+                           (HydraulicRadius ** (4./3.))
                 
                 !Advection (may be limited to water column height)
                 if (waterColumn_left > AlmostZero .and. waterColumn_right > AlmostZero) then
@@ -11678,14 +11678,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !Critical Flow
                         !CriticalFlow = Me%AreaU(i, j) * sqrt(Gravity * WaterDepth)
                         !m3/s = m * m * m/s
-                        CriticalFlow = WaterDepth * Me%DY * sqrt(Gravity * WaterDepth)
+                        CriticalFlow = WaterDepth * Me%DY * sqrt(max(Gravity * WaterDepth, 0.0))
                         
                         !only limit if flow higher
                         if (abs(Me%lFlowX(i, j)) > CriticalFlow) then
                             if (Me%lFlowX(i, j) > 0) then
                                 Me%lFlowX(i, j) = CriticalFlow
                             else
-                                Me%lFlowX(i, j) = -1.0 * CriticalFlow
+                                Me%lFlowX(i, j) = -CriticalFlow
                             endif
                         endif
                 
@@ -12692,7 +12692,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine DynamicWaveYY
     
     !-------------------------------------------------------------------------
-    
+
     subroutine DynamicWaveYY_default_CG (LocalDT)
     
         !Arguments-------------------------------------------------------------
@@ -12895,14 +12895,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         !Critical Flow
                         !CriticalFlow = Me%AreaV(i, j) * sqrt(Gravity * WaterDepth)
                         !m3/s = m * m * m/s
-                        CriticalFlow = WaterDepth * Me%DX * sqrt(Gravity * WaterDepth)
+                        CriticalFlow = WaterDepth * Me%DX * sqrt(max(Gravity * WaterDepth, 0.0))
                         
                         !only limit if flow higher
                         if (abs(Me%lFlowY(i, j)) > CriticalFlow) then
                             if (Me%lFlowY(i, j) > 0) then
                                 Me%lFlowY(i, j) = CriticalFlow
                             else
-                                Me%lFlowY(i, j) = -1.0 * CriticalFlow
+                                Me%lFlowY(i, j) = -CriticalFlow
                             endif
                         endif
                     
@@ -12950,7 +12950,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         
     end subroutine DynamicWaveYY_default_CG
-    
+
     !-------------------------------------------------------------------------
     
     subroutine DynamicWaveYY_default_VG (LocalDT)
@@ -17376,7 +17376,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                                 velFace = iFlowY(i, j) / (aux * Me%DX)
                                             endif
                                             !VelFace + celerity
-                                            celerity = sqrt(Gravity * aux)
+                                            celerity = sqrt(max(Gravity * aux, 0.0))
                                             aux = max(abs(velFace + celerity),abs(velFace - celerity))
                                             totalVel = max(totalVel, aux)                                        
                                         endif
@@ -17422,7 +17422,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                                                 velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
                                             endif
                                             !VelFace + celerity
-                                            celerity = sqrt(Gravity * aux)
+                                            celerity = sqrt(max(Gravity * aux, 0.0))
                                             aux = max(abs(velFace + celerity),abs(velFace - celerity))
                                             Distance_Courant = sqrt ((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
                                             nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
