@@ -182,7 +182,18 @@
 			<Tool Name="VFManifestTool" SuppressStartupBanner="true"/>
 		</Configuration>
 		<Configuration Name="Release Double OpenMP|x64" UseCompiler="ifxCompiler" ConfigurationType="typeStaticLibrary" WholeProgramOptimization="true">
-			<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" MultiProcessorCompilation="true" Optimization="optimizeFull" PrefetchInsertionOpt="prefetchAggressive" BufferedIO="true" InterproceduralOptimizations="ipoSingleFile" Preprocess="preprocessYes" AdditionalIncludeDirectories="..\MOHIDBase1\x64\Release Double OpenMP" PreprocessorDefinitions="_NO_NETCDF,_INCREASE_MAXINSTANCES" OpenMP="OpenMPParallelCode" F2003Semantics="true" StandardWarnings="standardWarningsF03" WarnDeclarations="true" WarnUnusedVariables="true" WarnTruncateSource="true" RealKIND="realKIND8" LocalSavedScalarsZero="true" FloatingPointExceptionHandling="fpe0" FloatingPointModel="precise" RuntimeChecks="rtChecksNone"/>
+			<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" MultiProcessorCompilation="true" Optimization="optimizeFull" PrefetchInsertionOpt="prefetchAggressive" BufferedIO="true" InterproceduralOptimizations="ipoSingleFile" Preprocess="preprocessYes" AdditionalIncludeDirectories="..\MOHIDBase1\x64\Release Double OpenMP" PreprocessorDefinitions="_NO_NETCDF,_INCREASE_MAXINSTANCES" OpenMP="OpenMPParallelCode" F2003Semantics="true" StandardWarnings="standardWarningsF03" WarnDeclarations="true" WarnUnusedVariables="true" WarnTruncateSource="true" RealKIND="realKIND8" LocalSavedScalarsZero="true" FloatingPointExceptionHandling="fpe3" FloatingPointModel="precise" RuntimeChecks="rtChecksNone" AdditionalOptions="/assume:noieee_compares"/>
+			<Tool Name="VFLibrarianTool"/>
+			<Tool Name="VFResourceCompilerTool"/>
+			<Tool Name="VFMidlTool" SuppressStartupBanner="true" TargetEnvironment="midlTargetAMD64"/>
+			<Tool Name="VFCustomBuildTool"/>
+			<Tool Name="VFPreLinkEventTool"/>
+			<Tool Name="VFPreBuildEventTool"/>
+			<Tool Name="VFPostBuildEventTool"/>
+			<Tool Name="VFManifestTool" SuppressStartupBanner="true"/>
+		</Configuration>
+		<Configuration Name="Profile Double OpenMP|x64" UseCompiler="ifxCompiler" ConfigurationType="typeStaticLibrary" WholeProgramOptimization="false">
+			<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" DebugInformationFormat="debugEnabled" MultiProcessorCompilation="true" Optimization="optimizeFull" PrefetchInsertionOpt="prefetchAggressive" BufferedIO="true" InterproceduralOptimizations="ipoOff" Preprocess="preprocessYes" AdditionalIncludeDirectories="..\MOHIDBase1\x64\Profile Double OpenMP" PreprocessorDefinitions="_NO_NETCDF,_INCREASE_MAXINSTANCES" OpenMP="OpenMPParallelCode" F2003Semantics="true" StandardWarnings="standardWarningsF03" WarnDeclarations="true" WarnUnusedVariables="true" WarnTruncateSource="true" RealKIND="realKIND8" LocalSavedScalarsZero="true" FloatingPointExceptionHandling="fpe3" FloatingPointModel="precise" RuntimeChecks="rtChecksNone" AdditionalOptions="/assume:noieee_compares"/>
 			<Tool Name="VFLibrarianTool"/>
 			<Tool Name="VFResourceCompilerTool"/>
 			<Tool Name="VFMidlTool" SuppressStartupBanner="true" TargetEnvironment="midlTargetAMD64"/>
@@ -512,6 +523,8 @@
 				<FileConfiguration Name="Debug Double PhreeqC|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP|x64" ExcludedFromBuild="true">
+				</FileConfiguration>
+				<FileConfiguration Name="Profile Double OpenMP|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double Phreeqc|Win32" ExcludedFromBuild="true">
 				</FileConfiguration>
