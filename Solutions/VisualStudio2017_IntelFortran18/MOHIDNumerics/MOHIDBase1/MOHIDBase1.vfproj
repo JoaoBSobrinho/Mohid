@@ -182,7 +182,18 @@
 			<Tool Name="VFManifestTool" SuppressStartupBanner="true"/>
 		</Configuration>
 		<Configuration Name="Release Double OpenMP|x64" UseCompiler="ifxCompiler" ConfigurationType="typeStaticLibrary" WholeProgramOptimization="true">
-			<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" MultiProcessorCompilation="true" Optimization="optimizeFull" PrefetchInsertionOpt="prefetchAggressive" BufferedIO="true" InterproceduralOptimizations="ipoSingleFile" Preprocess="preprocessYes" AdditionalIncludeDirectories="..\..\..\..\ExternalLibs\HDF5_1.8.17_x64\include\fortran" PreprocessorDefinitions="_NO_NETCDF;_INCREASE_MAXINSTANCES;_LONG_LINE_LENGTH" OpenMP="OpenMPParallelCode" F2003Semantics="true" StandardWarnings="standardWarningsF03" WarnDeclarations="true" WarnUnusedVariables="true" WarnTruncateSource="true" RealKIND="realKIND8" LocalSavedScalarsZero="true" FloatingPointExceptionHandling="fpe0" FloatingPointModel="precise" RuntimeChecks="rtChecksNone"/>
+			<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" MultiProcessorCompilation="true" Optimization="optimizeFull" PrefetchInsertionOpt="prefetchAggressive" BufferedIO="true" InterproceduralOptimizations="ipoSingleFile" Preprocess="preprocessYes" AdditionalIncludeDirectories="..\..\..\..\ExternalLibs\HDF5_1.8.17_x64\include\fortran" PreprocessorDefinitions="_NO_NETCDF;_INCREASE_MAXINSTANCES;_LONG_LINE_LENGTH" OpenMP="OpenMPParallelCode" F2003Semantics="true" StandardWarnings="standardWarningsF03" WarnDeclarations="true" WarnUnusedVariables="true" WarnTruncateSource="true" RealKIND="realKIND8" LocalSavedScalarsZero="true" FloatingPointExceptionHandling="fpe3" FloatingPointModel="precise" RuntimeChecks="rtChecksNone" AdditionalOptions="/assume:noieee_compares"/>
+			<Tool Name="VFLibrarianTool"/>
+			<Tool Name="VFResourceCompilerTool"/>
+			<Tool Name="VFMidlTool" SuppressStartupBanner="true" TargetEnvironment="midlTargetAMD64"/>
+			<Tool Name="VFCustomBuildTool"/>
+			<Tool Name="VFPreLinkEventTool"/>
+			<Tool Name="VFPreBuildEventTool"/>
+			<Tool Name="VFPostBuildEventTool"/>
+			<Tool Name="VFManifestTool" SuppressStartupBanner="true"/>
+		</Configuration>
+		<Configuration Name="Profile Double OpenMP|x64" UseCompiler="ifxCompiler" ConfigurationType="typeStaticLibrary" WholeProgramOptimization="false">
+			<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" DebugInformationFormat="debugEnabled" MultiProcessorCompilation="true" Optimization="optimizeFull" PrefetchInsertionOpt="prefetchAggressive" BufferedIO="true" InterproceduralOptimizations="ipoOff" Preprocess="preprocessYes" AdditionalIncludeDirectories="..\..\..\..\ExternalLibs\HDF5_1.8.17_x64\include\fortran" PreprocessorDefinitions="_NO_NETCDF;_INCREASE_MAXINSTANCES;_LONG_LINE_LENGTH" OpenMP="OpenMPParallelCode" F2003Semantics="true" StandardWarnings="standardWarningsF03" WarnDeclarations="true" WarnUnusedVariables="true" WarnTruncateSource="true" RealKIND="realKIND8" LocalSavedScalarsZero="true" FloatingPointExceptionHandling="fpe3" FloatingPointModel="precise" RuntimeChecks="rtChecksNone" AdditionalOptions="/assume:noieee_compares"/>
 			<Tool Name="VFLibrarianTool"/>
 			<Tool Name="VFResourceCompilerTool"/>
 			<Tool Name="VFMidlTool" SuppressStartupBanner="true" TargetEnvironment="midlTargetAMD64"/>
@@ -487,6 +498,8 @@
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
+				<FileConfiguration Name="Profile Double OpenMP|x64" ExcludedFromBuild="true">
+				</FileConfiguration>
 				<FileConfiguration Name="Debug Double SewerGEMSCoupled|Win32" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP SewerGEMSCoupled|x64" ExcludedFromBuild="true">
@@ -650,6 +663,8 @@
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
+				<FileConfiguration Name="Profile Double OpenMP|x64" ExcludedFromBuild="true">
+				</FileConfiguration>
 				<FileConfiguration Name="Debug Double SewerGEMSCoupled|Win32" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP SewerGEMSCoupled|x64" ExcludedFromBuild="true">
@@ -755,6 +770,9 @@
 					<Tool Name="VFFortranCompilerTool" StandardWarnings="standardWarningsNone" WarnDeclarations="false" WarnUnusedVariables="false"/>
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP|x64">
+					<Tool Name="VFFortranCompilerTool" StandardWarnings="standardWarningsNone" WarnDeclarations="false" WarnUnusedVariables="false"/>
+				</FileConfiguration>
+				<FileConfiguration Name="Profile Double OpenMP|x64">
 					<Tool Name="VFFortranCompilerTool" StandardWarnings="standardWarningsNone" WarnDeclarations="false" WarnUnusedVariables="false"/>
 				</FileConfiguration>
 				<FileConfiguration Name="Debug|x64">
@@ -864,6 +882,8 @@
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
+				<FileConfiguration Name="Profile Double OpenMP|x64" ExcludedFromBuild="true">
+				</FileConfiguration>
 				<FileConfiguration Name="Debug Double PhreeqC|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double Phreeqc|Win32" ExcludedFromBuild="true">
@@ -899,6 +919,8 @@
 				<FileConfiguration Name="Release|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Release Double OpenMP|x64" ExcludedFromBuild="true">
+				</FileConfiguration>
+				<FileConfiguration Name="Profile Double OpenMP|x64" ExcludedFromBuild="true">
 				</FileConfiguration>
 				<FileConfiguration Name="Debug Double SewerGEMSCoupled|Win32" ExcludedFromBuild="true">
 				</FileConfiguration>
