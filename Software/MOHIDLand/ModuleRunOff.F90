@@ -333,6 +333,11 @@ Module ModuleRunOff
     integer, parameter                              :: FVFluxVectorSplitting_     = 4
 
     integer, parameter                              :: UnitMax          = 80
+
+    !Performance A/B harness tolerances (see MOHID_Performance_Optimization_Plan.md).
+    !A mismatch FAILs only when BOTH the absolute and relative differences exceed these.
+    real,    parameter                              :: ProfileTolAbs_   = 1.0e-5
+    real,    parameter                              :: ProfileTolRel_   = 1.0e-4
     
     !water column computation in faces
     integer, parameter                              :: WCMaxBottom_     = 1
@@ -886,6 +891,10 @@ Module ModuleRunOff
         logical                                     :: SimpleChannelInteraction = .false.
         logical                                     :: ChannelHasTwoGridPoints  = .false.
         logical                                     :: LimitToCriticalFlow      = .true.
+        !Performance A/B harness: .false. (default) = dual-run mode (baseline + performant compared
+        !in a single run, trajectory follows the trusted baseline); .true. = run only the optimized
+        !(performant) routine variants, for the final validation against the original outputs.
+        logical                                     :: ProfilePerformantOnly    = .false.
         integer                                     :: FaceWaterColumn          = WCMaxBottom_
         integer                                     :: OverlandChannelInteractionMethod = null_int
 
@@ -1732,6 +1741,19 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                      Default      = .true.,                                 &
                      STAT         = STAT_CALL)                                  
         if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR394'
+
+        !Performance A/B harness switch. When .false. (default) the model runs both the baseline
+        !and the performant variant of profiled routines in a single run, compares them against the
+        !plan tolerances and follows the trusted baseline trajectory. Set to 1 to run ONLY the
+        !performant variant (used for the final validation against the original HDF5/timeseries).
+        call GetData(Me%ProfilePerformantOnly,                              &
+                     Me%ObjEnterData, iflag,                                &  
+                     keyword      = 'PROFILE_PERFORMANT_ONLY',             &
+                     ClientModule = 'ModuleRunOff',                         &
+                     SearchType   = FromFile,                               &
+                     Default      = .false.,                                &
+                     STAT         = STAT_CALL)                                  
+        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR395'
 
         !If Buildings are to be simulated (flow ocuation in urban areas)
         call GetData(Me%Buildings,                                          &
@@ -17305,14 +17327,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: Niter        
         
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, STAT_CALL, CHUNK
-        integer                                     :: ILB, IUB, JLB, JUB
-        real                                        :: nextDTCourant, aux
+        integer                                     :: STAT_CALL, CHUNK
+        real                                        :: nextDTCourant, nextDTCourant_baseline
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
-        real                                        :: CurrentDT, Distance_Courant, totalVel
-        real                                        :: velface, celerity, waterColumn, waterColumn_NE
-        real                                        :: sqrt_gravity
+        real                                        :: CurrentDT
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !----------------------------------------------------------------------
     
@@ -17326,7 +17345,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         nextDTCourant   = -null_real
         nextDTVariation = -null_real
-        totalVel = 0.0
         
         if (Me%Restarted) then
             iFlowX => Me%iFlowX
@@ -17339,91 +17357,26 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (VariableDT) then
             if (Me%Compute) then
                 CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-    
-                ILB = Me%WorkSize%ILB
-                IUB = Me%WorkSize%IUB
-                JLB = Me%WorkSize%JLB
-                JUB = Me%WorkSize%JUB
-            
-                sqrt_gravity = sqrt(Gravity)
+
                 if (Me%CV%LimitDTCourant) then
-                    if (Me%GridIsConstant) then
-                        Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-                        !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE)
-                        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-                        do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
-                        do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
-                            if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                                waterColumn = Me%myWaterColumn(i, j)
-                                ! East face (j-1, i)
-                                if (Me%ExtVar%BasinPoints(i, j-1) == Compute) then
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i, j-1) == Compute) then
-                                        waterColumn_NE = Me%myWaterColumn(i, j-1)
-                                        aux = (waterColumn + waterColumn_NE) * 0.5
-                                        velFace = iFlowX(i, j) / (aux * Me%DY)
-                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
-                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
-                                        totalVel = max(totalVel, aux)
-                                    endif
-                                endif
-                                ! North face (i-1, j)
-                                if (Me%ExtVar%BasinPoints(i-1, j) == Compute) then
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i-1, j) == Compute) then
-                                        waterColumn_NE = Me%myWaterColumn(i-1, j)
-                                        aux = (waterColumn + waterColumn_NE) * 0.5
-                                        velFace = iFlowY(i, j) / (aux * Me%DX)
-                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
-                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
-                                        totalVel = max(totalVel, aux)
-                                    endif
-                                endif
-                            endif
-                        enddo
-                        enddo
-                        !$OMP END DO 
-                        !$OMP END PARALLEL
-                    
-                        if (totalVel > AlmostZero) then
-                            aux = Distance_Courant / totalVel
-                        
-                            nextDTCourant = min(nextDTCourant, aux)
-                        endif
-                    
+                    if (Me%ProfilePerformantOnly) then
+                        !Production / final-validation path: only the optimized variant runs.
+                        call ComputeNextDT_CourantScan(iFlowX, iFlowY, CHUNK, nextDTCourant)
                     else
-                        !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE,Distance_Courant)
-                        !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-                        do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
-                        do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
-                            if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                                waterColumn = Me%myWaterColumn(i, j)
-                                Distance_Courant = sqrt((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
-                                ! East face (j-1, i)
-                                if (Me%ExtVar%BasinPoints(i, j-1) == Compute) then
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i, j-1) == Compute) then
-                                        waterColumn_NE = Me%myWaterColumn(i, j-1)
-                                        aux = (waterColumn + waterColumn_NE) * 0.5
-                                        velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
-                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
-                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
-                                        nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
-                                    endif
-                                endif
-                                ! North face (i-1, j)
-                                if (Me%ExtVar%BasinPoints(i-1, j) == Compute) then
-                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i-1, j) == Compute) then
-                                        waterColumn_NE = Me%myWaterColumn(i-1, j)
-                                        aux = (waterColumn + waterColumn_NE) * 0.5
-                                        velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
-                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
-                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
-                                        nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
-                                    endif
-                                endif
-                            endif
-                        enddo
-                        enddo
-                        !$OMP END DO 
-                        !$OMP END PARALLEL
+                        !Dual-run A/B path: run baseline and performant in the SAME process so the
+                        !profiler measures both under identical ambient load, then verify the
+                        !performant result against the baseline and follow the trusted baseline.
+                        nextDTCourant_baseline = -null_real
+                        call ComputeNextDT_CourantScan_baseline(iFlowX, iFlowY, CHUNK, nextDTCourant_baseline)
+
+                        nextDTCourant = -null_real
+                        call ComputeNextDT_CourantScan(iFlowX, iFlowY, CHUNK, nextDTCourant)
+
+                        call CheckProfileScalarDiff(nextDTCourant_baseline, nextDTCourant,      &
+                                                    'ComputeNextDT_CourantScan', Niter)
+
+                        !Trajectory always follows the trusted baseline result.
+                        nextDTCourant = nextDTCourant_baseline
                     endif
                 endif
             endif
@@ -17501,7 +17454,260 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     end subroutine ComputeNextDT
 
     !--------------------------------------------------------------------------
-    
+
+    !--------------------------------------------------------------------------
+    ! Performance A/B harness routines (Phase 3 - ComputeNextDT).
+    !
+    ! ComputeNextDT_CourantScan          : PERFORMANT variant (current optimized code).
+    ! ComputeNextDT_CourantScan_baseline : BASELINE variant (pre-Phase-3 code) kept for the
+    !                                      in-run comparison. DELETE once the optimization is
+    !                                      confirmed and keep only the performant scan.
+    ! Both scan the Courant condition read-only and return the resulting nextDTCourant.
+    !--------------------------------------------------------------------------
+
+    subroutine ComputeNextDT_CourantScan (iFlowX, iFlowY, CHUNK, nextDTCourant)
+
+        !Arguments-------------------------------------------------------------
+        real(8), dimension(:,:), pointer            :: iFlowX, iFlowY
+        integer                                     :: CHUNK
+        real                                        :: nextDTCourant
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        real                                        :: aux, Distance_Courant, totalVel
+        real                                        :: velFace, celerity, waterColumn, waterColumn_NE
+        real                                        :: sqrt_gravity
+        !----------------------------------------------------------------------
+
+        totalVel     = 0.0
+        sqrt_gravity = sqrt(Gravity)
+
+        if (Me%GridIsConstant) then
+            Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
+            !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
+            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                    waterColumn = Me%myWaterColumn(i, j)
+                    ! East face (j-1, i)
+                    if (Me%ExtVar%BasinPoints(i, j-1) == Compute) then
+                        if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i, j-1) == Compute) then
+                            waterColumn_NE = Me%myWaterColumn(i, j-1)
+                            aux = (waterColumn + waterColumn_NE) * 0.5
+                            velFace = iFlowX(i, j) / (aux * Me%DY)
+                            celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                            aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                            totalVel = max(totalVel, aux)
+                        endif
+                    endif
+                    ! North face (i-1, j)
+                    if (Me%ExtVar%BasinPoints(i-1, j) == Compute) then
+                        if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i-1, j) == Compute) then
+                            waterColumn_NE = Me%myWaterColumn(i-1, j)
+                            aux = (waterColumn + waterColumn_NE) * 0.5
+                            velFace = iFlowY(i, j) / (aux * Me%DX)
+                            celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                            aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                            totalVel = max(totalVel, aux)
+                        endif
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO 
+            !$OMP END PARALLEL
+
+            if (totalVel > AlmostZero) then
+                aux = Distance_Courant / totalVel
+                nextDTCourant = min(nextDTCourant, aux)
+            endif
+
+        else
+            !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE,Distance_Courant)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                    waterColumn = Me%myWaterColumn(i, j)
+                    Distance_Courant = sqrt((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
+                    ! East face (j-1, i)
+                    if (Me%ExtVar%BasinPoints(i, j-1) == Compute) then
+                        if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i, j-1) == Compute) then
+                            waterColumn_NE = Me%myWaterColumn(i, j-1)
+                            aux = (waterColumn + waterColumn_NE) * 0.5
+                            velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
+                            celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                            aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                            nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
+                        endif
+                    endif
+                    ! North face (i-1, j)
+                    if (Me%ExtVar%BasinPoints(i-1, j) == Compute) then
+                        if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i-1, j) == Compute) then
+                            waterColumn_NE = Me%myWaterColumn(i-1, j)
+                            aux = (waterColumn + waterColumn_NE) * 0.5
+                            velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
+                            celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                            aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                            nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
+                        endif
+                    endif
+                endif
+            enddo
+            enddo
+            !$OMP END DO 
+            !$OMP END PARALLEL
+        endif
+
+    end subroutine ComputeNextDT_CourantScan
+
+    !--------------------------------------------------------------------------
+
+    subroutine ComputeNextDT_CourantScan_baseline (iFlowX, iFlowY, CHUNK, nextDTCourant)
+
+        !Arguments-------------------------------------------------------------
+        real(8), dimension(:,:), pointer            :: iFlowX, iFlowY
+        integer                                     :: CHUNK
+        real                                        :: nextDTCourant
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, c, nx, ny, i_North, j_East
+        real                                        :: aux, Distance_Courant, totalVel
+        real                                        :: velFace, celerity, waterColumn, waterColumn_NE
+        integer, dimension(2,2)                     :: strideJ
+        !----------------------------------------------------------------------
+
+        totalVel = 0.0
+        strideJ  = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
+
+        if (Me%GridIsConstant) then
+            Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
+            !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
+            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                    do c = 1, size(strideJ,1)
+                        !Compute fluxes of east and north cell faces
+                        j_East = j - strideJ(c, 1)
+                        i_North = i - strideJ(c, 2)
+
+                        if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+
+                            if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
+                                waterColumn = Me%myWaterColumn (i,j)
+                                waterColumn_NE = Me%myWaterColumn (i_North,j_East)
+
+                                nx = strideJ(c, 1)
+                                ny = strideJ(c, 2)
+                                aux = (waterColumn + waterColumn_NE) / 2
+
+                                if (nx == 1) then
+                                    velFace = iFlowX(i, j) / (aux * Me%DY)
+                                else
+                                    velFace = iFlowY(i, j) / (aux * Me%DX)
+                                endif
+                                !VelFace + celerity
+                                celerity = sqrt(max(Gravity * aux, 0.0))
+                                aux = max(abs(velFace + celerity),abs(velFace - celerity))
+                                totalVel = max(totalVel, aux)
+                            endif
+                        endif
+                    enddo
+                endif
+            enddo
+            enddo
+            !$OMP END DO 
+            !$OMP END PARALLEL
+
+            if (totalVel > AlmostZero) then
+                aux = Distance_Courant / totalVel
+                nextDTCourant = min(nextDTCourant, aux)
+            endif
+
+        else
+            !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
+            !$OMP Distance_Courant)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
+            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
+                    do c = 1, size(strideJ,1)
+                        !Compute fluxes of east and north cell faces
+                        j_East = j - strideJ(c, 1)
+                        i_North = i - strideJ(c, 2)
+
+                        if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
+
+                            if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
+                                waterColumn = Me%myWaterColumn (i,j)
+                                waterColumn_NE = Me%myWaterColumn (i_North,j_East)
+
+                                nx = strideJ(c, 1)
+                                ny = strideJ(c, 2)
+                                aux = (waterColumn + waterColumn_NE) / 2
+
+                                if (nx == 1) then
+                                    velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
+                                else
+                                    velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
+                                endif
+                                !VelFace + celerity
+                                celerity = sqrt(max(Gravity * aux, 0.0))
+                                aux = max(abs(velFace + celerity),abs(velFace - celerity))
+                                Distance_Courant = sqrt ((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
+                                nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
+                            endif
+                        endif
+                    enddo
+                endif
+            enddo
+            enddo
+            !$OMP END DO 
+            !$OMP END PARALLEL
+        endif
+
+    end subroutine ComputeNextDT_CourantScan_baseline
+
+    !--------------------------------------------------------------------------
+
+    ! Reusable in-run A/B check: FAILs (and stops) only when BOTH the absolute and relative
+    ! differences between the baseline and performant scalar exceed the plan tolerances.
+    subroutine CheckProfileScalarDiff (baselineVal, perfVal, routineName, Niter)
+
+        !Arguments-------------------------------------------------------------
+        real,             intent(in)                :: baselineVal, perfVal
+        character(len=*), intent(in)                :: routineName
+        integer,          intent(in)                :: Niter
+
+        !Local-----------------------------------------------------------------
+        real                                        :: absDiff, relDiff, denom
+        !----------------------------------------------------------------------
+
+        absDiff = abs(perfVal - baselineVal)
+        denom   = max(abs(baselineVal), abs(perfVal))
+
+        if (denom > AlmostZero) then
+            relDiff = absDiff / denom
+        else
+            relDiff = 0.0
+        endif
+
+        if (absDiff > ProfileTolAbs_ .and. relDiff > ProfileTolRel_) then
+            write(*,*) 'PROFILE A/B MISMATCH in ', trim(routineName)
+            write(*,*) '  Niter      = ', Niter
+            write(*,*) '  baseline   = ', baselineVal
+            write(*,*) '  performant = ', perfVal
+            write(*,*) '  abs diff   = ', absDiff, ' (tol ', ProfileTolAbs_, ')'
+            write(*,*) '  rel diff   = ', relDiff, ' (tol ', ProfileTolRel_, ')'
+            stop 'CheckProfileScalarDiff - ModuleRunOff - A/B tolerance exceeded'
+        endif
+
+    end subroutine CheckProfileScalarDiff
+
+    !--------------------------------------------------------------------------
+
     subroutine Outputs
         !Local---------------------------------------------------------------
         logical :: IsFinalFile

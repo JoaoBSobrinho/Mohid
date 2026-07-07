@@ -277,42 +277,87 @@ Setting `FloatingPointExceptionHandling` from `fpe0` to `fpe3` at config level i
 
 ---
 
-## Phase 3 – `ComputeNextDT` Optimizations (NOT STARTED)
+## In-Run A/B Profiling Harness (methodology — applies to Phase 3 onward)
 
-> **Note:** The `max(aux, 0.0)` guard for `sqrt(Gravity * aux)` was applied in Phase 2 Step 1 (L17383 and L17429). After Phase 2 FPE relaxation, `ComputeNextDT` cost should drop substantially; this phase focuses on the remaining structural inefficiencies.
+**Problem:** Wall-clock and VTune CPU numbers drift between runs because of ambient load (Teams meetings, background processes, thermal throttling). Comparing a *baseline run* against a *separate optimized run* therefore mixes the optimization effect with machine noise.
 
-**Location:** `ComputeNextDT` (~L17302–L17511)  
+**Solution:** Run the **baseline** and **performant** variants of the profiled routine(s) **inside the same process**, back-to-back, every timestep. Both variants then experience identical ambient conditions, so VTune's per-function CPU times give a clean, noise-cancelled delta in a *single* run.
+
+### Protocol (per profiled routine)
+1. **Snapshot** the persistent state the routine mutates (only needed for state-mutating routines).
+2. Run the **baseline** variant.
+3. Capture its outputs into `_baseline` variables.
+4. **Restore** the snapshot so the performant variant starts from identical inputs.
+5. Run the **performant** variant.
+6. **Compare** performant vs baseline against the plan tolerances (abs `1e-5` **and** rel `1e-4` must *both* be exceeded to FAIL); **`stop` with a diagnostic** on mismatch.
+7. **Overwrite** the outputs with the **baseline** values so the simulation trajectory always follows the trusted baseline (keeps multi-run behaviour bit-identical while validating the optimization live).
+
+> For **read-only** routines (e.g. `ComputeNextDT`, which only returns a scalar `nextDTCourant`) steps 1/4/7 collapse to "just use the baseline scalar" — no snapshot/restore is needed.
+
+### Runtime switch
+A `runoff.dat` keyword controls the mode:
+
+| `PROFILE_PERFORMANT_ONLY` | Behaviour |
+|---|---|
+| `0` (default) | **Dual-run A/B** — baseline + performant both run, compared, trajectory follows baseline. Use for profiling & live validation. |
+| `1` | **Performant only** — no baseline, no compare, zero overhead. Use for the **final** HDF5/timeseries validation against the original. |
+
+Implemented via `Me%ProfilePerformantOnly` (default `.false.`) in `ModuleRunOff.F90`. Tolerances are module parameters `ProfileTolAbs_ = 1.0e-5`, `ProfileTolRel_ = 1.0e-4`. Scalar comparison helper: `CheckProfileScalarDiff` (already in the code).
+
+### Per-phase execution checklist (for the implementing agent)
+
+> Follow these steps at the **start of every phase** that uses the A/B harness. This is the authoritative recipe — do not improvise.
+
+1. **Branch:** cut `perf/PhaseN` from the *confirmed & cleaned* `perf/Phase(N-1)` (see Branch strategy).
+2. **Classify the routine:**
+   - **Read-only** (returns scalars only, mutates no persistent `Me%…` state) → use `CheckProfileScalarDiff`. No snapshot/restore. (Phase 3 pattern.)
+   - **State-mutating** (writes persistent matrices, e.g. `Me%lFlowX/Y`) → you MUST add/reuse `CheckProfileMatrixDiff` (spec below) **at the start of this phase**, and implement the full snapshot → baseline → capture → restore → performant → compare → restore-to-baseline protocol.
+3. **Duplicate the routine:** keep the current production code as `<Routine>_baseline`; put the optimized code in `<Routine>` (or `<Routine>_perf` extracted from a thin dispatcher). Copy the baseline **verbatim** so it is a true reference.
+4. **Wire the dispatcher** gated on `Me%ProfilePerformantOnly`:
+   - `.true.` → call performant only.
+   - `.false.` → run baseline + performant, compare via the appropriate `CheckProfile*Diff`, then follow the baseline result/state.
+5. **Validate & profile** (see per-phase validation workflow).
+6. **Clean up** once confirmed (see Cleanup rule), commit, then start Phase N+1.
+
+### `CheckProfileMatrixDiff` specification (create at the start of the first state-mutating phase, then reuse)
+
+Not yet in the code — add it in `ModuleRunOff.F90` next to `CheckProfileScalarDiff` when the first matrix-mutating phase begins. Required behaviour (mirror `CheckProfileScalarDiff` exactly so the two are interchangeable):
+
+- **Signature:** `CheckProfileMatrixDiff(baselineMat, perfMat, routineName, Niter)` where `baselineMat`/`perfMat` are `real(8), dimension(:,:), pointer` (or matching the matrix type being compared — provide a `_R4` overload if a `real(4)` matrix is needed).
+- **Scan** the computed cells only (respect `Me%WorkSize` bounds and the same `BasinPoints/OpenPoints == Compute` masks the routine uses — do NOT compare halo/inactive cells).
+- **FAIL rule (identical to the scalar helper and `compare_mohid.py`):** for the worst cell, FAIL only if **both** `absDiff > ProfileTolAbs_` **and** `relDiff > ProfileTolRel_`, where `relDiff = absDiff / max(|baseline|, |perf|)` (guard `max(...) > AlmostZero`).
+- **On FAIL:** `write(*,*)` the routine name, `Niter`, worst `(i,j)`, baseline value, perf value, abs & rel diffs and the tolerances, then `stop`.
+- Reuse the module parameters `ProfileTolAbs_` / `ProfileTolRel_`.
+
+### Snapshot / restore note (state-mutating phases only)
+
+Allocate `<matrix>_snapshot` and `<matrix>_baseline` module or local buffers once (not every timestep — reuse them). Sequence per call: copy live matrix → `_snapshot`; run baseline; copy result → `_baseline`; copy `_snapshot` back to live; run performant; `CheckProfileMatrixDiff(_baseline, live, …)`; copy `_baseline` back to live so the trajectory follows the baseline.
+
+### Cleanup rule
+Once an optimization is **confirmed** (A/B passes tolerances and the performant-only run matches the original outputs), **delete the `_baseline` variant, the snapshot/restore buffers, and the dual-run branch of the dispatcher**, keeping only the performant routine. Then cut the next phase branch from that cleaned state.
+
+### Branch strategy
+**Continuous chain.** Each `perf/PhaseN` branch is cut from the *confirmed & cleaned* `perf/Phase(N-1)`. This measures each phase's incremental gain on top of prior confirmed gains, and the A/B baseline for phase N is exactly phase N-1's production routine.
+
+---
+
+## Phase 3 – `ComputeNextDT` Optimizations ✅ IMPLEMENTED — A/B harness in place, awaiting profiling
+
+> **Status:** Optimized `ComputeNextDT` implemented (branch `perf/Phase3`). The In-Run A/B harness (above) is wired in: `ComputeNextDT_CourantScan` (performant) vs `ComputeNextDT_CourantScan_baseline` (pre-Phase-3 `strideJ` loop), compared each timestep via `CheckProfileScalarDiff`. `ComputeNextDT` itself is now a thin dispatcher. **`ComputeNextDT_CourantScan_baseline` and the dual-run branch must be DELETED once the optimization is confirmed.**
+
+**Location:** `ComputeNextDT` + `ComputeNextDT_CourantScan[_baseline]` (search these names in `ModuleRunOff.F90`)  
 **Hotspot:** ~185s CPU NoRain 10T (completely unaffected by Phase 1); ~53s WithRain 10T. Scales ~2x (good parallelism but absolute cost still high).
 
-### Known issues inside the hot loop:
-```fortran
-Distance_Courant = sqrt((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-! ^ This is a scalar – hoist outside loop
+### Optimizations applied (the performant variant):
+1. **Hoisted `Distance_Courant`** out of the loop in the constant-grid path (computed once).
+2. **`sqrt(max(aux, 0.0))`** guard (avoids the `for_is_nan` wrapper; also pairs with Phase 2 FPE relaxation).
+3. **`sqrt_gravity = sqrt(Gravity)`** precomputed → `celerity = sqrt_gravity * sqrt(max(aux, 0.0))` (multiply + cheaper depth-only sqrt instead of `sqrt(Gravity*aux)`).
+4. **Removed the `strideJ` reshape/transpose + inner `c` loop**; replaced with two explicit unrolled East/North face blocks (fewer integer ops, no per-cell 2×2 array indexing).
 
-celerity = sqrt(Gravity * aux)     ! aux = water depth, real(4)
-! ^ sqrt under fpe0 generates for_is_nan_t_ per cell
-
-maxSpeed = max(abs(velFace + celerity), abs(velFace - celerity))
-! ^ abs() calls are fine, no issue
-```
-
-### Proposed fixes:
-1. **Hoist `Distance_Courant`** outside the parallel region – compute once before `!$OMP PARALLEL`
-2. **Eliminate `for_is_nan_t_` from `sqrt(Gravity * aux)`** – use `max(aux, 0.0)` to guarantee non-negative:
-   ```fortran
-   celerity = sqrt(Gravity * max(aux, 0.0))
-   ```
-   This may allow the compiler to skip the NaN-check wrapper under fpe0.
-3. **Precompute `sqrt_gravity = sqrt(Gravity)`** before OMP loop (Gravity is a `real, parameter`):
-   ```fortran
-   real :: sqrt_gravity
-   sqrt_gravity = sqrt(Gravity)
-   ! then inside loop:
-   celerity = sqrt_gravity * sqrt(max(aux, 0.0))
-   ```
-   This reduces 1 sqrt per cell to a multiply + 1 cheaper sqrt (of depth only).
-
-> **Note:** Fix 2 (`max(aux, 0.0)` guard) is a **pre-requisite** for Phase 2 FPE relaxation and should be done together. Fix 3 (`sqrt_gravity`) is an additional micro-optimization.
+### Validation workflow for this phase:
+1. Build `Profile Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 0` → VTune shows `ComputeNextDT_CourantScan` vs `..._baseline` side-by-side (noise-cancelled). The run also live-asserts they agree within tolerance.
+2. Build `Release Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 1`, then `compare_mohid.py` against the original outputs.
+3. When confirmed: delete `ComputeNextDT_CourantScan_baseline` + the dual-run branch in `ComputeNextDT`; keep only `ComputeNextDT_CourantScan`. Commit. Cut `perf/Phase4` from here.
 
 ---
 
