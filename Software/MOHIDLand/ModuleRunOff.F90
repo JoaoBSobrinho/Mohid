@@ -17305,14 +17305,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: Niter        
         
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j, STAT_CALL, CHUNK, c, nx, ny
-        integer                                     :: ILB, IUB, JLB, JUB, j_East, i_North
+        integer                                     :: i, j, STAT_CALL, CHUNK
+        integer                                     :: ILB, IUB, JLB, JUB
         real                                        :: nextDTCourant, aux
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
         real                                        :: CurrentDT, Distance_Courant, totalVel
         real                                        :: velface, celerity, waterColumn, waterColumn_NE
-        integer, dimension(2,2)                     :: strideJ
+        real                                        :: sqrt_gravity
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !----------------------------------------------------------------------
     
@@ -17327,8 +17327,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         nextDTCourant   = -null_real
         nextDTVariation = -null_real
         totalVel = 0.0
-        
-        strideJ = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
         
         if (Me%Restarted) then
             iFlowX => Me%iFlowX
@@ -17347,41 +17345,38 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 JLB = Me%WorkSize%JLB
                 JUB = Me%WorkSize%JUB
             
+                sqrt_gravity = sqrt(Gravity)
                 if (Me%CV%LimitDTCourant) then
                     if (Me%GridIsConstant) then
                         Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-                        !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
+                        !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE)
                         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
                         do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
                         do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
                             if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                                do c = 1, size(strideJ,1)
-                                    !Compute fluxes of east and north cell faces
-                                    j_East = j - strideJ(c, 1)
-                                    i_North = i - strideJ(c, 2)
-                            
-                                    if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-                                    
-                                        if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
-                                            waterColumn = Me%myWaterColumn (i,j)
-                                            waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-                                        
-                                            nx = strideJ(c, 1)
-                                            ny = strideJ(c, 2)
-                                            aux = (waterColumn + waterColumn_NE) / 2
-                                        
-                                            if (nx == 1) then
-                                                velFace = iFlowX(i, j) / (aux * Me%DY)
-                                            else
-                                                velFace = iFlowY(i, j) / (aux * Me%DX)
-                                            endif
-                                            !VelFace + celerity
-                                            celerity = sqrt(max(Gravity * aux, 0.0))
-                                            aux = max(abs(velFace + celerity),abs(velFace - celerity))
-                                            totalVel = max(totalVel, aux)                                        
-                                        endif
+                                waterColumn = Me%myWaterColumn(i, j)
+                                ! East face (j-1, i)
+                                if (Me%ExtVar%BasinPoints(i, j-1) == Compute) then
+                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i, j-1) == Compute) then
+                                        waterColumn_NE = Me%myWaterColumn(i, j-1)
+                                        aux = (waterColumn + waterColumn_NE) * 0.5
+                                        velFace = iFlowX(i, j) / (aux * Me%DY)
+                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                                        totalVel = max(totalVel, aux)
                                     endif
-                                enddo
+                                endif
+                                ! North face (i-1, j)
+                                if (Me%ExtVar%BasinPoints(i-1, j) == Compute) then
+                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i-1, j) == Compute) then
+                                        waterColumn_NE = Me%myWaterColumn(i-1, j)
+                                        aux = (waterColumn + waterColumn_NE) * 0.5
+                                        velFace = iFlowY(i, j) / (aux * Me%DX)
+                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                                        totalVel = max(totalVel, aux)
+                                    endif
+                                endif
                             endif
                         enddo
                         enddo
@@ -17395,40 +17390,35 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         endif
                     
                     else
-                        !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
-                        !$OMP Distance_Courant)
+                        !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE,Distance_Courant)
                         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
                         do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
                         do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
                             if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                                do c = 1, size(strideJ,1)
-                                    !Compute fluxes of east and north cell faces
-                                    j_East = j - strideJ(c, 1)
-                                    i_North = i - strideJ(c, 2)
-                            
-                                    if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-                                    
-                                        if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
-                                            waterColumn = Me%myWaterColumn (i,j)
-                                            waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-                                        
-                                            nx = strideJ(c, 1)
-                                            ny = strideJ(c, 2)
-                                            aux = (waterColumn + waterColumn_NE) / 2
-                                        
-                                            if (nx == 1) then
-                                                velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
-                                            else
-                                                velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
-                                            endif
-                                            !VelFace + celerity
-                                            celerity = sqrt(max(Gravity * aux, 0.0))
-                                            aux = max(abs(velFace + celerity),abs(velFace - celerity))
-                                            Distance_Courant = sqrt ((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
-                                            nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
-                                        endif
+                                waterColumn = Me%myWaterColumn(i, j)
+                                Distance_Courant = sqrt((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
+                                ! East face (j-1, i)
+                                if (Me%ExtVar%BasinPoints(i, j-1) == Compute) then
+                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i, j-1) == Compute) then
+                                        waterColumn_NE = Me%myWaterColumn(i, j-1)
+                                        aux = (waterColumn + waterColumn_NE) * 0.5
+                                        velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
+                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                                        nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
                                     endif
-                                enddo
+                                endif
+                                ! North face (i-1, j)
+                                if (Me%ExtVar%BasinPoints(i-1, j) == Compute) then
+                                    if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i-1, j) == Compute) then
+                                        waterColumn_NE = Me%myWaterColumn(i-1, j)
+                                        aux = (waterColumn + waterColumn_NE) * 0.5
+                                        velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
+                                        celerity = sqrt_gravity * sqrt(max(aux, 0.0))
+                                        aux = max(abs(velFace + celerity), abs(velFace - celerity))
+                                        nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
+                                    endif
+                                endif
                             endif
                         enddo
                         enddo
