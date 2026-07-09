@@ -983,6 +983,18 @@ Module ModuleRunOff
     type (T_RunOff), pointer                        :: FirstObjRunOff       => null()
     type (T_RunOff), pointer                        :: Me                   => null()
 
+    !Phase 4 A/B profiling snapshot buffers for ModifyGeometryAndMapping.
+    !(Temporary — delete with Phase 4 cleanup once the optimization is confirmed.)
+    real,    allocatable :: MGA_AreaU_snap (:,:),  MGA_AreaV_snap (:,:)
+    real,    allocatable :: MGA_AreaU_base (:,:),  MGA_AreaV_base (:,:)
+    integer, allocatable :: MGA_CmpFU_snap (:,:),  MGA_CmpFV_snap (:,:)
+    integer, allocatable :: MGA_CmpFU_base (:,:),  MGA_CmpFV_base (:,:)
+    integer, allocatable :: MGA_ActPts_snap(:,:),  MGA_OpenPts_snap(:,:)
+    integer, allocatable :: MGA_ActPts_base(:,:),  MGA_OpenPts_base(:,:)
+    logical              :: MGA_Compute_snap = .false.
+    logical              :: MGA_Compute_base = .false.
+    integer              :: MGA_CallCount    = 0
+
     !--------------------------------------------------------------------------
     
     contains
@@ -10822,6 +10834,115 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     
     subroutine ModifyGeometryAndMapping(UpdateMapping)
+
+        !Arguments-------------------------------------------------------------
+        logical, optional, intent(IN)               :: UpdateMapping
+        !----------------------------------------------------------------------
+
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+
+        if (Me%ProfilePerformantOnly) then
+            !Performant-only mode: skip baseline and comparison overhead.
+            call ModifyGeometryAndMapping_perf(UpdateMapping)
+        else
+            !Dual-run A/B mode: snapshot → baseline → capture → restore → perf → compare → restore-baseline.
+
+            !Allocate snapshot/baseline buffers on the first A/B call (once per run).
+            if (.not. allocated(MGA_AreaU_snap)) then
+                allocate(MGA_AreaU_snap (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_AreaV_snap (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_AreaU_base (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_AreaV_base (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_CmpFU_snap (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_CmpFV_snap (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_CmpFU_base (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_CmpFV_base (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_ActPts_snap (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_OpenPts_snap(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_ActPts_base (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+                allocate(MGA_OpenPts_base(Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
+            endif
+
+            MGA_CallCount = MGA_CallCount + 1
+
+            !Step 1: Snapshot the persistent state the routine mutates.
+            MGA_AreaU_snap   = Me%AreaU
+            MGA_AreaV_snap   = Me%AreaV
+            MGA_CmpFU_snap   = Me%ComputeFaceU
+            MGA_CmpFV_snap   = Me%ComputeFaceV
+            MGA_Compute_snap = Me%Compute
+            if (present(UpdateMapping)) then
+                if (UpdateMapping) then
+                    MGA_ActPts_snap  = Me%ActivePoints
+                    MGA_OpenPts_snap = Me%OpenPoints
+                endif
+            endif
+
+            !Step 2: Run baseline.
+            call ModifyGeometryAndMapping_baseline(UpdateMapping)
+
+            !Step 3: Capture baseline outputs.
+            MGA_AreaU_base   = Me%AreaU
+            MGA_AreaV_base   = Me%AreaV
+            MGA_CmpFU_base   = Me%ComputeFaceU
+            MGA_CmpFV_base   = Me%ComputeFaceV
+            MGA_Compute_base = Me%Compute
+            if (present(UpdateMapping)) then
+                if (UpdateMapping) then
+                    MGA_ActPts_base  = Me%ActivePoints
+                    MGA_OpenPts_base = Me%OpenPoints
+                endif
+            endif
+
+            !Step 4: Restore snapshot so performant starts from identical inputs.
+            Me%AreaU        = MGA_AreaU_snap
+            Me%AreaV        = MGA_AreaV_snap
+            Me%ComputeFaceU = MGA_CmpFU_snap
+            Me%ComputeFaceV = MGA_CmpFV_snap
+            Me%Compute      = MGA_Compute_snap
+            if (present(UpdateMapping)) then
+                if (UpdateMapping) then
+                    Me%ActivePoints = MGA_ActPts_snap
+                    Me%OpenPoints   = MGA_OpenPts_snap
+                endif
+            endif
+
+            !Step 5: Run performant.
+            call ModifyGeometryAndMapping_perf(UpdateMapping)
+
+            !Step 6: Compare AreaU and AreaV (the real-valued face areas).
+            !ComputeFaceU/V are integer masks derived deterministically from WCA; they
+            !match iff AreaU/AreaV agree within tolerance.
+            call CheckProfileMatrixDiff(MGA_AreaU_base, Me%AreaU, &
+                                        'ModifyGeometryAndMapping AreaU', MGA_CallCount)
+            call CheckProfileMatrixDiff(MGA_AreaV_base, Me%AreaV, &
+                                        'ModifyGeometryAndMapping AreaV', MGA_CallCount)
+
+            !Step 7: Restore baseline outputs so the simulation trajectory follows the
+            !trusted baseline while profiling is in progress.
+            Me%AreaU        = MGA_AreaU_base
+            Me%AreaV        = MGA_AreaV_base
+            Me%ComputeFaceU = MGA_CmpFU_base
+            Me%ComputeFaceV = MGA_CmpFV_base
+            Me%Compute      = MGA_Compute_base
+            if (present(UpdateMapping)) then
+                if (UpdateMapping) then
+                    Me%ActivePoints = MGA_ActPts_base
+                    Me%OpenPoints   = MGA_OpenPts_base
+                endif
+            endif
+
+        endif
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
+
+    end subroutine ModifyGeometryAndMapping
+
+    !--------------------------------------------------------------------------
+    !Verbatim copy of the pre-Phase4 ModifyGeometryAndMapping production code.
+    !Retained for A/B profiling; delete (along with dispatcher and snapshot buffers)
+    !once the Phase 4 optimization is confirmed.
+    subroutine ModifyGeometryAndMapping_baseline(UpdateMapping)
     
         !Arguments-------------------------------------------------------------
         logical, optional, intent(IN)               :: UpdateMapping
@@ -10835,8 +10956,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer, dimension(2,2)                     :: strideJ
     
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
-        
-        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
     
         ILB = Me%WorkSize%ILB
         IUB = Me%WorkSize%IUB
@@ -11062,12 +11181,240 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END PARALLEL
             endif
         endif
+    
+    end subroutine ModifyGeometryAndMapping_baseline
+
+    !--------------------------------------------------------------------------
+    !Phase 4 optimized variant of ModifyGeometryAndMapping: the strideJ 2x2 array
+    !and the c=1,2 dispatch loop have been unrolled into explicit east-face (U, j-1
+    !neighbour) and north-face (V, i-1 neighbour) blocks in every branch.
+    !This eliminates per-cell array indexing into strideJ, the loop counter, and the
+    !if (dj==1) branch from the hot inner loop, with zero arithmetic change.
+    subroutine ModifyGeometryAndMapping_perf(UpdateMapping)
+    
+        !Arguments-------------------------------------------------------------
+        logical, optional, intent(IN)               :: UpdateMapping
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j
+        integer                                     :: ILB, IUB, JLB, JUB
+        real                                        :: WCA
+        real                                        :: LevelLeft, LevelRight, LevelBottom, LevelTop
+        real                                        :: TopographyLeft, TopographyRight, TopographyBottom, TopographyTop
+        integer                                     :: CHUNK, Sum
+    
+        CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+    
+        ILB = Me%WorkSize%ILB
+        IUB = Me%WorkSize%IUB
+        JLB = Me%WorkSize%JLB
+        JUB = Me%WorkSize%JUB
+        Sum = 0
+        !$OMP PARALLEL PRIVATE(I,J, WCA, LevelLeft, LevelRight, LevelBottom, LevelTop, TopographyLeft, TopographyRight, TopographyBottom, TopographyTop)
+        if (Me%HydrodynamicApproximation == KinematicWave_) then
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+            do j = JLB, JUB
+            do i = ILB, IUB
+                if (Me%ExtVar%BasinPoints(i, j) == 1) then
+
+                    !East face (U, j-1 neighbour)
+                    if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                        if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
+                            !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                            TopographyLeft  = Me%ExtVar%Topography (i, j-1)
+                            TopographyRight = Me%ExtVar%Topography (i, j)
+                            LevelLeft  = Me%myWaterColumn(i, j-1) + TopographyLeft
+                            LevelRight = Me%myWaterColumn(i, j)   + TopographyRight
+                            if (TopographyLeft > TopographyRight) then
+                                !Water Column Left (above MaxBottom)
+                                WCA = max(LevelLeft  - Me%Bottom_X(i,j), AlmostZero_Double)
+                            else
+                                !Water Column Right (above MaxBottom)
+                                WCA = max(LevelRight - Me%Bottom_X(i,j), AlmostZero_Double)
+                            endif
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaU(i, j) = WCA * Me%ExtVar%DYY(i, j)
+                            if (WCA > Me%MinimumWaterColumn) then
+                                Me%ComputeFaceU(i, j) = 1
+                            else
+                                Me%ComputeFaceU(i, j) = 0
+                            endif
+                        else
+                            Me%AreaU(i, j) = AlmostZero_Double * Me%ExtVar%DYY(i, j)
+                            Me%ComputeFaceU(i, j) = 0
+                        endif
+                    endif
+
+                    !North face (V, i-1 neighbour)
+                    if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                        if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
+                            !In the case of kinematic wave, always consider the "upstream" area, otherwise the average above "max bottom"
+                            TopographyBottom = Me%ExtVar%Topography (i-1, j)
+                            TopographyTop    = Me%ExtVar%Topography (i, j)
+                            LevelBottom = Me%myWaterColumn(i-1, j) + TopographyBottom
+                            LevelTop    = Me%myWaterColumn(i, j)   + TopographyTop
+                            if (Me%ExtVar%Topography(i-1, j) > Me%ExtVar%Topography(i, j)) then
+                                !Water Column Left (above MaxBottom)
+                                WCA = max(LevelBottom - Me%Bottom_Y(i,j), AlmostZero_Double)
+                            else
+                                !Water Column Right (above MaxBottom)
+                                WCA = max(LevelTop    - Me%Bottom_Y(i,j), AlmostZero_Double)
+                            endif
+                            !Area  = Water Column * Side lenght of cell
+                            Me%AreaV(i, j) = WCA * Me%ExtVar%DXX(i, j)
+                            if (WCA > Me%MinimumWaterColumn) then
+                                Me%ComputeFaceV(i, j) = 1
+                            else
+                                Me%ComputeFaceV(i, j) = 0
+                            endif
+                        else
+                            Me%AreaV(i, j) = AlmostZero_Double * Me%ExtVar%DXX(i, j)
+                            Me%ComputeFaceV(i, j) = 0
+                        endif
+                    endif
+
+                endif
+            enddo
+            enddo
+            !$OMP END DO
         
+        else
+            if (Me%GridIsConstant) then
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == 1) then
+
+                        !East face (U, j-1 neighbour)
+                        if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                            if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
+                                TopographyLeft  = Me%ExtVar%Topography (i, j-1)
+                                TopographyRight = Me%ExtVar%Topography (i, j)
+                                LevelLeft  = Me%myWaterColumn(i, j-1) + TopographyLeft
+                                LevelRight = Me%myWaterColumn(i, j)   + TopographyRight
+                                WCA = max(LevelLeft, LevelRight) - max(TopographyLeft, TopographyRight)
+                                if (WCA > Me%MinimumWaterColumn) then
+                                    !Area  = Water Column * Side lenght of cell
+                                    Me%AreaU(i, j)      = WCA * Me%DY
+                                    Me%ComputeFaceU(i, j) = 1
+                                    Sum = Sum + 1
+                                else
+                                    Me%ComputeFaceU(i, j) = 0
+                                endif
+                            else
+                                Me%ComputeFaceU(i, j) = 0
+                            endif
+                        endif
+
+                        !North face (V, i-1 neighbour)
+                        if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                            if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
+                                TopographyBottom = Me%ExtVar%Topography (i-1, j)
+                                TopographyTop    = Me%ExtVar%Topography (i, j)
+                                LevelBottom = Me%myWaterColumn(i-1, j) + TopographyBottom
+                                LevelTop    = Me%myWaterColumn(i, j)   + TopographyTop
+                                WCA = max(LevelBottom, LevelTop) - max(TopographyBottom, TopographyTop)
+                                if (WCA > Me%MinimumWaterColumn) then
+                                    !Area  = Water Column * Side lenght of cell
+                                    Me%AreaV(i, j)      = WCA * Me%DX
+                                    Me%ComputeFaceV(i, j) = 1
+                                    Sum = Sum + 1
+                                else
+                                    Me%ComputeFaceV(i, j) = 0
+                                endif
+                            else
+                                Me%ComputeFaceV(i, j) = 0
+                            endif
+                        endif
+
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+            else
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+ : Sum)
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == 1) then
+
+                        !East face (U, j-1 neighbour)
+                        if (Me%ExtVar%BasinPoints(i, j-1) == 1) then
+                            if (Me%ActivePoints(i, j-1) + Me%ActivePoints(i,j) > 0) then
+                                TopographyLeft  = Me%ExtVar%Topography (i, j-1)
+                                TopographyRight = Me%ExtVar%Topography (i, j)
+                                LevelLeft  = Me%myWaterColumn(i, j-1) + TopographyLeft
+                                LevelRight = Me%myWaterColumn(i, j)   + TopographyRight
+                                WCA = max(LevelLeft, LevelRight) - max(TopographyLeft, TopographyRight)
+                                if (WCA > Me%MinimumWaterColumn) then
+                                    !Area  = Water Column * Side lenght of cell
+                                    Me%AreaU(i, j)      = WCA * Me%ExtVar%DYY(i, j)
+                                    Me%ComputeFaceU(i, j) = 1
+                                    Sum = Sum + 1
+                                else
+                                    Me%ComputeFaceU(i, j) = 0
+                                endif
+                            else
+                                Me%ComputeFaceU(i, j) = 0
+                            endif
+                        endif
+
+                        !North face (V, i-1 neighbour)
+                        if (Me%ExtVar%BasinPoints(i-1, j) == 1) then
+                            if (Me%ActivePoints(i-1, j) + Me%ActivePoints(i,j) > 0) then
+                                TopographyBottom = Me%ExtVar%Topography (i-1, j)
+                                TopographyTop    = Me%ExtVar%Topography (i, j)
+                                LevelBottom = Me%myWaterColumn(i-1, j) + TopographyBottom
+                                LevelTop    = Me%myWaterColumn(i, j)   + TopographyTop
+                                WCA = max(LevelBottom, LevelTop) - max(TopographyBottom, TopographyTop)
+                                if (WCA > Me%MinimumWaterColumn) then
+                                    !Area  = Water Column * Side lenght of cell
+                                    Me%AreaV(i, j)      = WCA * Me%ExtVar%DXX(i, j)
+                                    Me%ComputeFaceV(i, j) = 1
+                                    Sum = Sum + 1
+                                else
+                                    Me%ComputeFaceV(i, j) = 0
+                                endif
+                            else
+                                Me%ComputeFaceV(i, j) = 0
+                            endif
+                        endif
+
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+            endif
+        endif
+        !$OMP END PARALLEL
+        
+        if (Sum == 0) then
+            Me%Compute = .false.
+        else
+            Me%Compute = .true.
+        endif
+        
+        if (present(UpdateMapping)) then
+            if (UpdateMapping) then
+                !$OMP PARALLEL PRIVATE(I,J)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+                do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                    if (Me%myWaterColumn(i, j) > AlmostZero) then
+                        Me%ActivePoints(i,j) = 1
+                        if (Me%myWaterColumn(i, j) > Me%MinimumWaterColumn) then
+                            Me%OpenPoints(i,j) = 1
+                        endif
+                    else
+                        Me%OpenPoints(i,j) = 0
+                        Me%ActivePoints(i,j) = 0
+                    endif
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+            endif
+        endif
     
-        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyGeometryAndMapping")
-    
-    
-    end subroutine ModifyGeometryAndMapping
+    end subroutine ModifyGeometryAndMapping_perf
     
     !--------------------------------------------------------------------------
 
@@ -17569,6 +17916,67 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
 
     end subroutine CheckProfileScalarDiff
+
+    !--------------------------------------------------------------------------
+
+    ! Reusable in-run A/B check for a 2D real matrix.  FAILs (and stops) only when BOTH
+    ! the absolute and relative differences for the worst computed cell exceed the plan tolerances.
+    ! Scans Me%WorkSize cells gated on Me%ExtVar%BasinPoints == 1.
+    subroutine CheckProfileMatrixDiff(baselineMat, perfMat, routineName, Niter)
+
+        !Arguments-------------------------------------------------------------
+        real,             dimension(:,:), intent(in) :: baselineMat, perfMat
+        character(len=*), intent(in)                 :: routineName
+        integer,          intent(in)                 :: Niter
+
+        !Local-----------------------------------------------------------------
+        integer                                      :: ii, jj, worstI, worstJ
+        real                                         :: absDiff, relDiff, denom
+        real                                         :: worstAbsDiff, worstRelDiff
+        real                                         :: worstBase, worstPerf
+        !----------------------------------------------------------------------
+
+        worstAbsDiff = 0.0
+        worstRelDiff = 0.0
+        worstBase    = 0.0
+        worstPerf    = 0.0
+        worstI       = Me%WorkSize%ILB
+        worstJ       = Me%WorkSize%JLB
+
+        do jj = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do ii = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ExtVar%BasinPoints(ii, jj) == 1) then
+                absDiff = abs(perfMat(ii,jj) - baselineMat(ii,jj))
+                denom   = max(abs(baselineMat(ii,jj)), abs(perfMat(ii,jj)))
+                if (denom > AlmostZero) then
+                    relDiff = absDiff / denom
+                else
+                    relDiff = 0.0
+                endif
+                if (absDiff > worstAbsDiff) then
+                    worstAbsDiff = absDiff
+                    worstRelDiff = relDiff
+                    worstBase    = baselineMat(ii,jj)
+                    worstPerf    = perfMat(ii,jj)
+                    worstI       = ii
+                    worstJ       = jj
+                endif
+            endif
+        enddo
+        enddo
+
+        if (worstAbsDiff > ProfileTolAbs_ .and. worstRelDiff > ProfileTolRel_) then
+            write(*,*) 'PROFILE A/B MISMATCH in ', trim(routineName)
+            write(*,*) '  Niter      = ', Niter
+            write(*,*) '  worst cell = (', worstI, ',', worstJ, ')'
+            write(*,*) '  baseline   = ', worstBase
+            write(*,*) '  performant = ', worstPerf
+            write(*,*) '  abs diff   = ', worstAbsDiff, ' (tol ', ProfileTolAbs_, ')'
+            write(*,*) '  rel diff   = ', worstRelDiff, ' (tol ', ProfileTolRel_, ')'
+            stop 'CheckProfileMatrixDiff - ModuleRunOff - A/B tolerance exceeded'
+        endif
+
+    end subroutine CheckProfileMatrixDiff
 
     !--------------------------------------------------------------------------
 
