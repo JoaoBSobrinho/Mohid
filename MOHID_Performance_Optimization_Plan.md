@@ -312,7 +312,13 @@ Implemented via `Me%ProfilePerformantOnly` (default `.false.`) in `ModuleRunOff.
 2. **Classify the routine:**
    - **Read-only** (returns scalars only, mutates no persistent `Me%…` state) → use `CheckProfileScalarDiff`. No snapshot/restore. (Phase 3 pattern.)
    - **State-mutating** (writes persistent matrices, e.g. `Me%lFlowX/Y`) → you MUST add/reuse `CheckProfileMatrixDiff` (spec below) **at the start of this phase**, and implement the full snapshot → baseline → capture → restore → performant → compare → restore-to-baseline protocol.
-3. **Duplicate the routine:** keep the current production code as `<Routine>_baseline`; put the optimized code in `<Routine>` (or `<Routine>_perf` extracted from a thin dispatcher). Copy the baseline **verbatim** so it is a true reference.
+3. **Duplicate the routine:** keep the current production code as `<Routine>_baseline`; put the optimized code in `<Routine>` (or `<Routine>_perf` extracted from a thin dispatcher). Copy the baseline **verbatim** so it is a true reference. **Then prove it is byte-for-byte identical to the previous phase's routine** — do NOT trust the copy:
+   ```powershell
+   git show perf/Phase(N-1):Software/MOHIDLand/ModuleRunOff.F90 > $env:TEMP\prev.F90
+   # extract the routine body from prev.F90 and diff it against <Routine>_baseline;
+   # the only allowed differences are the routine name and dummy-arg plumbing.
+   ```
+   If the diff shows any logic/expression/loop-bound change, the baseline is corrupt — fix it before proceeding.
 4. **Wire the dispatcher** gated on `Me%ProfilePerformantOnly`:
    - `.true.` → call performant only.
    - `.false.` → run baseline + performant, compare via the appropriate `CheckProfile*Diff`, then follow the baseline result/state.
@@ -341,9 +347,9 @@ Once an optimization is **confirmed** (A/B passes tolerances and the performant-
 
 ---
 
-## Phase 3 – `ComputeNextDT` Optimizations ✅ IMPLEMENTED — A/B harness in place, awaiting profiling
+## Phase 3 – `ComputeNextDT` Optimizations ✅ CONFIRMED & CLEANED
 
-> **Status:** Optimized `ComputeNextDT` implemented (branch `perf/Phase3`). The In-Run A/B harness (above) is wired in: `ComputeNextDT_CourantScan` (performant) vs `ComputeNextDT_CourantScan_baseline` (pre-Phase-3 `strideJ` loop), compared each timestep via `CheckProfileScalarDiff`. `ComputeNextDT` itself is now a thin dispatcher. **`ComputeNextDT_CourantScan_baseline` and the dual-run branch must be DELETED once the optimization is confirmed.**
+> **Status:** ✅ COMPLETE. Optimized, validated, baseline code deleted, committed on `perf/Phase3`. `ComputeNextDT` now calls `ComputeNextDT_CourantScan` directly with no dispatch overhead. `perf/Phase4` should be cut from this state.
 
 **Location:** `ComputeNextDT` + `ComputeNextDT_CourantScan[_baseline]` (search these names in `ModuleRunOff.F90`)  
 **Hotspot:** ~185s CPU NoRain 10T (completely unaffected by Phase 1); ~53s WithRain 10T. Scales ~2x (good parallelism but absolute cost still high).
@@ -354,10 +360,62 @@ Once an optimization is **confirmed** (A/B passes tolerances and the performant-
 3. **`sqrt_gravity = sqrt(Gravity)`** precomputed → `celerity = sqrt_gravity * sqrt(max(aux, 0.0))` (multiply + cheaper depth-only sqrt instead of `sqrt(Gravity*aux)`).
 4. **Removed the `strideJ` reshape/transpose + inner `c` loop**; replaced with two explicit unrolled East/North face blocks (fewer integer ops, no per-cell 2×2 array indexing).
 
+### Phase 3 A/B Results (Profile Double OpenMP — noise-cancelled in-run comparison)
+
+| Scenario | Threads | `_baseline` CPU (s) | Performant CPU (s) | Gain |
+|---|---|---|---|---|
+| WithRain | 1T | 29.4 | 20.1 | **-32%** |
+| WithRain | 10T | 32.6 | 20.3 | **-38%** |
+| NoRain | 1T | 205.8 | 142.9 | **-31%** |
+| NoRain | 10T | 166.6 | 126.1 | **-24%** |
+
+> CPU times above are VTune effective CPU time (sum across all threads). For multi-threaded runs, wall-time gain on `ComputeNextDT` is approximately CPU_gain / 10. The NoRain case is by far the bigger beneficiary (baseline was ~7× higher than WithRain).
+
+**A/B correctness:** `CheckProfileScalarDiff` did not trigger on either scenario — `nextDTCourant` agrees within tolerance every timestep.
+
+### Remaining top hotspots after Phase 3 (for context — WithRain 10T)
+
+| Function | CPU (s) | Notes |
+|---|---|---|
+| `DynamicWaveYY_default_CG` | 122 | Phase 4+ target |
+| `DynamicWaveXX_default_CG` | 108 | Phase 4+ target |
+| `_libm_pow_l9` | 85 | `**(1./3.)` friction — unchanged |
+| `ComputeFaceVelocityModulus` | 65 | `abs(cmplx())` still in |
+| `SetMatrixValues2D_R8_FromMatrix` | 58 | Phase 5 target |
+| `ModifyGeometryAndMapping` | 44 | Phase 4 target |
+| `OutputFloodingAll_R4` | 41 | Not previously identified — new candidate |
+| `ComputeCenterVelocities_R4` | 40 | Not previously identified — new candidate |
+| `ComputeNextDT_CourantScan_baseline` | 33 | Baseline only (will disappear after cleanup) |
+| `UpdateWaterLevels` | 28 | Not previously identified |
+| `_kmpc_barrier` (spin) | 25 | Load imbalance — Phase 6 target |
+| `ComputeNextDT_CourantScan` | 20 | **Performant (Phase 3 result)** |
+
+### Remaining top hotspots after Phase 3 (NoRain 10T)
+
+| Function | CPU (s) | Notes |
+|---|---|---|
+| OMP spin `func@0x180099f40` | 330 | Thread spin/wait — severe load imbalance (Phase 6) |
+| `ComputeNextDT_CourantScan_baseline` | 167 | Baseline only |
+| `ComputeNextDT_CourantScan` | 126 | **Performant (Phase 3 result)** |
+| `_kmpc_barrier` (spin) | 125 | Load imbalance — Phase 6 target |
+| `SetMatrixValues2D_R8_FromMatrix` | 123 | Phase 5 target |
+| `DynamicWaveXX_default_CG` | 120 | Phase 4+ target |
+| `DynamicWaveYY_default_CG` | 118 | Phase 4+ target |
+| `ModifyGeometryAndMapping` | 88 | Phase 4 target |
+| `ComputeFaceVelocityModulus` | 84 | `abs(cmplx())` |
+| `_libm_pow_l9` | 63 | Friction `**(1./3.)` |
+| `ComputeCenterVelocities_R4` | 52 | New candidate |
+| `OutputFloodingAll_R4` | 49 | New candidate |
+
+> **Key new observations from Phase 3 profiles:**
+> - `OutputFloodingAll_R4` and `ComputeCenterVelocities_R4` are now clearly visible hotspots (41s and 40s WithRain 10T; 49s and 52s NoRain 10T) — not previously identified. Worth investigating before Phase 4.
+> - The NoRain OMP spin (`func@0x180099f40` = 330s spin) and `_kmpc_barrier` (125s) confirm severe load imbalance is the single largest NoRain cost — Phase 6 (scheduling) may be higher priority than Phase 4 for the NoRain scenario.
+> - `SetMatrixValues2D_R8_FromMatrix` has jumped to 123s NoRain 10T (vs ~119s in original baseline) — ranking it higher than `DynamicWave` in NoRain.
+
 ### Validation workflow for this phase:
-1. Build `Profile Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 0` → VTune shows `ComputeNextDT_CourantScan` vs `..._baseline` side-by-side (noise-cancelled). The run also live-asserts they agree within tolerance.
-2. Build `Release Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 1`, then `compare_mohid.py` against the original outputs.
-3. When confirmed: delete `ComputeNextDT_CourantScan_baseline` + the dual-run branch in `ComputeNextDT`; keep only `ComputeNextDT_CourantScan`. Commit. Cut `perf/Phase4` from here.
+1. ~~Build `Profile Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 0` → VTune A/B profiling~~ ✅ DONE (results above)
+2. ~~Build `Release Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 1` on both WithRain and NoRain, then `compare_mohid.py` against originals.~~ ✅ DONE — WithRain 36/37 PASS (pre-existing `FloodPeriod.dat` FAIL only), NoRain 38/38 PASS + direct HDF5 vs `_original` zero diff.
+3. ~~Delete `ComputeNextDT_CourantScan_baseline` + the dual-run branch in `ComputeNextDT`; keep only `ComputeNextDT_CourantScan`. Commit. Cut `perf/Phase4` from here.~~ ✅ DONE
 
 ---
 
@@ -415,6 +473,22 @@ The `_CG` variants (GridIsConstant=true, complex advection) have the same fricti
 **Same fixes as Phase 1**, applied to:
 - `DynamicWaveXX_CG`
 - `DynamicWaveYY_CG`
+
+---
+
+## Open Issues / To Investigate (not scheduled)
+
+### `forrtl: warning (526): IEEE_INVALID is signaling` — WithRain run
+**Status:** OPEN — do not fix yet, investigate later.
+
+- **Symptom:** WithRain model emits `forrtl: warning (526): IEEE_INVALID is signaling` (a warning at run/termination, not a trap — the run continues).
+- **Likely cause:** Phase 2 relaxed FPE from `fpe0` to `fpe3` and added `/assume:noieee_compares`. Under `fpe3` the INVALID exception is *not trapped* but the IEEE flag can still be *raised* (e.g. a hardware compare against a stray NaN, or `0.0/0.0`, `sqrt(neg)`, `Inf-Inf` somewhere). The runtime reports the raised flag at exit as warning 526. Under the old `fpe0` this would have aborted at the point of occurrence instead.
+- **Why it may be benign:** the `sqrt(max(..., 0.0))` guards already prevent `sqrt` of negatives; masked division may still produce a transient NaN/Inf in an inactive cell that never affects results (A/B compares + `compare_mohid.py` are passing).
+- **To investigate:**
+  1. Confirm it is new since Phase 2 (rebuild an `fpe0` debug build and see where it traps → pinpoints the offending operation).
+  2. Check for unguarded divisions (`/ aux`, `/ velFace`, `/ Distance_Courant`) where the denominator can be exactly 0 for a computed cell.
+  3. Decide: add a targeted guard, or accept as a benign warning and document it.
+- **Do NOT** silence it globally by reverting FPE settings — that would reintroduce the IEEE-wrapper hotspots eliminated in Phase 2.
 
 ---
 

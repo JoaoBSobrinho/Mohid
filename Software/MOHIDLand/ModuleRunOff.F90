@@ -17328,7 +17328,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         !Local-----------------------------------------------------------------
         integer                                     :: STAT_CALL, CHUNK
-        real                                        :: nextDTCourant, nextDTCourant_baseline
+        real                                        :: nextDTCourant
         real                                        :: nextDTVariation, MaxDT
         logical                                     :: VariableDT
         real                                        :: CurrentDT
@@ -17359,25 +17359,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
                 if (Me%CV%LimitDTCourant) then
-                    if (Me%ProfilePerformantOnly) then
-                        !Production / final-validation path: only the optimized variant runs.
-                        call ComputeNextDT_CourantScan(iFlowX, iFlowY, CHUNK, nextDTCourant)
-                    else
-                        !Dual-run A/B path: run baseline and performant in the SAME process so the
-                        !profiler measures both under identical ambient load, then verify the
-                        !performant result against the baseline and follow the trusted baseline.
-                        nextDTCourant_baseline = -null_real
-                        call ComputeNextDT_CourantScan_baseline(iFlowX, iFlowY, CHUNK, nextDTCourant_baseline)
-
-                        nextDTCourant = -null_real
-                        call ComputeNextDT_CourantScan(iFlowX, iFlowY, CHUNK, nextDTCourant)
-
-                        call CheckProfileScalarDiff(nextDTCourant_baseline, nextDTCourant,      &
-                                                    'ComputeNextDT_CourantScan', Niter)
-
-                        !Trajectory always follows the trusted baseline result.
-                        nextDTCourant = nextDTCourant_baseline
-                    endif
+                    call ComputeNextDT_CourantScan(iFlowX, iFlowY, CHUNK, nextDTCourant)
                 endif
             endif
             
@@ -17453,16 +17435,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     end subroutine ComputeNextDT
 
-    !--------------------------------------------------------------------------
-
-    !--------------------------------------------------------------------------
-    ! Performance A/B harness routines (Phase 3 - ComputeNextDT).
-    !
-    ! ComputeNextDT_CourantScan          : PERFORMANT variant (current optimized code).
-    ! ComputeNextDT_CourantScan_baseline : BASELINE variant (pre-Phase-3 code) kept for the
-    !                                      in-run comparison. DELETE once the optimization is
-    !                                      confirmed and keep only the performant scan.
-    ! Both scan the Courant condition read-only and return the resulting nextDTCourant.
     !--------------------------------------------------------------------------
 
     subroutine ComputeNextDT_CourantScan (iFlowX, iFlowY, CHUNK, nextDTCourant)
@@ -17561,114 +17533,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         endif
 
     end subroutine ComputeNextDT_CourantScan
-
-    !--------------------------------------------------------------------------
-
-    subroutine ComputeNextDT_CourantScan_baseline (iFlowX, iFlowY, CHUNK, nextDTCourant)
-
-        !Arguments-------------------------------------------------------------
-        real(8), dimension(:,:), pointer            :: iFlowX, iFlowY
-        integer                                     :: CHUNK
-        real                                        :: nextDTCourant
-
-        !Local-----------------------------------------------------------------
-        integer                                     :: i, j, c, nx, ny, i_North, j_East
-        real                                        :: aux, Distance_Courant, totalVel
-        real                                        :: velFace, celerity, waterColumn, waterColumn_NE
-        integer, dimension(2,2)                     :: strideJ
-        !----------------------------------------------------------------------
-
-        totalVel = 0.0
-        strideJ  = transpose(reshape((/ 1, 0, 0, 1 /), shape(strideJ))) !moving to the east and north cells
-
-        if (Me%GridIsConstant) then
-            Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
-            !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                    do c = 1, size(strideJ,1)
-                        !Compute fluxes of east and north cell faces
-                        j_East = j - strideJ(c, 1)
-                        i_North = i - strideJ(c, 2)
-
-                        if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-
-                            if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
-                                waterColumn = Me%myWaterColumn (i,j)
-                                waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-
-                                nx = strideJ(c, 1)
-                                ny = strideJ(c, 2)
-                                aux = (waterColumn + waterColumn_NE) / 2
-
-                                if (nx == 1) then
-                                    velFace = iFlowX(i, j) / (aux * Me%DY)
-                                else
-                                    velFace = iFlowY(i, j) / (aux * Me%DX)
-                                endif
-                                !VelFace + celerity
-                                celerity = sqrt(max(Gravity * aux, 0.0))
-                                aux = max(abs(velFace + celerity),abs(velFace - celerity))
-                                totalVel = max(totalVel, aux)
-                            endif
-                        endif
-                    enddo
-                endif
-            enddo
-            enddo
-            !$OMP END DO 
-            !$OMP END PARALLEL
-
-            if (totalVel > AlmostZero) then
-                aux = Distance_Courant / totalVel
-                nextDTCourant = min(nextDTCourant, aux)
-            endif
-
-        else
-            !$OMP PARALLEL PRIVATE(i,j,c,aux,celerity,velFace,nx,ny,i_North,j_East, waterColumn, waterColumn_NE, &
-            !$OMP Distance_Courant)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
-                if (Me%ExtVar%BasinPoints(i, j) == Compute) then
-                    do c = 1, size(strideJ,1)
-                        !Compute fluxes of east and north cell faces
-                        j_East = j - strideJ(c, 1)
-                        i_North = i - strideJ(c, 2)
-
-                        if (Me%ExtVar%BasinPoints(i_North, j_East) == Compute) then
-
-                            if (Me%OpenPoints(i,j) == Compute .or. Me%OpenPoints(i_North, j_East) == Compute) then
-                                waterColumn = Me%myWaterColumn (i,j)
-                                waterColumn_NE = Me%myWaterColumn (i_North,j_East)
-
-                                nx = strideJ(c, 1)
-                                ny = strideJ(c, 2)
-                                aux = (waterColumn + waterColumn_NE) / 2
-
-                                if (nx == 1) then
-                                    velFace = iFlowX(i, j) / (aux * Me%ExtVar%DYY(i,j))
-                                else
-                                    velFace = iFlowY(i, j) / (aux * Me%ExtVar%DXX(i,j))
-                                endif
-                                !VelFace + celerity
-                                celerity = sqrt(max(Gravity * aux, 0.0))
-                                aux = max(abs(velFace + celerity),abs(velFace - celerity))
-                                Distance_Courant = sqrt ((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant
-                                nextDTCourant = min(nextDTCourant, Distance_Courant / aux)
-                            endif
-                        endif
-                    enddo
-                endif
-            enddo
-            enddo
-            !$OMP END DO 
-            !$OMP END PARALLEL
-        endif
-
-    end subroutine ComputeNextDT_CourantScan_baseline
 
     !--------------------------------------------------------------------------
 
