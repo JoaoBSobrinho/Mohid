@@ -419,21 +419,62 @@ Once an optimization is **confirmed** (A/B passes tolerances and the performant-
 
 ---
 
-## Phase 4 – `ModifyGeometryAndMapping` Optimizations (NOT STARTED)
+## Phase 4 – `ModifyGeometryAndMapping` Optimizations ✅ CONFIRMED & CLEANED
 
-**Location:** search for `subroutine ModifyGeometryAndMapping` in `ModuleRunOff.F90`  
-**Hotspot:** ~111s NoRain 10T (both original and Phase 1 — no change), only **1.2x** parallel speedup → memory bandwidth / serial bottleneck
+> **Status:** ✅ COMPLETE. Optimized, validated, baseline code deleted, committed on `perf/Phase4`. `perf/Phase5` should be cut from this state.
 
-### Investigation needed:
-- Read the subroutine to understand data access patterns
-- Check if there are serial sections preventing parallelism
-- Look for array traversal order issues (row-major vs column-major mismatch)
-- Check if `!$OMP PARALLEL` is present or if it runs serially
+**Location:** `ModifyGeometryAndMapping` in `ModuleRunOff.F90`  
+**Hotspot:** ~88s CPU NoRain 10T (Phase 3 baseline), ~44s WithRain 10T.
 
-### Likely fixes:
-- Ensure proper `!$OMP PARALLEL DO` with correct PRIVATE/SHARED
-- Fix loop ordering to match Fortran column-major storage (`i` inner, `j` outer → `j` inner, `i` outer for contiguous access — or vice versa depending on array layout)
-- Reduce redundant reads of `Me%ExtVar%Topography` / `Me%myWaterColumn`
+### Optimization applied:
+The `strideJ` 2×2 identity array and the `do c = 1, size(strideJ,1)` dispatch loop unrolled into explicit **East face** (U, `j-1` neighbour) and **North face** (V, `i-1` neighbour) blocks in all three branches (`KinematicWave_`, `GridIsConstant`, variable-grid). Eliminates per-cell `strideJ` array indexing, the `c` loop counter, and the `if (dj==1)` branch from the hot inner loop. Zero arithmetic change — pure structural transformation.
+
+### Phase 4 A/B Results (noise-cancelled in-run comparison, OMP parallel section times)
+
+| Scenario | Threads | `_baseline` CPU (s) | Performant CPU (s) | Gain |
+|---|---|---|---|---|
+| WithRain | 1T | 32.9 | 27.7 | **−16%** |
+| WithRain | 10T | 27.3 | 13.6 | **−50%** |
+| NoRain | 1T | 98.1 | 79.1 | **−19%** |
+| NoRain | 10T | 57.2 | 21.0 | **−63%** |
+
+The 10T gains are exceptionally strong (-50%/-63%). The `strideJ` dispatch overhead consumed roughly half the routine's per-thread budget, suppressed at 10T by the compressed compute-to-overhead ratio.
+
+**A/B correctness:** `CheckProfileMatrixDiff` never triggered on either scenario.
+
+**Note on harness overhead (A/B profile runs only):** `CheckProfileMatrixDiff` cost ~100s in NoRain 10T (serial scan of all active cells every timestep — harness-only). The NoRain OMP spin also increased from ~330s to ~970s during the A/B profile run due to the serial 12-array snapshot/restore between OMP parallel calls; this overhead disappears entirely in the cleaned production code.
+
+### Validation (Release Double OpenMP, PROFILE_PERFORMANT_ONLY:1):
+- **WithRain:** 18/18 PASS vs `_original` (including `FloodPeriod.dat` — zero diff)
+- **NoRain:** 18/18 PASS vs `_original` (zero diff on all HDF5 + text files)
+
+### Remaining top hotspots after Phase 4 (WithRain 10T Profile run, `_perf` entries are production-representative):
+
+| Function | CPU (s) | Notes |
+|---|---|---|
+| `DynamicWaveYY_default_CG` | 114 | Phase 5+ target |
+| `DynamicWaveXX_default_CG` | 86 | Phase 5+ target |
+| `_libm_pow_l9` | 72 | `**(1./3.)` friction — unchanged |
+| `OutputFloodingAll_R4` | 41 | New candidate |
+| `ComputeFaceVelocityModulus` | 38 | `abs(cmplx())` |
+| `ComputeCenterVelocities_R4` | 33 | New candidate |
+| `ModifyGeometryAndMapping` | ~14 | **Phase 4 result** |
+| `SetMatrixValues2D_R8_FromMatrix` | 25 | |
+| `ComputeNextDT_CourantScan` | 23 | Phase 3 result |
+
+### Remaining top hotspots after Phase 4 (NoRain 1T, cleanest — no OMP spin distortion):
+
+| Function | CPU (s) | Notes |
+|---|---|---|
+| `ComputeNextDT_CourantScan` | 163 | Phase 3 result |
+| `DynamicWaveXX_default_CG` | 123 | |
+| `DynamicWaveYY_default_CG` | 116 | |
+| `SetMatrixValues2D_R8_FromMatrix` | 113 | |
+| `ComputeFaceVelocityModulus` | 89 | |
+| `_libm_pow_l9` | 79 | Friction `**(1./3.)` |
+| `ModifyGeometryAndMapping` | **79** | **Phase 4 result** |
+| `OutputFloodingAll_R4` | 44 | New candidate |
+| `ComputeCenterVelocities_R4` | 37 | New candidate |
 
 ---
 
