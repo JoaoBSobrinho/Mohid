@@ -478,42 +478,122 @@ The 10T gains are exceptionally strong (-50%/-63%). The `strideJ` dispatch overh
 
 ---
 
-## Phase 5 – `SetMatrixValues2D_R8_FromMatrix` Optimizations (NOT STARTED)
+## Phase Reprioritization (post-Phase 4)
 
-**Location:** `MOHIDBase1` or `MOHIDBase2` (not in `ModuleRunOff.F90`)  
-**Hotspot:** ~116s NoRain 10T (both original and Phase 1 — minimal change), **1.5x** speedup
+After Phase 4, the profile data confirms the two scenarios pull in different directions and the "easy, safe" wins are nearly exhausted. Code inspection of the remaining candidates:
 
-### Investigation needed:
-- Find which module contains `SetMatrixValues2D_R8_FromMatrix`
-- Likely a generic array copy/assignment routine — check if it can be replaced with direct assignment or `!$OMP SIMD`
+| Candidate | Cost | Code reality | Risk | Owner |
+|---|---|---|---|---|
+| OMP load imbalance | NoRain ~455s (spin+barrier) | 95 `SCHEDULE(DYNAMIC,…)` sites; scheduling-only | Low correctness, broad + timing-measured | **Opus-led** (strategic) |
+| DynamicWave XX/YY | ~230s WithRain / ~238s NoRain | friction `**(1./3.)` genuine cube-root; `real(8)` compares | **HIGH** — documented friction cell-flip regression | **Opus-led** (landmine) |
+| `SetMatrixValues2D_R8_FromMatrix` | 113s NoRain | trivial masked copy; already `DYNAMIC`/`STATIC` split | Medium; generic util, many callers, other module | Opus or careful Sonnet |
+| `ComputeFaceVelocityModulus` | 38–65s | `abs(cmplx())` still present | **Medium** — Phase 1 tried, REVERTED (noRain cell-flip) | Opus or skip |
+| `ComputeCenterVelocities_R4` | 37–52s | 6× `**2.0` pow/cell in `sqrt(x**2.0+y**2.0)` | **Low** — output-only R4 arrays, Phase-1 pattern | ✅ **Sonnet** |
+| `OutputFloodingAll_R4` | 41–49s | max/accumulate stats; no pow; memory-bound | Low but unclear gain | Investigate-only |
+
+**Revised order** (the old Phase 5=SetMatrixValues / 6=load-balancing / 7=`_CG`-variants ordering is superseded; the `_CG` non-default variants aren't even on the hot path — the hot ones are `_default_CG`, already done in Phase 1):
+
+1. **Phase 5 → `ComputeCenterVelocities_R4`** — clean `**2.0`→`x*x`, output-only, low-risk. **Sonnet.**
+2. **Phase 6 → OMP load balancing** — biggest NoRain lever; strategic. **Opus-led.**
+3. **Phase 7 → `SetMatrixValues` / call-frequency reduction** — memory-bound; needs call-graph analysis. **Opus or careful Sonnet.**
+4. **Phase 8 → DynamicWave XX/YY** — biggest WithRain compute, HIGH regression risk. **Opus, strict A/B, watch the friction cell-flip.**
+
+**Opus-only (do NOT hand to Sonnet):** DynamicWave friction and `ComputeFaceVelocityModulus abs(cmplx)` (both documented cell-flip landmines); OMP load-balancing strategy (95 sites, timing-only measurement, chunk/GUIDED judgment).
 
 ---
 
-## Phase 6 – OpenMP Load Balancing (NOT STARTED)
+## Phase 5 – `ComputeCenterVelocities_R4` Optimizations (NOT STARTED — next, Sonnet)
 
-**Observation:** `_kmpc_barrier` spin time ~150s in NoRain 10T → load imbalance across threads (completely unaffected by Phase 1 + Phase 2 code changes since it is a scheduling issue)  
-**Cause:** Uneven distribution of "wet" cells across rows (dynamic scheduling helps but chunk size matters)
+**Location:** `subroutine ComputeCenterVelocities_R4` in `Software/MOHIDLand/ModuleRunOff.F90`  
+**Hotspot:** ~37s WithRain 10T / ~52s NoRain 10T (newly visible after Phase 3).
 
-### Current scheduling:
+### Optimization:
+Six `**2.0` pow calls per cell — three occurrences of
+`sqrt(Me%CenterVelocityX_R4(i,j)**2.0 + Me%CenterVelocityY_R4(i,j)**2.0)` (one each in
+the `GridIsRotated`, non-rotated, and `Distortion` branches). These compile to
+`_libm_pow_l9`, the exact hotspot class eliminated in Phase 1.
+
+Replace every `X**2.0` with `X*X` (introduce a local real per component so each is
+computed once, then `sqrt(cx*cx + cy*cy)`). Pure Phase-1 transformation — do NOT change
+divisions, masks, loop bounds, or anything else.
+
+### Methodology note (output-only routine → no A/B harness):
+The outputs (`CenterVelocityX_R4`, `CenterVelocityY_R4`, `VelocityModulus_R4`,
+`CenterFlowX/Y_R4`) flow ONLY into output/statistics arrays (`Me%Output%…`, HDF5), never
+back into the simulation trajectory (`lFlowX/lFlowY/iFlowX/iFlowY/myWaterColumn/AreaU/AreaV/DT`).
+Because they cannot perturb the trajectory, the in-run A/B harness (dispatcher/`_baseline`/
+`_perf`/`CheckProfileMatrixDiff`) is **not required** — validate directly via `compare_mohid`
+vs `_original` on both scenarios. **Confirm output-only via a usage grep first**; if any
+feedback path into the trajectory is found, STOP and use the harness instead (note: these are
+`real(4)` arrays → would need a `CheckProfileMatrixDiff_R4` overload per that helper's spec).
+
+### Scope guardrails — do NOT touch:
+- `DynamicWaveXX/YY_default_CG` friction terms (`**(1./3.)`, real(8) compares) — regression landmine.
+- `ComputeFaceVelocityModulus` `abs(cmplx())` — Phase 1 tried & REVERTED (noRain cell-flip).
+- Any OMP `SCHEDULE` clauses (separate future phase).
+
+---
+
+## Phase 6 – OpenMP Load Balancing (NOT STARTED — Opus-led)
+
+**Observation:** NoRain OMP spin (`func@0x180099f40`) ~330s + `_kmpc_barrier` ~125s = ~455s
+of load imbalance in production 10T (unaffected by Phase 1–4 code changes since it is a
+scheduling issue). This is the single largest NoRain cost and dwarfs every individual compute
+hotspot. Minor for WithRain (~25s barrier).
+
+**Cause:** Uneven distribution of "wet" cells across rows.
+
+### Current scheduling (95 `!$OMP DO SCHEDULE(DYNAMIC, ChunkJ/CHUNK)` sites):
 ```fortran
 !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
 ```
-where `CHUNKJ` is pre-computed.
 
 ### Options:
 1. Tune `CHUNKJ` chunk size for better balance
 2. Use `SCHEDULE(GUIDED)` for adaptive chunk sizes
 3. Investigate if `Me%CurrentWorkSize` can be set to skip fully-dry regions
 
+> **Why Opus-led:** broad (95 sites), correctness-safe (scheduling doesn't change math →
+> `compare_mohid` trivially passes) but the *effect* is timing-only, so the in-run A/B harness
+> does not apply — needs careful wall-time measurement methodology and chunk/GUIDED judgment.
+
 ---
 
-## Phase 7 – `DynamicWaveXX_CG` / `DynamicWaveYY_CG` Variants (NOT STARTED)
+## Phase 7 – `SetMatrixValues2D_R8_FromMatrix` / call-frequency reduction (NOT STARTED)
 
-The `_CG` variants (GridIsConstant=true, complex advection) have the same friction formula issues (`**2.` + `**(4./3.)`) and `real(8) :: CriticalFlow` comparison issues. These are not the primary hot path (they require `Me%ComputeAdvectionU` to be set), but may be worth fixing if profiling shows them in the hotspot list.
+**Location:** `Software/MOHIDBase1/ModuleFunctions.F90` (~L1300)  
+**Hotspot:** ~113s NoRain 1T / ~123s NoRain 10T.
 
-**Same fixes as Phase 1**, applied to:
-- `DynamicWaveXX_CG`
-- `DynamicWaveYY_CG`
+The routine itself is already a trivial masked/unmasked copy (`Matrix(i,j) = InMatrix(i,j)`)
+with a `DYNAMIC`/`STATIC` schedule split — memory-bandwidth bound, so little code-level upside
+in the copy itself. The real lever is likely **reducing how often it is called** per timestep
+(it is invoked many times from `ModifyRunOff`), which is a call-graph refactor, not a one-line
+fix. Investigate call sites before touching the routine. Note it is a generic utility with many
+callers/overloads — changes must not break other callers.
+
+---
+
+## Phase 8 – `DynamicWaveXX_default_CG` / `DynamicWaveYY_default_CG` deeper optimization (NOT STARTED — Opus, HIGH RISK)
+
+The biggest single compute hotspot overall (~230s WithRain, ~238s NoRain combined). The
+dominant remaining cost is `_libm_pow_l9` from the friction term `**(1.0/3.0)` (a genuine
+cube-root) plus the physics arithmetic.
+
+> **HIGH REGRESSION RISK.** Phase 1 attempted friction reformulations here (`coeff**2.`→`coeff*coeff`,
+> `HydraulicRadius**(4./3.)`→`HydraulicRadius*HydraulicRadius**(1./3.)`) and had to REVERT them —
+> they tipped a borderline `OpenPoints` cell across the active threshold in the noRain case
+> (see Phase 1 / Phase 2 Step 1 notes). Any change here must go through the full in-run A/B
+> harness (`CheckProfileMatrixDiff` on `lFlowX`/`lFlowY`) and be validated on BOTH scenarios with
+> extreme care. Opus-led.
+
+---
+
+## Superseded (kept for history) – `DynamicWaveXX_CG` / `DynamicWaveYY_CG` non-default variants
+
+The `_CG` (non-`default`) variants require `Me%ComputeAdvectionU` to be set and are **not on the
+hot path** for the benchmark models — they did not appear in any Phase 3/4 hotspot list. Only fix
+if a future model configuration surfaces them. (The hot variants are `_default_CG`, addressed in
+Phase 1.)
 
 ---
 
