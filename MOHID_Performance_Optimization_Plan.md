@@ -502,20 +502,32 @@ After Phase 4, the profile data confirms the two scenarios pull in different dir
 
 ---
 
-## Phase 5 – `ComputeCenterVelocities_R4` Optimizations (NOT STARTED — next, Sonnet)
+## Phase 5 – `ComputeCenterVelocities_R4` Optimizations ✅ CONFIRMED & COMMITTED
+
+> **Status:** ✅ COMPLETE. Optimized, validated with zero diff on both scenarios, committed
+> on `perf/Phase5`. `perf/Phase6` should be cut from this state.
 
 **Location:** `subroutine ComputeCenterVelocities_R4` in `Software/MOHIDLand/ModuleRunOff.F90`  
 **Hotspot:** ~37s WithRain 10T / ~52s NoRain 10T (newly visible after Phase 3).
 
-### Optimization:
+### Optimization applied:
 Six `**2.0` pow calls per cell — three occurrences of
 `sqrt(Me%CenterVelocityX_R4(i,j)**2.0 + Me%CenterVelocityY_R4(i,j)**2.0)` (one each in
 the `GridIsRotated`, non-rotated, and `Distortion` branches). These compile to
 `_libm_pow_l9`, the exact hotspot class eliminated in Phase 1.
 
-Replace every `X**2.0` with `X*X` (introduce a local real per component so each is
-computed once, then `sqrt(cx*cx + cy*cy)`). Pure Phase-1 transformation — do NOT change
-divisions, masks, loop bounds, or anything else.
+Replaced every `X**2.0` with `X*X`: introduced local `real(4) :: cx, cy` per branch, computed
+once, then `sqrt(cx*cx + cy*cy)`; added `cx,cy` to the corresponding `!$OMP PARALLEL PRIVATE(...)`
+clauses. Pure Phase-1 transformation — no changes to divisions, masks, or loop bounds. Did NOT
+touch the identical `**2.0` pattern present in `UpdateFVSOutputVariables_CG_R4/_VG_R4` or
+`OutputFloodingAll_R4`/`ComputeCenterValues_R4` (out of scope for this phase — candidate for a
+future phase).
+
+### Validation (compare_mohid.py, zero diff — not just within tolerance):
+- **WithRain:** `Run55` dir vs `Run55_phase5_baseline` dir — 18/18 PASS, max abs/rel = 0.
+  `RunOff_55.hdf5` vs `RunOff_55_phase5_baseline.hdf5` — 27 datasets, PASS, max abs/rel = 0.
+- **NoRain:** `Run55` dir vs `Run55_phase5_baseline` dir — 18/18 PASS, max abs/rel = 0.
+  `RunOff_55.hdf5` vs `RunOff_55_phase5_baseline.hdf5` — 57 datasets, PASS, max abs/rel = 0.
 
 ### Methodology note (output-only routine → no A/B harness):
 The outputs (`CenterVelocityX_R4`, `CenterVelocityY_R4`, `VelocityModulus_R4`,
