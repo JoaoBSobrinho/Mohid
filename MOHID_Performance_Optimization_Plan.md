@@ -738,10 +738,54 @@ from `Me%CenterFlowX/Y[...]`/`Me%CenterVelocityX/Y[...]` once per cell, then
 `WriteMaxFlowModulus` true/false branches in each routine). Pure Phase-1/Phase-5 transformation —
 bit-identical, zero diff expected.
 
-### Validation
-No A/B harness needed (output-only, same methodology as Phase 5) — validate directly with
-`compare_mohid.py` on WithRain + NoRain (HDF5 at `res/` root as `RunOff_55*.hdf5`); zero-diff
+### Validation (correctness)
+No A/B *correctness* harness needed (output-only, same methodology as Phase 5) — validate directly
+with `compare_mohid.py` on WithRain + NoRain (HDF5 at `res/` root as `RunOff_55*.hdf5`); zero-diff
 expected on both scenarios. Known accepted FAIL: `FloodPeriod.dat`.
+
+### Methodology correction — in-run A/B needed for *performance measurement*, not just correctness
+Initial implementation validated correctness only and assumed VTune before/after CPU times from two
+**separate** builds/runs would be good enough evidence of the gain. **This is wrong** for small,
+cheap routines like `ComputeCenterValues`/`_R4`: separate runs reintroduce exactly the ambient-noise
+problem the Phase 3+ in-run A/B harness was built to solve, and the real delta (eliminating 4 pow
+calls per cell) can be smaller than run-to-run noise.
+
+**Fix:** added a timing-only in-run dual-computation to both routines (NOT a correctness harness —
+correctness is already proven bit-identical via `compare_mohid.py`):
+- Computes the **old** `X**2.` formula into throwaway locals (`baseFlowMod`, `baseVelMod`) inside its
+  own `!$OMP PARALLEL` region under a distinct `StartWatch`/`StopWatch` label
+  (`"... - Modulus_baseline"` / `"... - Modulus_R4_baseline"`), so VTune shows both the pre- and
+  post-optimization cost **as two separate functions in the same run** — noise-cancelled comparison.
+- Gated by `.not. Me%ProfilePerformantOnly` (reuses the existing `PROFILE_PERFORMANT_ONLY` runtime
+  keyword from the Phase 3+ harness: `0`/default = dual-run for VTune profiling, `1` = performant-only,
+  zero overhead, for the final `compare_mohid.py` validation run).
+- **Dead-code-elimination guard:** a discarded computation with no side effect could be optimized away
+  entirely by the compiler, making the "baseline" timing meaningless. To force retention, both the
+  baseline and performant paths accumulate `REDUCTION(+:sum...)` sums, which are passed through
+  `CheckProfileScalarDiff` (the existing, previously-unused-since-Phase-3-cleanup helper) — a genuine
+  cross-procedure call the compiler cannot prove is side-effect-free. This doubles as a cheap
+  correctness sanity check (not required, since `compare_mohid.py` already proves bit-identical output,
+  but low-cost extra confidence).
+- **Masking gotcha caught before implementing:** `ComputeCenterValues_R4`'s original code has **no**
+  `else` on the outer `if (BasinPoints==BasinPoint)` — cells outside the basin silently **retain**
+  their previous `Me%FlowModulus_R4`/`VelocityModulus_R4` value. Naively defaulting the baseline local
+  to `0.0` there would create a **spurious A/B mismatch** against the retained (possibly nonzero) value
+  in the performant sum. Fixed by setting the baseline local to the **existing** `Me%FlowModulus_R4`/
+  `VelocityModulus_R4(i,j)` value in both the outer-false and inner-false (`OpenPoints` inactive) cases,
+  mirroring the "no-op" semantics exactly. The double-precision `ComputeCenterValues` **does** have an
+  `else` on the outer `if` (always resets to `0.0`), so `0.0` is correct there — the two routines'
+  masking patterns differ and must not be copied blindly between them.
+- **This block is temporary/profiling-only.** Per the established Cleanup rule (Phase 3/4), delete the
+  entire `.not. Me%ProfilePerformantOnly` guarded block (baseline computation, sum reductions,
+  `CheckProfileScalarDiff` calls) once the VTune gain is confirmed, leaving only the pure performant
+  `x*x` code — then re-commit the cleaned version.
+
+### Validation (performance) — pending user's VTune run
+Build `Profile Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 0` (default), compare
+`"ComputeCenterValues - Modulus_baseline"` vs `"ComputeCenterValues - Modulus"` (and the `_R4`
+equivalents) CPU times in the same VTune capture. Then build `Release Double OpenMP` with
+`PROFILE_PERFORMANT_ONLY : 1` and re-run `compare_mohid.py` for final correctness validation
+(zero overhead, matches the already-validated Phase 7 output).
 
 ---
 

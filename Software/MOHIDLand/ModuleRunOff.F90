@@ -16800,6 +16800,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         integer                                     :: CHUNK
         real                                        :: FlowX, FlowY
         real                                        :: cfx, cfy, cvx, cvy
+        real                                        :: baseFlowMod, baseVelMod
+        real                                        :: sumFlowModBase, sumVelModBase, sumFlowModPerf, sumVelModPerf
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues")
@@ -16922,8 +16924,42 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
 
+        !PROFILING ONLY (Phase 7 in-run A/B timing, noise-cancelled VTune measurement) -
+        !remove this whole guarded block once the pow-elimination gain is confirmed in VTune.
+        if (.not. Me%ProfilePerformantOnly) then
+            if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_baseline")
+            sumFlowModBase = 0.0
+            sumVelModBase  = 0.0
+            !$OMP PARALLEL PRIVATE(I,J,baseFlowMod,baseVelMod) REDUCTION(+:sumFlowModBase,sumVelModBase)
+            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        baseFlowMod = sqrt (Me%CenterFlowX(i, j)**2. + Me%CenterFlowY(i, j)**2.)
+                        baseVelMod  = sqrt (Me%CenterVelocityX(i, j)**2.0 + Me%CenterVelocityY(i, j)**2.0)
+                    else
+                        baseFlowMod = 0.0
+                        baseVelMod  = 0.0
+                    end if
+                else
+                    baseFlowMod = 0.0
+                    baseVelMod  = 0.0
+                endif
+                sumFlowModBase = sumFlowModBase + baseFlowMod
+                sumVelModBase  = sumVelModBase  + baseVelMod
+            enddo
+            enddo
+            !$OMP END DO
+            !$OMP END PARALLEL
+            if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_baseline")
+        endif
+
+        sumFlowModPerf = 0.0
+        sumVelModPerf  = 0.0
+
         if(Me%Output%WriteMaxFlowModulus) then
-            !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
+            !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy) REDUCTION(+:sumFlowModPerf,sumVelModPerf)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
@@ -16948,13 +16984,15 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%FlowModulus(i,j)     = 0.0
                     Me%VelocityModulus(i,j) = 0.0
                 endif
+                sumFlowModPerf = sumFlowModPerf + Me%FlowModulus(i,j)
+                sumVelModPerf  = sumVelModPerf  + Me%VelocityModulus(i,j)
 
             enddo
             enddo
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
         else
-            !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
+            !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy) REDUCTION(+:sumFlowModPerf,sumVelModPerf)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
             do i = Me%WorkSize%ILB, Me%WorkSize%IUB
@@ -16976,11 +17014,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%FlowModulus(i,j)     = 0.0
                     Me%VelocityModulus(i,j) = 0.0
                 endif
+                sumFlowModPerf = sumFlowModPerf + Me%FlowModulus(i,j)
+                sumVelModPerf  = sumVelModPerf  + Me%VelocityModulus(i,j)
 
             enddo
             enddo
             !$OMP END DO NOWAIT 
             !$OMP END PARALLEL
+        endif
+
+        !PROFILING ONLY (Phase 7 in-run A/B timing) - remove once VTune gain is confirmed.
+        if (.not. Me%ProfilePerformantOnly) then
+            call CheckProfileScalarDiff(sumFlowModBase, sumFlowModPerf, "ComputeCenterValues - FlowModulus sum", Me%CV%NextNiteration)
+            call CheckProfileScalarDiff(sumVelModBase, sumVelModPerf, "ComputeCenterValues - VelocityModulus sum", Me%CV%NextNiteration)
         endif
         
         nullify (iFlowX, iflowY)
@@ -17001,6 +17047,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real(4)                                     :: FlowX, FlowY, VelocityX, VelocityY
         real(4)                                     :: FlowX_right, FlowX_Center, FlowY_top, FlowY_Center
         real(4)                                     :: cfx, cfy, cvx, cvy
+        real(4)                                     :: baseFlowMod, baseVelMod
+        real(4)                                     :: sumFlowModBase, sumVelModBase, sumFlowModPerf, sumVelModPerf
         logical                                     :: WriteHdf, WriteTimeSerie, ComputeEverything
         type (T_Time)                               :: NextOutput
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
@@ -17150,9 +17198,43 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             endif
     
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")
+
+            !PROFILING ONLY (Phase 7 in-run A/B timing, noise-cancelled VTune measurement) -
+            !remove this whole guarded block once the pow-elimination gain is confirmed in VTune.
+            if (.not. Me%ProfilePerformantOnly) then
+                if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4_baseline")
+                sumFlowModBase = 0.0
+                sumVelModBase  = 0.0
+                !$OMP PARALLEL PRIVATE(I,J,baseFlowMod,baseVelMod) REDUCTION(+:sumFlowModBase,sumVelModBase)
+                !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+                do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
+                do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
+                    if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                        if (Me%OpenPoints(i,j) == BasinPoint) then
+                            baseFlowMod = sqrt (Me%CenterFlowX_R4(i, j)**2. + Me%CenterFlowY_R4(i, j)**2.)
+                            baseVelMod  = sqrt (Me%CenterVelocityX_R4(i, j)**2.0 + Me%CenterVelocityY_R4(i, j)**2.0)
+                        else
+                            baseFlowMod = Me%FlowModulus_R4(i, j)
+                            baseVelMod  = Me%VelocityModulus_R4(i, j)
+                        end if
+                    else
+                        baseFlowMod = Me%FlowModulus_R4(i, j)
+                        baseVelMod  = Me%VelocityModulus_R4(i, j)
+                    endif
+                    sumFlowModBase = sumFlowModBase + baseFlowMod
+                    sumVelModBase  = sumVelModBase  + baseVelMod
+                enddo
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+                if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4_baseline")
+            endif
+
+            sumFlowModPerf = 0.0
+            sumVelModPerf  = 0.0
     
             if(Me%Output%WriteMaxFlowModulus) then
-                !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
+                !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy) REDUCTION(+:sumFlowModPerf,sumVelModPerf)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -17173,12 +17255,14 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                         end if
                     endif
+                    sumFlowModPerf = sumFlowModPerf + Me%FlowModulus_R4(i,j)
+                    sumVelModPerf  = sumVelModPerf  + Me%VelocityModulus_R4(i,j)
                 enddo
                 enddo
                 !$OMP END DO NOWAIT 
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
+                !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy) REDUCTION(+:sumFlowModPerf,sumVelModPerf)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -17197,13 +17281,19 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                             endif
                         end if
                     endif
+                    sumFlowModPerf = sumFlowModPerf + Me%FlowModulus_R4(i,j)
+                    sumVelModPerf  = sumVelModPerf  + Me%VelocityModulus_R4(i,j)
                 enddo
                 enddo
                 !$OMP END DO NOWAIT 
                 !$OMP END PARALLEL
             endif
             
-            
+            !PROFILING ONLY (Phase 7 in-run A/B timing) - remove once VTune gain is confirmed.
+            if (.not. Me%ProfilePerformantOnly) then
+                call CheckProfileScalarDiff(real(sumFlowModBase), real(sumFlowModPerf), "ComputeCenterValues_R4 - FlowModulus_R4 sum", Me%CV%NextNiteration)
+                call CheckProfileScalarDiff(real(sumVelModBase), real(sumVelModPerf), "ComputeCenterValues_R4 - VelocityModulus_R4 sum", Me%CV%NextNiteration)
+            endif
             
             nullify (iFlowX, iflowY)
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")    
