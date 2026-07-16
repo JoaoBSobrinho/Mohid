@@ -546,7 +546,7 @@ feedback path into the trajectory is found, STOP and use the harness instead (no
 
 ---
 
-## Phase 6 – OpenMP Load Balancing (NOT STARTED — Opus-led)
+## Phase 6 – OpenMP Load Balancing (DEFERRED TO LAST — Opus-led)
 
 **Observation:** NoRain OMP spin (`func@0x180099f40`) ~330s + `_kmpc_barrier` ~125s = ~455s
 of load imbalance in production 10T (unaffected by Phase 1–4 code changes since it is a
@@ -561,13 +561,118 @@ hotspot. Minor for WithRain (~25s barrier).
 ```
 
 ### Options:
-1. Tune `CHUNKJ` chunk size for better balance
-2. Use `SCHEDULE(GUIDED)` for adaptive chunk sizes
-3. Investigate if `Me%CurrentWorkSize` can be set to skip fully-dry regions
+1. ~~Tune `CHUNKJ` chunk size~~ — investigated & REJECTED as the NoRain lever (Experiment 0: dispatch
+   is ~0.5s, coarsening made the barrier worse). May still help large WithRain domains — revisit.
+2. ~~Use `SCHEDULE(GUIDED)`~~ — REJECTED (user: countless wet/dry variations → GUIDED unreliable)
+3. **Scale threads-per-region to the active-box size (self-tuning, no keyword)** ← the direction for
+   the future Phase 6 (see "Direction" below).
 
 > **Why Opus-led:** broad (95 sites), correctness-safe (scheduling doesn't change math →
 > `compare_mohid` trivially passes) but the *effect* is timing-only, so the in-run A/B harness
 > does not apply — needs careful wall-time measurement methodology and chunk/GUIDED judgment.
+
+### Survey findings (branch `perf/Phase6`, cut from `perf/Phase5` a620bad5)
+
+- **All 95 `SCHEDULE(DYNAMIC, …)` sites in ModuleRunOff collapse to one value.** 21 sites use
+  `CHUNKJ` (the global directly), 74 use a local `CHUNK` set via `CHUNK = ChunkJ`. Fortran is
+  case-insensitive so `CHUNKJ` == `ChunkJ`.
+- **`ChunkJ` is a GLOBAL** (`ModuleGlobalData.F90` L2181, default `1`), computed once at
+  construction in `ModuleBasin.F90` L897: `ChunkJ = max((JUB-JLB)/ChunkJFactor, 1)` with
+  `ChunkJFactor` default `99999` ⇒ **`ChunkJ = 1`** for any normal grid ⇒ every loop runs
+  `SCHEDULE(DYNAMIC, 1)` (finest granularity: best balance, worst dispatch-atomic overhead).
+- **`ChunkJ` is shared** with PorousMedia, RunoffProperties, MOHIDBase, and all of MOHIDWater →
+  must NOT change its computation. Solution: ModuleRunOff-local chunk (decoupled).
+- **Loops parallelize over columns `j`** (outer), rows `i` (inner). Physics loops iterate
+  `Me%CurrentWorkSize`; **`ComputeNextDT_CourantScan` and `ModifyGeometryAndMapping` iterate the
+  full `Me%WorkSize`.**
+- **`Me%CurrentWorkSize` is a dynamic bounding box grown around active cells ONLY when
+  `.not. Me%HasRainFall`** (L10616-10653, `SetWorkSize` L11097). WithRain uses the full domain.
+  **This is exactly why NoRain is imbalanced (small irregular box over dynamic,1) and WithRain
+  is not.**
+- `openmp_num_threads` (global, `ModuleGlobalData`) holds the real thread count → usable in a
+  chunk formula.
+
+### Root cause — REVISED after Experiment 0 (the chunk hypothesis was WRONG)
+
+**Experiment 0 (committed Phase 5 baseline + `CHUNK_I_FACTOR : 40`, NoRain 10T, my Phase 6 code
+NOT built)** disproved the dispatch-contention hypothesis:
+
+| libiomp function | CPU | role |
+|---|---|---|
+| `_kmpc_dispatch_next_4` | **0.541s** | DYNAMIC chunk hand-out |
+| `_kmpc_dispatch_init_4` | 0.125s | loop dispatch setup |
+| `func@0x180099f40` | 326s (**315.7s spin**, wait cnt **4,730,938**) | idle worker spin at fork/join |
+| `_kmpc_barrier` | 243s (**243.0s spin**, wait cnt **4,850,561**) | region-exit barrier |
+| `func@0x180047260` | 107s (**102.5s spin**) | join/reduction wait |
+
+- **Dynamic scheduling costs ~0.67s total** → chunk size is NOT the bottleneck; there is no
+  dispatch-atomic contention. The premise behind `RunOffChunk` was wrong for NoRain.
+- The real cost is **~692s of threads idle-spinning at fork/join barriers** vs ~656s of useful
+  compute — **~half the CPU wasted**. It is structural: **4.85M barrier calls** = a huge number of
+  *tiny* parallel regions over the small NoRain active box.
+- **Coarsening made it worse:** `CHUNK_I_FACTOR : 40` sets `ChunkJ = fullJ/40` (a large fixed chunk
+  from the *full* domain); on the small NoRain box that starves threads → `_kmpc_barrier` ~doubled
+  (243s vs ~125s baseline). Confirms the active box is small and the lever is *parallelism*, not
+  *chunk*.
+
+**Implication:** for a small box, `RunOffChunk` collapses to 1 anyway (= baseline), and no chunk
+value can reduce the per-region barrier count. Phase 6 pivots to **not going parallel when the box
+is too small**.
+
+### Status — DEFERRED TO LAST PHASE (reverted; keyword approach rejected)
+
+Phase 6 work is **reverted** (`ModuleRunOff.F90` back to clean Phase 5 `a620bad5`) and moved to be
+the **last** phase. Do Phase 7 (and any others) first. Reasons (user):
+1. A tuned cell-count threshold is **model/grid-specific** → brittle across other grids/setups.
+2. Adding a `runoff.dat` keyword (`OMP_PARALLEL_MIN_CELLS` / `OMP_CHUNK_PER_THREAD`) forces a
+   **downstream UI change** (the GUI that writes the data files) — not worth it unless gains are large.
+3. Needs careful review; revisit when there is time.
+
+**What we keep from this investigation (valuable, don't lose):** the Survey findings and the
+**Experiment 0 root cause** above — dispatch is ~0.5s, so **chunk size is not the lever**; the cost
+is ~692s of fork/join **barrier idle-spin** over ~4.85M tiny parallel regions on the small NoRain
+active box.
+
+### Direction for the (future) real Phase 6 — self-tuning, NO keyword
+
+Instead of an `IF()` on/off gate with a magic threshold, **scale the thread count per region to the
+work size** using a grid-independent internal constant (a module PARAMETER, *not* a data-file
+keyword — so no UI change):
+
+```fortran
+! module parameter, grid-independent (tune once in code):
+integer, parameter :: MinCellsPerThread_ = <e.g. 512>
+
+! before each CurrentWorkSize-based parallel region:
+nCells  = (Me%CurrentWorkSize%IUB-Me%CurrentWorkSize%ILB+1) &
+        * (Me%CurrentWorkSize%JUB-Me%CurrentWorkSize%JLB+1)
+nThreadsBox = max(1, min(openmp_num_threads, nCells / MinCellsPerThread_))
+!$OMP PARALLEL NUM_THREADS(nThreadsBox) ...
+```
+
+- Tiny box → `NUM_THREADS(1)` = serial, no fork/join/barrier (kills the NoRain overhead).
+- Large box (WithRain full domain, or NoRain once water spreads) → full threads, as today.
+- Self-scaling to *any* grid and thread count; the only constant is "min useful cells per thread",
+  which is physically about amortizing fork/join overhead, not grid-specific.
+- Still parallelism-only → `compare_mohid` must be zero-diff (same iterations; REDUCTION valid at
+  any thread count). Validate on BOTH scenarios; verify no WithRain regression.
+- Apply to the `CurrentWorkSize` box loops (`ComputeFaceVelocityModulus`, `DynamicWaveXX/YY_default_CG`,
+  `OutputFloodingAll_R4`, and candidates `UpdateWaterLevels`, `ComputeCenterVelocities_R4`,
+  `CalculateTotalStoredVolume`). Leave the full-`WorkSize` loops (`ComputeNextDT_CourantScan`,
+  `ModifyGeometryAndMapping`) always-parallel.
+- Open question to weigh at review time: `omp_get_max_threads`/nested-thread-count interactions,
+  and whether `NUM_THREADS` per region has measurable call overhead vs the barrier it removes.
+
+> The chunk idea (Lever B, `RunOffChunk`) *may* still help large WithRain domains, but per Experiment 0
+> it is not the NoRain lever and is **not** worth a keyword on its own. Fold it in only if the
+> NUM_THREADS work shows a clear, keyword-free way to set it (or drop it).
+
+### Measurement plan (for when Phase 6 is picked up last)
+
+- No A/B harness (parallelism-only → math unchanged). Build `Profile Double OpenMP`, NoRain 10T;
+  VTune **threading**: watch `func@0x180099f40` (spin) + `_kmpc_barrier` + wall-clock.
+- `compare_mohid.py` zero-diff on BOTH scenarios; WithRain 10T as the no-regression guard.
+- Free `KMP_BLOCKTIME=0` run to gauge how much spin is harmless idle vs critical-path.
 
 ---
 
