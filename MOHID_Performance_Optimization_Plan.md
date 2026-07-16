@@ -491,12 +491,13 @@ After Phase 4, the profile data confirms the two scenarios pull in different dir
 | `ComputeCenterVelocities_R4` | 37–52s | 6× `**2.0` pow/cell in `sqrt(x**2.0+y**2.0)` | **Low** — output-only R4 arrays, Phase-1 pattern | ✅ **Sonnet** |
 | `OutputFloodingAll_R4` | 41–49s | max/accumulate stats; no pow; memory-bound | Low but unclear gain | Investigate-only |
 
-**Revised order** (the old Phase 5=SetMatrixValues / 6=load-balancing / 7=`_CG`-variants ordering is superseded; the `_CG` non-default variants aren't even on the hot path — the hot ones are `_default_CG`, already done in Phase 1):
+**Revised order** (the old Phase 5=SetMatrixValues / 6=load-balancing / 7=`_CG`-variants ordering is superseded; the `_CG` non-default variants aren't even on the hot path — the hot ones are `_default_CG`, already done in Phase 1). **Phase 6 (OMP load balancing) was investigated then DEFERRED TO LAST** — see the Phase 6 section for why; phases renumbered accordingly:
 
-1. **Phase 5 → `ComputeCenterVelocities_R4`** — clean `**2.0`→`x*x`, output-only, low-risk. **Sonnet.**
-2. **Phase 6 → OMP load balancing** — biggest NoRain lever; strategic. **Opus-led.**
-3. **Phase 7 → `SetMatrixValues` / call-frequency reduction** — memory-bound; needs call-graph analysis. **Opus or careful Sonnet.**
-4. **Phase 8 → DynamicWave XX/YY** — biggest WithRain compute, HIGH regression risk. **Opus, strict A/B, watch the friction cell-flip.**
+1. **Phase 5 → `ComputeCenterVelocities_R4`** — clean `**2.0`→`x*x`, output-only, low-risk. **Sonnet.** ✅ DONE
+2. **Phase 7 → Output-only `**2.0`→`x*x` cleanup (`ComputeCenterValues`/`_R4`)** — same pattern as Phase 5, output-only, low-risk. **Sonnet.** ✅ DONE
+3. **Phase 8 → `SetMatrixValues` / call-frequency reduction** — memory-bound; needs call-graph analysis. **Opus or careful Sonnet.**
+4. **Phase 9 → DynamicWave XX/YY** — biggest WithRain compute, HIGH regression risk. **Opus, strict A/B, watch the friction cell-flip.**
+5. **Phase 6 → OMP load balancing** — biggest NoRain lever; strategic; DEFERRED TO LAST. **Opus-led.**
 
 **Opus-only (do NOT hand to Sonnet):** DynamicWave friction and `ComputeFaceVelocityModulus abs(cmplx)` (both documented cell-flip landmines); OMP load-balancing strategy (95 sites, timing-only measurement, chunk/GUIDED judgment).
 
@@ -676,7 +677,75 @@ nThreadsBox = max(1, min(openmp_num_threads, nCells / MinCellsPerThread_))
 
 ---
 
-## Phase 7 – `SetMatrixValues2D_R8_FromMatrix` / call-frequency reduction (NOT STARTED)
+## Phase 7 – Output-only `**2.0`→`x*x` cleanup (`ComputeCenterValues` / `ComputeCenterValues_R4`) ✅ CONFIRMED
+
+> **Status:** ✅ COMPLETE. Extends the Phase 5 `ComputeCenterVelocities_R4` cleanup to the two
+> remaining output-only routines that shared the identical `sqrt(X**2.0 + Y**2.0)` pattern.
+> Committed on `perf/Phase7_OutputPow` (cut from `perf/Phase6` ef643b84, which itself is
+> Phase 5 code + the Phase 6 deferral doc only — no source change).
+
+**Location:** `subroutine ComputeCenterValues` and `subroutine ComputeCenterValues_R4` in
+`Software/MOHIDLand/ModuleRunOff.F90`.
+
+### Scope decision — FVS output routines explicitly excluded
+The same `**2.`/`**2.0` pattern also exists in `UpdateFVSOutputVariables_CG`,
+`UpdateFVSOutputVariables_CG_R4`, `UpdateFVSOutputVariables_VG`, `UpdateFVSOutputVariables_VG_R4`
+(the FVS-solver output-statistics routines). **User explicitly excluded these from Phase 7** — no
+ changes were made there. They remain a candidate for a possible future phase if ever revisited.
+
+### Full survey of `**2.`/`**2.0` sites in `ModuleRunOff.F90` (45 sites found)
+
+**SKIP (21 sites) — trajectory feedback confirmed, explicit guardrail, or dead code:**
+
+| Lines | Routine | Reason |
+|---|---|---|
+| 9175, 9201 | `ComputeStateFVS_CG` | `velMod` → friction (`tau_u/tau_v`) → `velocityU/V` → `Me%VelModFaceU/V`, `Me%myWaterColumn`. Trajectory-critical. |
+| 9353, 9377 | `ComputeStateFVS_VG` | Same pattern. Trajectory-critical. |
+| 9370 | `ComputeStateFVS_VG` | Commented-out line — dead code. |
+| 9594–9616, 9763–9785, 9933–9955, 10104–10126 | `UpdateFVSOutputVariables_CG/_CG_R4/_VG/_VG_R4` | Output-only (same proof as below) but **excluded per user instruction — no FVS routine changes this phase.** |
+| 11584, 11839, 12102, 12436 | `DynamicWaveXX_*` | `Me%OverlandCoefficientX**2.` friction term — guardrail (`OverlandCoefficient*`/`Friction`). |
+| 12789, 13049, 13330, 13648 | `DynamicWaveYY_*` | `Me%OverlandCoefficientY**2.` friction term — guardrail. |
+| 13323, 13327, 13641, 13645 | `DynamicWaveYY_*` | Commented-out lines — dead code. |
+| 15337, 15338 | `FlowFromChannels` | Quadratic solve for `NewLevel` → `dVol` → `Flow` → channel/runoff volume exchange (`Me%myWaterVolume`/`myWaterColumn`). Trajectory-critical — found via full survey, not on original candidate list. |
+| 17450, 17497 | `ComputeNextDT_CourantScan` | `Distance_Courant` → `nextDTCourant` → `DT`. Guardrail (`DT`). |
+
+**OUTPUT-ONLY, FIXED (8 sites, 2 routines):**
+
+| Routine | Lines |
+|---|---|
+| `ComputeCenterValues` | 16933–16934, 16960–16961 |
+| `ComputeCenterValues_R4` | 17151–17152, 17173–17174 |
+
+**Usage-grep evidence (output-only proof):** `Me%FlowModulus`/`Me%FlowModulus_R4` (42 refs) and
+`Me%VelocityModulus`/`Me%VelocityModulus_R4` (49 refs) flow only into `Me%Output%*`
+(`MaxFlowModulus`, `VelocityAtMaxWaterColumn`, `FloodRisk`, `WeightedVelocity`) and HDF5/`Array2D`/
+`Data2D` writers — never into `lFlowX/Y`, `iFlowX/Y`, `myWaterColumn/Volume`, `AreaU/V`, `DT`,
+`VelModFaceU/V`, `OverlandCoefficient*`, or `Friction`. `Me%CenterFlowX/Y[...]` and
+`Me%CenterVelocityX/Y[...]` (the sqrt operands) are themselves written only from read-only
+consumption of `Me%VelModFaceU/V` or `iFlowX/Y` earlier in the same routine — never written back
+into trajectory arrays. Same conclusion as Phase 5's already-validated `ComputeCenterVelocities_R4`.
+
+`OutputFloodingAll`/`OutputFloodingAll_R4` (originally flagged as candidates) contain **no**
+`**2.` patterns at all — nothing to change there.
+
+### Optimization applied
+For each of the 8 sites: introduced local scalars — `real :: cfx, cfy, cvx, cvy` in
+`ComputeCenterValues` (double, matches `Me%CenterFlowX`/`CenterVelocityX`), `real(4) :: cfx, cfy,
+cvx, cvy` in `ComputeCenterValues_R4` (matches `Me%CenterFlowX_R4`/`CenterVelocityX_R4`) — assigned
+from `Me%CenterFlowX/Y[...]`/`Me%CenterVelocityX/Y[...]` once per cell, then
+`sqrt(cfx*cfx + cfy*cfy)` / `sqrt(cvx*cvx + cvy*cvy)` replacing `sqrt(X**2. + Y**2.)`. Added
+`cfx,cfy,cvx,cvy` to the enclosing `!$OMP PARALLEL PRIVATE(...)` clauses (both
+`WriteMaxFlowModulus` true/false branches in each routine). Pure Phase-1/Phase-5 transformation —
+bit-identical, zero diff expected.
+
+### Validation
+No A/B harness needed (output-only, same methodology as Phase 5) — validate directly with
+`compare_mohid.py` on WithRain + NoRain (HDF5 at `res/` root as `RunOff_55*.hdf5`); zero-diff
+expected on both scenarios. Known accepted FAIL: `FloodPeriod.dat`.
+
+---
+
+## Phase 8 – `SetMatrixValues2D_R8_FromMatrix` / call-frequency reduction (NOT STARTED)
 
 **Location:** `Software/MOHIDBase1/ModuleFunctions.F90` (~L1300)  
 **Hotspot:** ~113s NoRain 1T / ~123s NoRain 10T.
@@ -690,7 +759,7 @@ callers/overloads — changes must not break other callers.
 
 ---
 
-## Phase 8 – `DynamicWaveXX_default_CG` / `DynamicWaveYY_default_CG` deeper optimization (NOT STARTED — Opus, HIGH RISK)
+## Phase 9 – `DynamicWaveXX_default_CG` / `DynamicWaveYY_default_CG` deeper optimization (NOT STARTED — Opus, HIGH RISK)
 
 The biggest single compute hotspot overall (~230s WithRain, ~238s NoRain combined). The
 dominant remaining cost is `_libm_pow_l9` from the friction term `**(1.0/3.0)` (a genuine
