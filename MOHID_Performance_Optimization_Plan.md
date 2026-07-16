@@ -743,49 +743,43 @@ No A/B *correctness* harness needed (output-only, same methodology as Phase 5) �
 with `compare_mohid.py` on WithRain + NoRain (HDF5 at `res/` root as `RunOff_55*.hdf5`); zero-diff
 expected on both scenarios. Known accepted FAIL: `FloodPeriod.dat`.
 
-### Methodology correction — in-run A/B needed for *performance measurement*, not just correctness
-Initial implementation validated correctness only and assumed VTune before/after CPU times from two
-**separate** builds/runs would be good enough evidence of the gain. **This is wrong** for small,
-cheap routines like `ComputeCenterValues`/`_R4`: separate runs reintroduce exactly the ambient-noise
-problem the Phase 3+ in-run A/B harness was built to solve, and the real delta (eliminating 4 pow
-calls per cell) can be smaller than run-to-run noise.
+### Performance-measurement attempt (in-run A/B timing) — TRIED, then REMOVED
+The `x**2.`→`x*x` change eliminates `pow` calls, but comparing VTune CPU times from two **separate**
+builds/runs reintroduces the ambient-noise problem the Phase 3+ in-run A/B harness solves — and the
+real delta on these small routines is smaller than run-to-run noise. So a timing-only in-run dual
+computation was added (baseline `x**2.` block under its own `StartWatch` label + performant `x*x`
+block, gated by `PROFILE_PERFORMANT_ONLY`, with `REDUCTION` sums fed through `CheckProfileScalarDiff`
+to block dead-code elimination and as a bonus correctness check).
 
-**Fix:** added a timing-only in-run dual-computation to both routines (NOT a correctness harness —
-correctness is already proven bit-identical via `compare_mohid.py`):
-- Computes the **old** `X**2.` formula into throwaway locals (`baseFlowMod`, `baseVelMod`) inside its
-  own `!$OMP PARALLEL` region under a distinct `StartWatch`/`StopWatch` label
-  (`"... - Modulus_baseline"` / `"... - Modulus_R4_baseline"`), so VTune shows both the pre- and
-  post-optimization cost **as two separate functions in the same run** — noise-cancelled comparison.
-- Gated by `.not. Me%ProfilePerformantOnly` (reuses the existing `PROFILE_PERFORMANT_ONLY` runtime
-  keyword from the Phase 3+ harness: `0`/default = dual-run for VTune profiling, `1` = performant-only,
-  zero overhead, for the final `compare_mohid.py` validation run).
-- **Dead-code-elimination guard:** a discarded computation with no side effect could be optimized away
-  entirely by the compiler, making the "baseline" timing meaningless. To force retention, both the
-  baseline and performant paths accumulate `REDUCTION(+:sum...)` sums, which are passed through
-  `CheckProfileScalarDiff` (the existing, previously-unused-since-Phase-3-cleanup helper) — a genuine
-  cross-procedure call the compiler cannot prove is side-effect-free. This doubles as a cheap
-  correctness sanity check (not required, since `compare_mohid.py` already proves bit-identical output,
-  but low-cost extra confidence).
-- **Masking gotcha caught before implementing:** `ComputeCenterValues_R4`'s original code has **no**
-  `else` on the outer `if (BasinPoints==BasinPoint)` — cells outside the basin silently **retain**
-  their previous `Me%FlowModulus_R4`/`VelocityModulus_R4` value. Naively defaulting the baseline local
-  to `0.0` there would create a **spurious A/B mismatch** against the retained (possibly nonzero) value
-  in the performant sum. Fixed by setting the baseline local to the **existing** `Me%FlowModulus_R4`/
-  `VelocityModulus_R4(i,j)` value in both the outer-false and inner-false (`OpenPoints` inactive) cases,
-  mirroring the "no-op" semantics exactly. The double-precision `ComputeCenterValues` **does** have an
-  `else` on the outer `if` (always resets to `0.0`), so `0.0` is correct there — the two routines'
-  masking patterns differ and must not be copied blindly between them.
-- **This block is temporary/profiling-only.** Per the established Cleanup rule (Phase 3/4), delete the
-  entire `.not. Me%ProfilePerformantOnly` guarded block (baseline computation, sum reductions,
-  `CheckProfileScalarDiff` calls) once the VTune gain is confirmed, leaving only the pure performant
-  `x*x` code — then re-commit the cleaned version.
+**Two findings killed it:**
 
-### Validation (performance) — pending user's VTune run
-Build `Profile Double OpenMP`, run with `PROFILE_PERFORMANT_ONLY : 0` (default), compare
-`"ComputeCenterValues - Modulus_baseline"` vs `"ComputeCenterValues - Modulus"` (and the `_R4`
-equivalents) CPU times in the same VTune capture. Then build `Release Double OpenMP` with
-`PROFILE_PERFORMANT_ONLY : 1` and re-run `compare_mohid.py` for final correctness validation
-(zero overhead, matches the already-validated Phase 7 output).
+1. **The routines are cold paths — measurement is below the noise floor.** VTune 1T (Profile build):
+   `ComputeCenterValues_R4` ≈ **0.14s** in WithRain (three sub-regions 0.095 + 0.030 + 0.015s),
+   **absent** in NoRain; `ComputeCenterValues` (double) **never runs** (model uses single-precision
+   output). Reason: `ComputeCenterValues_R4` runs its Modulus block **only on output timesteps**
+   (`ComputeEverything = WriteHdf .or. WriteTimeSerie .or. WriteMaxFlowModulus`); every other step it
+   delegates to `ComputeCenterVelocities_R4` — which is the real per-timestep hotspot (**12.4s
+   WithRain 1T**) and was **already optimized in Phase 5**. So the Phase 7 pow-elimination is correct
+   and harmless but its performance benefit is ≈0.
+
+2. **The harness had a false-positive `stop` bug (`_R4` routine only).** The baseline sum-loop reads
+   the *existing* `Me%FlowModulus_R4`/`VelocityModulus_R4` for inactive cells
+   (`OpenPoints /= BasinPoint`), while the performant loop runs the original conditional zeroing
+   (`if (… /= 0.0) … = 0.0`) on those same cells before summing. Any cell that **dried out** (was
+   active, now inactive) still holding a stale nonzero modulus → baseline sum includes the stale
+   value `V`, performant sum includes `0` → the sums diverge → `CheckProfileScalarDiff` exceeds
+   tolerance and `stop`s the run at the first output step with a newly-dry cell. This is a
+   **harness measurement artifact, not a defect in the `x*x` change** (per-cell active values are
+   bit-identical; `compare_mohid.py` and the performant-only run pass cleanly). The double-precision
+   `ComputeCenterValues` did not have this bug (it unconditionally writes `0.0` to inactive cells, so
+   baseline and performant agree). A correct in-place fix would be to accumulate the sums **only
+   inside the active branch** in both loops — but given finding (1) it wasn't worth keeping.
+
+**Resolution:** the entire timing harness was removed (source restored to the clean `x*x`-only
+Phase 7 state, commit `c52de3f8`). The committed Phase 7 code is purely the bit-identical
+`x**2.`→`x*x` transformation on the 8 `ComputeCenterValues`/`_R4` sites — validated by
+`compare_mohid.py` zero-diff. Lesson recorded: for **cold** routines, skip in-run A/B timing
+entirely — the change is justified as a bit-identical Phase-1-class cleanup, not by a measured delta.
 
 ---
 
