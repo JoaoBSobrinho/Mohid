@@ -18700,7 +18700,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         real, dimension(:,:), pointer           :: ChannelsTopArea
         real                                    :: SumArea, WeightedVelocity, ElapsedTime, FloodWaterColumnLimit
         real                                    :: Sum
-        real(4)                                 :: FloodRisk, WaterColumn
+        real                                    :: FloodRiskVelCoefLocal, FloodArrivalWaterColumnLimitLocal
+        real(4)                                 :: FloodRisk, WaterColumn, VelMod
         integer                                 :: NFloodPeriodLimits
         integer                                 :: CHUNK
         integer, dimension(:,:), pointer        :: ComputePoints
@@ -18715,6 +18716,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         FloodWaterColumnLimit = min(minval(Me%Output%FloodPeriodWaterColumnLimits), Me%Output%FloodArrivalWaterColumnLimit)
         NFloodPeriodLimits = max(size(Me%Output%FloodPeriodWaterColumnLimits), 1)
         Sum   = 0.0
+        !Loop-invariant scalars, hoisted out of the per-cell loop below (read-only, unchanged during this routine)
+        FloodRiskVelCoefLocal             = Me%Output%FloodRiskVelCoef
+        FloodArrivalWaterColumnLimitLocal = Me%Output%FloodArrivalWaterColumnLimit
         
         if (FloodWaterColumnLimit > Me%MinimumWaterColumn) then
             ComputePoints => Me%OpenPoints
@@ -18722,24 +18726,25 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             ComputePoints => Me%ActivePoints
         endif
         
-        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, n)
+        !$OMP PARALLEL PRIVATE(I,J, FloodRisk, WaterColumn, VelMod, n)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(+:Sum)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
         do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
             if (ComputePoints(i, j) == BasinPoint) then
                 WaterColumn = Me%myWaterColumn(i, j)
+                VelMod      = Me%VelocityModulus_R4(i, j)
                 !Water Column of overland flow
                 if (WaterColumn > Me%Output%MaxWaterColumn_R4(i, j)) then
                     Me%Output%MaxWaterColumn_R4(i, j) = WaterColumn
                                                     
                     !Velocity at MaxWater column
-                    Me%Output%VelocityAtMaxWaterColumn_R4(i,j) =  Me%VelocityModulus_R4 (i, j)
+                    Me%Output%VelocityAtMaxWaterColumn_R4(i,j) =  VelMod
                                     
                     Me%Output%TimeOfMaxWaterColumn(i,j) = ElapsedTime
                                                    
                 endif
                                             
-                FloodRisk = WaterColumn * (Me%VelocityModulus_R4 (i, j) + Me%Output%FloodRiskVelCoef)
+                FloodRisk = WaterColumn * (VelMod + FloodRiskVelCoefLocal)
                 Me%Output%MaxFloodRisk_R4(i,j) = max(Me%Output%MaxFloodRisk_R4(i,j), FloodRisk)
                     
                 do n = 1, NFloodPeriodLimits
@@ -18748,7 +18753,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     endif
                 enddo
                     
-                if(WaterColumn > Me%Output%FloodArrivalWaterColumnLimit)then
+                if(WaterColumn > FloodArrivalWaterColumnLimitLocal)then
 
                     if (Me%GridIsConstant) then
                         Sum = Sum + Me%GridCellArea
