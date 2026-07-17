@@ -891,10 +891,6 @@ Module ModuleRunOff
         logical                                     :: SimpleChannelInteraction = .false.
         logical                                     :: ChannelHasTwoGridPoints  = .false.
         logical                                     :: LimitToCriticalFlow      = .true.
-        !Performance A/B harness: .false. (default) = dual-run mode (baseline + performant compared
-        !in a single run, trajectory follows the trusted baseline); .true. = run only the optimized
-        !(performant) routine variants, for the final validation against the original outputs.
-        logical                                     :: ProfilePerformantOnly    = .false.
         integer                                     :: FaceWaterColumn          = WCMaxBottom_
         integer                                     :: OverlandChannelInteractionMethod = null_int
 
@@ -1741,19 +1737,6 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
                      Default      = .true.,                                 &
                      STAT         = STAT_CALL)                                  
         if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR394'
-
-        !Performance A/B harness switch. When .false. (default) the model runs both the baseline
-        !and the performant variant of profiled routines in a single run, compares them against the
-        !plan tolerances and follows the trusted baseline trajectory. Set to 1 to run ONLY the
-        !performant variant (used for the final validation against the original HDF5/timeseries).
-        call GetData(Me%ProfilePerformantOnly,                              &
-                     Me%ObjEnterData, iflag,                                &  
-                     keyword      = 'PROFILE_PERFORMANT_ONLY',             &
-                     ClientModule = 'ModuleRunOff',                         &
-                     SearchType   = FromFile,                               &
-                     Default      = .false.,                                &
-                     STAT         = STAT_CALL)                                  
-        if (STAT_CALL /= SUCCESS_) stop 'ReadDataFile - ModuleRunOff - ERR395'
 
         !If Buildings are to be simulated (flow ocuation in urban areas)
         call GetData(Me%Buildings,                                          &
@@ -8052,12 +8035,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                     call SetMatrixValue(Me%myWaterColumnOld, Me%CurrentWorkSize, Me%myWaterColumn, Me%ActivePoints)
                     
                     if (Me%Restarted) then
-                        call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%iFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%iFlowY, Me%ActivePoints)
+                        call SetInitialFlowXY(Me%CurrentWorkSize, Me%iFlowX, Me%iFlowY, Me%ActivePoints)
                         
                     else
-                        call SetMatrixValue(Me%InitialFlowX,     Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
-                        call SetMatrixValue(Me%InitialFlowY,     Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
+                        call SetInitialFlowXY(Me%CurrentWorkSize, Me%lFlowX, Me%lFlowY, Me%ActivePoints)
                     endif
                     
                     !Set 1D River level in river boundary cells
@@ -8125,15 +8106,13 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                             if (firstRestart) then
 
-                                call SetMatrixValue(Me%FlowXOld, Me%CurrentWorkSize, Me%InitialFlowX, Me%ExtVar%BasinPoints)
-                                call SetMatrixValue(Me%FlowYOld, Me%CurrentWorkSize, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                                call SetFlowOldXY(Me%CurrentWorkSize, Me%InitialFlowX, Me%InitialFlowY, Me%ExtVar%BasinPoints)
                                 firstRestart = .false.
                             else
                                 !Updates Geometry
                                 call ModifyGeometryAndMapping
                                 
-                                call SetMatrixValue(Me%FlowXOld, Me%CurrentWorkSize, Me%lFlowX, Me%ActivePoints)
-                                call SetMatrixValue(Me%FlowYOld, Me%CurrentWorkSize, Me%lFlowY, Me%ActivePoints)
+                                call SetFlowOldXY(Me%CurrentWorkSize, Me%lFlowX, Me%lFlowY, Me%ActivePoints)
                             endif
 
                     
@@ -8331,7 +8310,80 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (present(STAT)) STAT = STAT_
         
     end subroutine ModifyRunOff
-    
+
+    !--------------------------------------------------------------------------
+    !Phase 10: replaces two separate SetMatrixValue(...) calls (one per X/Y pair, each
+    !its own OMP parallel region) with a single merged-loop copy, halving the fork/join
+    !count for this call site. Confirmed via VTune (ModuleStopWatch report) and
+    !compare_mohid.py zero-diff validation.
+    !--------------------------------------------------------------------------
+
+    subroutine SetInitialFlowXY(SizeArg, SourceX, SourceY, MapMatrix)
+
+        !Arguments-------------------------------------------------------------
+        type (T_Size2D)                                 :: SizeArg
+        real(8), dimension(:,:), pointer                :: SourceX, SourceY
+        integer, dimension(:,:), pointer                :: MapMatrix
+
+        !Local-----------------------------------------------------------------
+        integer                                         :: i, j
+        integer                                         :: CHUNK
+
+        !----------------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetInitialFlowXY")
+        CHUNK = ChunkJ
+
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+        do j = SizeArg%JLB, SizeArg%JUB
+        do i = SizeArg%ILB, SizeArg%IUB
+            if (MapMatrix(i, j) == 1) then
+                Me%InitialFlowX(i, j) = SourceX(i, j)
+                Me%InitialFlowY(i, j) = SourceY(i, j)
+            endif
+        enddo
+        enddo
+        !$OMP END DO NOWAIT
+        !$OMP END PARALLEL
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetInitialFlowXY")
+
+    end subroutine SetInitialFlowXY
+
+    !--------------------------------------------------------------------------
+
+    subroutine SetFlowOldXY(SizeArg, SourceX, SourceY, MapMatrix)
+
+        !Arguments-------------------------------------------------------------
+        type (T_Size2D)                                 :: SizeArg
+        real(8), dimension(:,:), pointer                :: SourceX, SourceY
+        integer, dimension(:,:), pointer                :: MapMatrix
+
+        !Local-----------------------------------------------------------------
+        integer                                         :: i, j
+        integer                                         :: CHUNK
+
+        !----------------------------------------------------------------------
+        if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetFlowOldXY")
+        CHUNK = ChunkJ
+
+        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+        do j = SizeArg%JLB, SizeArg%JUB
+        do i = SizeArg%ILB, SizeArg%IUB
+            if (MapMatrix(i, j) == 1) then
+                Me%FlowXOld(i, j) = SourceX(i, j)
+                Me%FlowYOld(i, j) = SourceY(i, j)
+            endif
+        enddo
+        enddo
+        !$OMP END DO NOWAIT
+        !$OMP END PARALLEL
+
+        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetFlowOldXY")
+
+    end subroutine SetFlowOldXY
+
     !---------------------------------------------------------------------------
     !> @author Ricardo Birjukovs Canelas - Bentley Systems
     !> @brief

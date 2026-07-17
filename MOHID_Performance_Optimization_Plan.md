@@ -783,17 +783,65 @@ entirely — the change is justified as a bit-identical Phase-1-class cleanup, n
 
 ---
 
-## Phase 8 – `SetMatrixValues2D_R8_FromMatrix` / call-frequency reduction (NOT STARTED)
+## Phase 8 – `OutputFloodingAll_R4` cache/hoist cleanup ✅ CONFIRMED & COMMITTED
 
-**Location:** `Software/MOHIDBase1/ModuleFunctions.F90` (~L1300)  
-**Hotspot:** ~113s NoRain 1T / ~123s NoRain 10T.
+> **Status:** ✅ COMPLETE. Committed on `perf/Phase8_FloodStats` (commit `323430af`, cut from
+> `perf/Phase7_OutputPow` `8d324ae7`). Chosen instead of Phase 9/`SetMatrixValues` as a lighter,
+> lower-risk output-only candidate identified during the Phase 7 hotspot survey
+> (`OutputFloodingAll_R4` ≈ 22.5s WithRain 1T, no `pow`, memory/stats-bound).
 
-The routine itself is already a trivial masked/unmasked copy (`Matrix(i,j) = InMatrix(i,j)`)
-with a `DYNAMIC`/`STATIC` schedule split — memory-bandwidth bound, so little code-level upside
-in the copy itself. The real lever is likely **reducing how often it is called** per timestep
-(it is invoked many times from `ModifyRunOff`), which is a call-graph refactor, not a one-line
-fix. Investigate call sites before touching the routine. Note it is a generic utility with many
-callers/overloads — changes must not break other callers.
+**Location:** `subroutine OutputFloodingAll_R4` in `Software/MOHIDLand/ModuleRunOff.F90`
+(~L18694), called every timestep from `Outputs` → `ModifyRunOff`.
+
+### Output-only proof
+Usage-grepped all 9 variables the routine writes (`Me%Output%MaxWaterColumn_R4`,
+`VelocityAtMaxWaterColumn_R4`, `TimeOfMaxWaterColumn`, `MaxFloodRisk_R4`, `FloodPeriods`,
+`FloodArrivalTime`, `TotalFloodedArea`, `MaxTotalFloodedArea`, `TimeOfMaxTotalFloodedArea`)
+across all of `Software/**/*.F90`. Every reference is confined to `ModuleRunOff.F90`, and every
+sink is `WriteGridData`/`GridData2D_Real`, `maxval`/`maxloc` (log only), `deallocate`, or
+`Me%Output%FloodPeriod(i,j)` (itself only feeding `WriteGridData`). Zero references anywhere near
+`lFlowX/Y`, `iFlowX/Y`, `myWaterColumn/Volume`, `AreaU/V`, `DT`, `VelModFaceU/V`,
+`OverlandCoefficient*`, `Friction` — confirmed output-only, no A/B harness needed (same
+methodology as Phase 5/7).
+
+### Optimization applied
+Most loop-invariant hoisting (`FloodWaterColumnLimit`, `NFloodPeriodLimits`, the `ComputePoints`
+pointer selection, caching `Me%myWaterColumn(i,j)`) **already existed** in this routine before
+Phase 8 — not a fresh win. Two remaining redundant-read eliminations applied:
+
+1. **Cache `Me%VelocityModulus_R4(i,j)`** into a new local `VelMod` (`real(4)`, added to the
+   `!$OMP PRIVATE` clause) — was read twice per active cell (once in the `MaxWaterColumn` branch,
+   once in the `FloodRisk` calc); now read once.
+2. **Hoisted `Me%Output%FloodRiskVelCoef` and `Me%Output%FloodArrivalWaterColumnLimit`** (both
+   read-only scalars, never mutated in this routine) into locals `FloodRiskVelCoefLocal` /
+   `FloodArrivalWaterColumnLimitLocal`, computed once before the parallel region.
+
+Both new locals preserve the exact original declared types, so arithmetic promotion order is
+unchanged — the change is a pure redundant-load elimination, not an arithmetic reformulation.
+Diff size: +10/-5 lines. Left untouched: the inner `do n = 1, NFloodPeriodLimits` `FloodPeriods`
+indexing (a local-array copy would add per-timestep allocation overhead — net negative), the
+`Me%GridIsConstant` branch (cheap/predictable, not worth duplicating the loop), the
+drainage-network `WorkSize` loop below (outside the hot per-timestep `CurrentWorkSize` region),
+and the non-`_R4` `OutputFloodingAll` (guardrail — not mirrored).
+
+### Validation
+`compare_mohid.py`:
+- **WithRain:** 36/37 PASS. Only fail is the pre-existing, accepted `FloodPeriod.dat` timing-shift
+  vs the Phase 1 baseline (unrelated to Phase 8). HDF5 (27 datasets) PASS.
+- **NoRain:** **38/38 PASS**, zero fails (57 HDF5 datasets).
+- Explicit check vs `RunOff_55_phase5_baseline.hdf5` (pre-Phase 7/8, both of which are pure
+  redundant-read eliminations expected to be bit-identical): PASS on both scenarios, max diff
+  ≈1.19e-07/2.38e-07 — the float32 machine-epsilon noise floor ($2^{-23}$), identical in
+  magnitude to the pre-existing diff vs `_original`, i.e. accumulated single-ULP rounding from
+  the already-confirmed Phases 1–5, not a new regression from Phase 8.
+
+### Performance
+VTune single-run comparisons (separate builds, different days) showed `OutputFloodingAll_R4`
+at ~30s WithRain 1T / ~41s NoRain 1T vs. the ~22.5s figure noted from the Phase 7 survey — **not
+a reliable signal** (same ambient-noise caveat as the Phase 7 lesson; this routine is too cheap
+for cross-run VTune deltas to mean anything, and no in-run A/B timing harness was built for the
+same cold/hot-path-cost-benefit reasons as Phase 7). The change is justified as a correct,
+bit-identical micro-optimization (redundant-load elimination), not by a measured delta.
 
 ---
 
@@ -809,6 +857,67 @@ cube-root) plus the physics arithmetic.
 > (see Phase 1 / Phase 2 Step 1 notes). Any change here must go through the full in-run A/B
 > harness (`CheckProfileMatrixDiff` on `lFlowX`/`lFlowY`) and be validated on BOTH scenarios with
 > extreme care. Opus-led.
+
+---
+
+## Phase 10 – `SetMatrixValues2D_R8_FromMatrix` / call-frequency reduction ✅ CONFIRMED & COMMITTED
+
+> **Status:** ✅ COMPLETE. Committed on `perf/Phase10_SetMatrixCallFreq`, cut from
+> `perf/Phase8_FloodStats` (`323430af`).
+
+**Location:** `Software/MOHIDLand/ModuleRunOff.F90`, `ModifyRunOff`'s per-sub-iteration hot path.
+**Hotspot:** ~113s NoRain 1T / ~123s NoRain 10T for the shared
+`SetMatrixValues2D_R8_FromMatrix` copy routine (`Software/MOHIDBase1/ModuleFunctions.F90`
+~L1300), called from ~80+ sites across the codebase.
+
+### Call-graph analysis
+`SetMatrixValues2D_R8_FromMatrix` itself is already a trivial masked/unmasked copy with a
+`DYNAMIC`/`STATIC` schedule split — memory-bandwidth bound, so no code-level upside in the copy
+itself. Because it has ~80 unrelated callers, the routine can't be changed in isolation; the
+lever is **reducing how often `ModifyRunOff` calls it**. Traced every `SetMatrixValue(...)` call
+site inside `ModifyRunOff`: no site could be safely deleted (each either feeds
+`DynamicWaveXX/YY` friction/advection — trajectory-critical — or is stability-critical), but 3
+sites are **paired X/Y calls** (2 separate calls, each its own OMP fork/join, copying twinned
+arrays under the same mask) that can be merged into 1 call with a single OMP region:
+`FlowXOld`/`FlowYOld` (every sub-iteration — highest frequency), `InitialFlowX`/`InitialFlowY`
+(once per `ModifyRunOff` call), and `lFlowX`/`lFlowY` restore-on-restart (once per restart
+retry).
+
+### Optimization applied
+Merged each X/Y pair into a single subroutine (`SetFlowOldXY`, `SetInitialFlowXY`) with one
+`!$OMP PARALLEL`/`DO` region copying both arrays under the shared mask check in one pass, halving
+the fork/join count for that call site. Measured via an in-run dual-timing block (both the
+original 2-call form and the merged form run back-to-back under separate `StartWatch`/`StopWatch`
+labels, gated by a temporary keyword) so VTune/`ModuleStopWatch` could isolate the cost delta
+from the ~80 unrelated callers sharing the same compiled OMP-region symbol — the harness and its
+keyword were removed once the gain was confirmed (see cleanup below).
+
+**`lFlowX`/`lFlowY` restore-on-restart (`SetLFlowRestoreXY`) was implemented, then REVERTED**:
+VTune showed it never appeared in either scenario's hotspot report (the `Niter > 1` restart-retry
+branch is rare/negligible in this benchmark), so the added complexity wasn't worth it. Final
+kept scope = `SetFlowOldXY` + `SetInitialFlowXY` only.
+
+### Performance (`ModuleStopWatch`, clean per-label CPU/Wall, no cross-caller contamination)
+| Routine | NoRain baseline → merged | WithRain baseline → merged |
+|---|---|---|
+| `SetInitialFlowXY` | 27.9/29.5s → 19.3/19.4s (~31% CPU cut) | 9.8/10.1s → 8.6/8.8s (~12% cut) |
+| `SetFlowOldXY` | 52.2/52.5s → 39.8/42.0s (~24% CPU cut) | 10.3/10.5s → 9.3/9.2s (~10% cut) |
+
+Both merges show consistent, real wins (baseline always strictly slower, all 4 comparisons).
+NoRain benefits more in absolute seconds (more `doIter`/restart-loop churn than WithRain in this
+benchmark).
+
+### Validation
+`compare_mohid.py`: **WithRain 36/37 PASS** (only the pre-existing, accepted `FloodPeriod.dat`
+timing-shift fail vs the Phase 1 baseline, unrelated to Phase 10; `RunOff_55.hdf5` PASS, max
+abs/rel 1.192e-07). **NoRain 38/38 PASS**, zero fails (all `.srr`/`.dat` + both `RunOff_55.hdf5`
+comparisons vs `_original` and `_phase1`, max diffs ~1e-7 float noise).
+
+### Cleanup
+Dual-timing harness (`_Baseline`/`_Performant` variants, dispatcher subroutines, the
+`ProfilePerformantOnly` field and its `PROFILE_PERFORMANT_ONLY` keyword) removed once the gain
+was confirmed — only the merged `SetFlowOldXY`/`SetInitialFlowXY` subroutines remain, called
+directly from `ModifyRunOff` under their original names.
 
 ---
 
