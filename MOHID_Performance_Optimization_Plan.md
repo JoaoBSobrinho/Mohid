@@ -845,18 +845,39 @@ bit-identical micro-optimization (redundant-load elimination), not by a measured
 
 ---
 
-## Phase 9 – `DynamicWaveXX_default_CG` / `DynamicWaveYY_default_CG` deeper optimization (NOT STARTED — Opus, HIGH RISK)
+## Phase 9 / Phase 11 – `DynamicWaveXX_default_CG` / `DynamicWaveYY_default_CG` deeper optimization (PARTIAL — coeff² precompute done, cube-root deferred)
+
+> **Status:** ✅ Safe half done on `perf/Phase11_DynamicWave` (cut from `perf/Phase10_SetMatrixCallFreq`
+> `16a37dcf`). Cube-root reformulation intentionally deferred (Phase-1 landmine).
 
 The biggest single compute hotspot overall (~230s WithRain, ~238s NoRain combined). The
 dominant remaining cost is `_libm_pow_l9` from the friction term `**(1.0/3.0)` (a genuine
 cube-root) plus the physics arithmetic.
 
-> **HIGH REGRESSION RISK.** Phase 1 attempted friction reformulations here (`coeff**2.`→`coeff*coeff`,
-> `HydraulicRadius**(4./3.)`→`HydraulicRadius*HydraulicRadius**(1./3.)`) and had to REVERT them —
-> they tipped a borderline `OpenPoints` cell across the active threshold in the noRain case
-> (see Phase 1 / Phase 2 Step 1 notes). Any change here must go through the full in-run A/B
-> harness (`CheckProfileMatrixDiff` on `lFlowX`/`lFlowY`) and be validated on BOTH scenarios with
-> extreme care. Opus-led.
+### Key insight (Phase 11)
+The friction term has **two** pow calls per cell per timestep:
+`VelModFace * OverlandCoefficient(i,j)**2. / (HydraulicRadius**(4./3.))`.
+`ConstructOverLandCoefficient` runs **once** at init (`ConstructRunOff` L1084) → `OverlandCoefficientX/Y`
+are **constant for the whole run**, so `coeff**2.` is a per-cell constant recomputed every timestep
+for nothing.
+
+### Applied (bit-identical, zero-risk — no A/B harness needed)
+Precompute `OverlandCoefficientX/Y**2.` **once** into new fields `OverLandCoefficientXSquare`/`YSquare`
+(filled inside `ConstructOverLandCoefficient`'s guarded loops using the **identical** `** 2.` expression,
+so the cached bits equal exactly what the hot loop produced), then read the cached array in the friction
+line of both `_default_CG` routines (`DynamicWaveXX` L11644, `DynamicWaveYY` L12849). Removes one
+`_libm_pow_l9` call per cell per timestep with **zero** result change → `compare_mohid.py` zero-diff
+expected (same class as Phase 5/7/8 bit-identical cleanups). Cold guardrail variants (`_default_VG`,
+`_CG`, `_VG`) intentionally left untouched (only `_default_CG` runs in this model).
+
+### Deferred (HIGH REGRESSION RISK — Phase-1 landmine)
+The genuine cube-root `HydraulicRadius**(4./3.)` (varies per timestep) has **no bit-identical**
+reformulation. Phase 1 attempted friction reformulations here (`coeff**2.`→`coeff*coeff`,
+`HydraulicRadius**(4./3.)`→`HydraulicRadius*HydraulicRadius**(1./3.)`) and had to REVERT them —
+they tipped a borderline `OpenPoints` cell across the active threshold in the noRain case
+(see Phase 1 / Phase 2 Step 1 notes). Any future attempt must go through the full in-run A/B
+harness (`CheckProfileMatrixDiff` on `lFlowX`/`lFlowY`) and be validated on BOTH scenarios with
+extreme care. Opus-led. **Not attempted in Phase 11 by user decision.**
 
 ---
 

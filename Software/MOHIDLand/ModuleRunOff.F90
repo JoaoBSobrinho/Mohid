@@ -783,6 +783,8 @@ Module ModuleRunOff
         real,    dimension(:,:), pointer            :: OverLandCoefficientDelta => null() !For erosion/deposition
         real,    dimension(:,:), pointer            :: OverLandCoefficientX     => null() !Manning or Chezy
         real,    dimension(:,:), pointer            :: OverLandCoefficientY     => null() !Manning or Chezy
+        real,    dimension(:,:), pointer            :: OverLandCoefficientXSquare => null() !Precomputed OverLandCoefficientX**2. (constant per run)
+        real,    dimension(:,:), pointer            :: OverLandCoefficientYSquare => null() !Precomputed OverLandCoefficientY**2. (constant per run)
         real,    dimension(:,:), pointer            :: MassError                => null() !Contains mass error
         real,    dimension(:,:), pointer            :: CenterFlowX              => null()
         real(4),    dimension(:,:), pointer         :: CenterFlowX_R4           => null()
@@ -1838,11 +1840,15 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             allocate(Me%OverLandCoefficientDelta (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             allocate(Me%OverLandCoefficientX (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             allocate(Me%OverLandCoefficientY (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            allocate(Me%OverLandCoefficientXSquare (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
+            allocate(Me%OverLandCoefficientYSquare (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
             
             Me%OverLandCoefficient       = null_real
             Me%OverLandCoefficientDelta  = null_real
             Me%OverLandCoefficientX      = null_real
             Me%OverLandCoefficientY      = null_real
+            Me%OverLandCoefficientXSquare = null_real
+            Me%OverLandCoefficientYSquare = null_real
             
             call ConstructFillMatrix  ( PropertyID       = Me%OverLandCoefficientID,     &
                                         EnterDataID      = Me%ObjEnterData,              &
@@ -5579,6 +5585,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
                 Me%OverlandCoefficientX(i, j) = (Me%ExtVar%DUX(i, j  ) * Me%OverlandCoefficient(i, j-1  )  + &
                                                  Me%ExtVar%DUX(i, j-1) * Me%OverlandCoefficient(i, j)) / &
                                                  (Me%ExtVar%DUX(i, j) + Me%ExtVar%DUX(i, j-1))
+                Me%OverlandCoefficientXSquare(i, j) = Me%OverlandCoefficientX(i, j)** 2.
             endif
 
         enddo
@@ -5593,6 +5600,7 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
                 Me%OverlandCoefficientY(i, j) =     (Me%ExtVar%DVY(i, j  ) * Me%OverlandCoefficient(i-1, j  )  + &
                                                      Me%ExtVar%DVY(i-1, j) * Me%OverlandCoefficient(i, j)) / &
                                                      (Me%ExtVar%DVY(i, j) + Me%ExtVar%DVY(i-1, j))
+                Me%OverlandCoefficientYSquare(i, j) = Me%OverlandCoefficientY(i, j)** 2.
             endif
 
         enddo
@@ -11633,7 +11641,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !FRICTION - semi-implicit -----------------------------------------------
                 
                 Friction = LocalDT * Gravity * &
-                           Me%VelModFaceU(i,j) * Me%OverlandCoefficientX(i,j)** 2. / &
+                           Me%VelModFaceU(i,j) * Me%OverlandCoefficientXSquare(i,j) / &
                            (HydraulicRadius ** (4./3.))
                 
                 !Advection (may be limited to water column height)
@@ -12838,7 +12846,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !FRICTION - semi-implicit -----------------------------------------------
                 !   -    =  (s * m.s-2  * m3.s-1 * (s.m(-1/3))^2) / (m2 * m(4/3)) = m(10/3) / m(10/3)
                 Friction = LocalDT * Gravity * &
-                            Me%VelModFaceV(i,j) * Me%OverlandCoefficientY(i,j)** 2. / &
+                            Me%VelModFaceV(i,j) * Me%OverlandCoefficientYSquare(i,j) / &
                             (HydraulicRadius ** (4./3.))
 
                 !Advection
