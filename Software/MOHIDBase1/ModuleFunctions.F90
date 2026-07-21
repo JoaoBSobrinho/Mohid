@@ -1175,15 +1175,14 @@ Module ModuleFunctions
 
         !Local-----------------------------------------------------------------
         integer                                         :: i, j
-        integer                                         :: CHUNK
 
         !Begin-----------------------------------------------------------------
 
-        CHUNK = CHUNK_J(Size%JLB, Size%JUB)
-
+        !STATIC without a chunk: iterations are split into equal contiguous
+        !blocks, one per thread (uniform, memory-bandwidth-bound copy).
         if (present(MapMatrix)) then
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 if (MapMatrix(i, j) == 1) then
@@ -1195,7 +1194,7 @@ Module ModuleFunctions
             !$OMP END PARALLEL
         else
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 Matrix (i, j) = InMatrix(i, j)
@@ -1307,15 +1306,18 @@ Module ModuleFunctions
 
         !Local-----------------------------------------------------------------
         integer                                         :: i, j
-        integer                                         :: CHUNK
 
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleFunctions", "SetMatrixValues2D_R8_FromMatrix")
-        CHUNK = CHUNK_J(Size%JLB, Size%JUB)
         
+        !STATIC without a chunk: iterations are split into equal contiguous
+        !blocks, one per thread. The copy is uniform per cell and memory-
+        !bandwidth bound, so this balances the work while removing the dynamic
+        !dispatch overhead and giving each thread contiguous (cache-friendly)
+        !columns.
         if (present(MapMatrix)) then
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 if (MapMatrix(i, j) == 1) then
@@ -1327,7 +1329,7 @@ Module ModuleFunctions
             !$OMP END PARALLEL
         else
             !$OMP PARALLEL PRIVATE(I,J)
-            !$OMP DO SCHEDULE(STATIC, CHUNK)
+            !$OMP DO SCHEDULE(STATIC)
             do j = Size%JLB, Size%JUB
             do i = Size%ILB, Size%IUB
                 Matrix (i, j) = InMatrix(i, j)

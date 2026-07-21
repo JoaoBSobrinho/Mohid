@@ -388,6 +388,15 @@ Module ModuleRunOff
     integer, parameter                              :: SWMMJunction_        = 0
     integer, parameter                              :: SWMMOutfall_         = 1
     integer, parameter                              :: SWMMStorage_         = 2
+
+    !Minimum cells per thread required to justify parallelising a RunOff box
+    !loop. Grid-independent, machine-level constant that amortises OpenMP
+    !fork/join and barrier overhead - it is NOT a model/grid tuning parameter.
+    !Small active boxes (Me%CurrentWorkSize) therefore run with fewer threads
+    !(or serially), removing the fork/join/barrier cost that dominates when only
+    !a few cells are active; large boxes keep the full thread count so their
+    !behaviour is unchanged. See RunOffBoxThreads.
+    integer, parameter                              :: MinCellsPerThread_   = 512
     
     !Types---------------------------------------------------------------------
     
@@ -8341,7 +8350,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetInitialFlowXY")
         CHUNK = ChunkJ
 
-        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(SizeArg)) PRIVATE(I,J)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = SizeArg%JLB, SizeArg%JUB
         do i = SizeArg%ILB, SizeArg%IUB
@@ -8375,7 +8384,7 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetFlowOldXY")
         CHUNK = ChunkJ
 
-        !$OMP PARALLEL PRIVATE(I,J)
+        !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(SizeArg)) PRIVATE(I,J)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
         do j = SizeArg%JLB, SizeArg%JUB
         do i = SizeArg%ILB, SizeArg%IUB
@@ -8391,6 +8400,27 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
         if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetFlowOldXY")
 
     end subroutine SetFlowOldXY
+
+    !--------------------------------------------------------------------------
+
+    !Number of OpenMP threads to use for a parallel region that iterates over
+    !the given bounding box. Scales the team size to the box work: tiny active
+    !boxes run serially (no fork/join/barrier), large boxes keep the full
+    !thread count (identical to the previous behaviour). Grid-independent -
+    !MinCellsPerThread_ is a machine-level constant, not a model parameter.
+    integer function RunOffBoxThreads(BoxSize)
+
+        !Arguments---------------------------------------------------------
+        type (T_Size2D), intent(IN)                 :: BoxSize
+
+        !Local-------------------------------------------------------------
+        integer                                     :: nCells
+
+        nCells = (BoxSize%IUB - BoxSize%ILB + 1) * (BoxSize%JUB - BoxSize%JLB + 1)
+
+        RunOffBoxThreads = max(1, min(max(openmp_num_threads, 1), nCells / MinCellsPerThread_))
+
+    end function RunOffBoxThreads
 
     !---------------------------------------------------------------------------
     !> @author Ricardo Birjukovs Canelas - Bentley Systems
@@ -11456,7 +11486,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeFaceVelocityModulus")
     
         
-        !$OMP PARALLEL PRIVATE(I,J,n, U, Vaverage, V, Uaverage)
+        !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,n, U, Vaverage, V, Uaverage)
         !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
         do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
         do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -11577,7 +11607,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
-        !$OMP PARALLEL PRIVATE(I,J, Slope, level_left, level_right, &
+        !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J, Slope, level_left, level_right, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, dj, WetPerimeter, dVol, &
         !$OMP waterColumn_left, waterColumn_right, topography_left, topography_right)
@@ -12782,7 +12812,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
-        !$OMP PARALLEL PRIVATE(I,J, Slope, level_bottom, level_top, &
+        !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J, Slope, level_bottom, level_top, &
         !$OMP HydraulicRadius, Friction, Pressure, XLeftAdv, XRightAdv, YBottomAdv, YTopAdv, Advection, Qf, &
         !$OMP CriticalFlow, Margin1, Margin2, MaxBottom, WaterDepth, di, WetPerimeter, dVol, &
         !$OMP waterColumn_bottom, waterColumn_top, topography_bottom, topography_top)
@@ -13925,7 +13955,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "UpdateWaterLevels")
 
-        !$OMP PARALLEL PRIVATE(I,J, WaterVolume)
+        !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J, WaterVolume)
         if (Me%GridIsConstant) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17306,7 +17336,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterVelocities_R4 - CenterVelocity_R4")
     
             if (Me%GridIsRotated) then
-                !$OMP PARALLEL PRIVATE(I,J,VelocityX,VelocityY,cx,cy)
+                !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,VelocityX,VelocityY,cx,cy)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -17328,7 +17358,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 !$OMP END DO
                 !$OMP END PARALLEL
             else
-                !$OMP PARALLEL PRIVATE(I,J,cx,cy)
+                !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,cx,cy)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
                 do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
@@ -17350,7 +17380,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterVelocities_R4 - CenterVelocity_R4")
     
         else
-            !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY,cx,cy)
+            !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,FlowX,FlowY,cx,cy)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB

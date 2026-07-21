@@ -491,13 +491,13 @@ After Phase 4, the profile data confirms the two scenarios pull in different dir
 | `ComputeCenterVelocities_R4` | 37–52s | 6× `**2.0` pow/cell in `sqrt(x**2.0+y**2.0)` | **Low** — output-only R4 arrays, Phase-1 pattern | ✅ **Sonnet** |
 | `OutputFloodingAll_R4` | 41–49s | max/accumulate stats; no pow; memory-bound | Low but unclear gain | Investigate-only |
 
-**Revised order** (the old Phase 5=SetMatrixValues / 6=load-balancing / 7=`_CG`-variants ordering is superseded; the `_CG` non-default variants aren't even on the hot path — the hot ones are `_default_CG`, already done in Phase 1). **Phase 6 (OMP load balancing) was investigated then DEFERRED TO LAST** — see the Phase 6 section for why; phases renumbered accordingly:
+**Revised order** (the old Phase 5=SetMatrixValues / 6=load-balancing / 7=`_CG`-variants ordering is superseded; the `_CG` non-default variants aren't even on the hot path — the hot ones are `_default_CG`, already done in Phase 1). **Phase 6 (OMP load balancing) was investigated, implemented, measured, and concluded a DEAD END** — see the Phase 6 VERDICT; phases renumbered accordingly:
 
 1. **Phase 5 → `ComputeCenterVelocities_R4`** — clean `**2.0`→`x*x`, output-only, low-risk. **Sonnet.** ✅ DONE
 2. **Phase 7 → Output-only `**2.0`→`x*x` cleanup (`ComputeCenterValues`/`_R4`)** — same pattern as Phase 5, output-only, low-risk. **Sonnet.** ✅ DONE
 3. **Phase 8 → `SetMatrixValues` / call-frequency reduction** — memory-bound; needs call-graph analysis. **Opus or careful Sonnet.**
 4. **Phase 9 → DynamicWave XX/YY** — biggest WithRain compute, HIGH regression risk. **Opus, strict A/B, watch the friction cell-flip.**
-5. **Phase 6 → OMP load balancing** — biggest NoRain lever; strategic; DEFERRED TO LAST. **Opus-led.**
+5. **Phase 6 → OMP load balancing** — investigated, implemented & measured → ❌ **DEAD END** (near-no-op on the large domain; see Phase 6 VERDICT). **Opus-led.**
 
 **Opus-only (do NOT hand to Sonnet):** DynamicWave friction and `ComputeFaceVelocityModulus abs(cmplx)` (both documented cell-flip landmines); OMP load-balancing strategy (95 sites, timing-only measurement, chunk/GUIDED judgment).
 
@@ -547,7 +547,63 @@ feedback path into the trajectory is found, STOP and use the harness instead (no
 
 ---
 
-## Phase 6 – OpenMP Load Balancing (DEFERRED TO LAST — Opus-led)
+## Phase 6 – OpenMP Load Balancing (❌ IMPLEMENTED & MEASURED → DEAD END — Opus-led)
+
+> ### ❌ VERDICT — thread-count / barrier tuning is a DEAD END for this large domain
+> Phase 6 was fully implemented (self-tuning `NUM_THREADS(RunOffBoxThreads(box))`, module param
+> `MinCellsPerThread_ = 512`, on 9 `CurrentWorkSize` OMP regions) and measured with an in-run
+> diagnostic counter + a temporary A/B harness + a `KMP_BLOCKTIME=0` run. **Conclusion: the gate
+> is a near-no-op on the LargeModel and blocktime tuning yields nothing.** Two independent measurements
+> agree:
+>
+> **1. Gate diagnostic (`RunOffBoxThreads` counter, printed at `KillRunOff`).**
+> - **NoRain:** 204,478 calls, only **12.1%** (24,726) returned `< full team`; box `nCells`
+>   min/avg/max = **20 / 445,965 / 1,540,472**. The gated calls all carry `< 5,120` cells, so
+>   work-weighted the gate touches **≈ 0.14 % of the cell-work** (max `24,726 × 5,119 ≈ 1.27e8`
+>   vs total `204,478 × 445,965 ≈ 9.12e10`). ~99.9 % of compute still runs the full 10-thread team.
+> - **WithRain:** **0.00%** gated, box constant `1,540,472`, always 10 threads → **provable no-op,
+>   zero regression** (full domain every step).
+> - Corroborates the earlier VTune read (barrier wait counts down only ~9–18 %).
+>
+> **2. `KMP_BLOCKTIME=0` run (NoRain, `LOGKMPSet.dat` vs `LOG_noKMPSet.dat`) — CONFOUNDED / no benefit.**
+> - The KMP=0 run is uniformly ~7–33 % slower **including serial startup routines `KMP_BLOCKTIME`
+>   cannot physically affect** (`ConstructBasin` +23 %, `ConstructRunOff` +27 %, `RunOffOutput` +33 %)
+>   ⇒ the delta is run-to-run ambient/thermal noise, **not** blocktime (two separate whole-app runs
+>   do **not** cancel noise — that is exactly why the in-process A/B harness existed).
+> - The heaviest, region-dense parallel routines were inflated **least** (`DynamicWaveYY` +4.9 %,
+>   `DynamicWaveXX` +7.2 %), not most ⇒ **no wake-up-cost signal** either.
+> - `ModifyRunOff` wall **rose** (147.9 → 164.2 s) instead of dropping ⇒ the ~692 s busy-spin is
+>   **not reclaimable critical-path slack**; it is threads kept hot between closely-spaced regions.
+>
+> **Decisions:** (a) Keep the `NUM_THREADS` gate only as a correctness-safe, zero-cost generic
+> guardrail — it is **not** the Phase 6 win. (b) **Reject** raising `MinCellsPerThread_`: to bite
+> the bulk work it would need ≈ 44,000 (= 445,965 / 10), which under-threads medium/large boxes that
+> *do* benefit from parallelism → net loss + brittle (WithRain would not regress until > 154,047,
+> but NoRain loses first). (c) **STOP thread tuning; pivot to reducing WORK** — see "Pivot" below.
+> All temporary harness code (`_AB` wrappers, `RunOffForceThreads`, diagnostic vars/print, snapshot
+> buffers) is to be removed before any commit; the ERR010 blow-up it caused is fixed (see Resolved Bug).
+>
+> ### Pivot — the real NoRain levers (clean hot list from the less-noisy default run)
+> Per-routine **Wall** inside `ModifyRunOff` (147.9 s), with `CPU/Wall` ≈ threads used:
+>
+> | Routine | Wall (s) | ≈threads/10 |
+> |---|---|---|
+> | `ComputeNextDT` | 22.2 | 8.8× |
+> | `DynamicWaveXX_default_CG` | 20.4 | 9.0× |
+> | `DynamicWaveYY_default_CG` | 19.2 | 8.8× |
+> | `ModifyGeometryAndMapping` | 13.5 | 7.4× |
+> | `ComputeFaceVelocityModulus` | 12.3 | 8.5× |
+> | `SetFlowOldXY` | 10.9 | 9.2× |
+> | `OutputFloodingAll_R4` | 8.5 | 7.1× |
+> | `SetWorkSize` | 7.9 | 7.3× |
+> | `UpdateWaterLevels` | 7.5 | 7.1× |
+>
+> These already run at **7–9× of 10 threads** → parallelism is *already good*; further gains must
+> **reduce work, not add threading**. Top levers: **`ComputeNextDT` (22.2 s) + `ModifyGeometryAndMapping`
+> (13.5 s)** sweep the full 1.54M-cell domain while the wet box is tiny → restrict to the active
+> bounding box (A/B-guarded; Phase-1 landmine: `ComputeNextDT` is a min-reduction, `ModifyGeometryAndMapping`
+> mutates geometry). Then `DynamicWaveXX/YY` (~40 s combined) = per-cell arithmetic (Phase 5/7/11
+> bit-identical style).
 
 **Observation:** NoRain OMP spin (`func@0x180099f40`) ~330s + `_kmpc_barrier` ~125s = ~455s
 of load imbalance in production 10T (unaffected by Phase 1–4 code changes since it is a
@@ -620,7 +676,10 @@ NOT built)** disproved the dispatch-contention hypothesis:
 value can reduce the per-region barrier count. Phase 6 pivots to **not going parallel when the box
 is too small**.
 
-### Status — DEFERRED TO LAST PHASE (reverted; keyword approach rejected)
+### Status — HISTORY (superseded by the VERDICT block at the top of this section)
+
+> The notes below are the *earlier* deferral rationale, kept for context. Phase 6 has since been
+> implemented and measured to a dead end — read the VERDICT block above for the current status.
 
 Phase 6 work is **reverted** (`ModuleRunOff.F90` back to clean Phase 5 `a620bad5`) and moved to be
 the **last** phase. Do Phase 7 (and any others) first. Reasons (user):
@@ -668,12 +727,16 @@ nThreadsBox = max(1, min(openmp_num_threads, nCells / MinCellsPerThread_))
 > it is not the NoRain lever and is **not** worth a keyword on its own. Fold it in only if the
 > NUM_THREADS work shows a clear, keyword-free way to set it (or drop it).
 
-### Measurement plan (for when Phase 6 is picked up last)
+### Measurement plan (EXECUTED — see the VERDICT block at the top of Phase 6)
 
-- No A/B harness (parallelism-only → math unchanged). Build `Profile Double OpenMP`, NoRain 10T;
-  VTune **threading**: watch `func@0x180099f40` (spin) + `_kmpc_barrier` + wall-clock.
-- `compare_mohid.py` zero-diff on BOTH scenarios; WithRain 10T as the no-regression guard.
-- Free `KMP_BLOCKTIME=0` run to gauge how much spin is harmless idle vs critical-path.
+- ~~No A/B harness (parallelism-only → math unchanged)~~ — a **temporary** in-run A/B harness +
+  diagnostic counter *was* added to measure the gate noise-cancelled; it has since been removed
+  (it caused the `CheckStability ERR010` blow-up, now fixed — see Resolved Bug). Result: the gate
+  touches ≈ 0.14 % of cell-work (NoRain) / 0 % (WithRain).
+- `compare_mohid.py` was zero-diff on BOTH scenarios (parallelism-only, as expected).
+- `KMP_BLOCKTIME=0` NoRain run done → **inconclusive/no benefit** (confounded by run-to-run noise;
+  serial startup inflated more than the parallel regions). Busy-spin is not reclaimable critical-path
+  slack. **Net: thread/blocktime tuning is a dead end; pivot to reducing work.**
 
 ---
 
@@ -952,6 +1015,13 @@ Phase 1.)
 ---
 
 ## Open Issues / To Investigate (not scheduled)
+
+### ✅ RESOLVED BUG — simulations blew up: `CheckStability - ModuleRunoff - ERR010`
+**Status:** FIXED — the temporary Phase 6 **A/B measurement harness** was removed from `ModuleRunOff.F90`. Full details in repo memory `/memories/repo/mohid-fortran-perf.md` (section "RESOLVED BUG").
+
+- **Symptom:** runs stopped with `CheckStability - ModuleRunoff - ERR010` (instability not recovered after restarts).
+- **Root cause (confirmed):** the temporary `_AB` dual-call wrappers each ran their routine **twice** (baseline full-team + perf gated). The read-modify-write routines (`DynamicWaveXX/YY`, `UpdateWaterLevels`, …) are **not** pure-overwrite, so the second call corrupted `myWaterVolume`/flux/limiter state → instability. This was the regression, **not** the `NUM_THREADS` gating or the `SetMatrixValues` STATIC change (both `compare_mohid.py` zero-drift validated on the pre-harness build).
+- **Fix applied:** reverted the 9 `ModifyRunOff` call sites to plain routine names; deleted the 7 `_AB` wrapper subroutines, the `RunOffForceThreads` module var + its baseline branch in `RunOffBoxThreads`, and the snapshot buffers. **Kept** the validated `NUM_THREADS(RunOffBoxThreads(...))` gating on all 9 OMP regions plus the harmless diagnostic counter + `KillRunOff` print (still answers "does the gate engage?"). Compiles clean.
 
 ### `forrtl: warning (526): IEEE_INVALID is signaling` — WithRain run
 **Status:** OPEN — do not fix yet, investigate later.
