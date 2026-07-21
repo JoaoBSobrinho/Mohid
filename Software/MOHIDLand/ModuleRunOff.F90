@@ -17546,6 +17546,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
         !Local-----------------------------------------------------------------
         integer                                     :: i, j
+        integer                                     :: JLB_scan, JUB_scan, ILB_scan, IUB_scan
         real                                        :: aux, Distance_Courant, totalVel
         real                                        :: velFace, celerity, waterColumn, waterColumn_NE
         real                                        :: sqrt_gravity
@@ -17554,12 +17555,22 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         totalVel     = 0.0
         sqrt_gravity = sqrt(Gravity)
 
+        !Scan only the active bounding box.  The +1 halo start keeps the west/south face (j-1/i-1)
+        !reads in-bounds; the box already contains every open cell + its W/S neighbour with a 1-cell
+        !halo (grown around every ActivePoints=1 cell, OpenPoints subset of ActivePoints), and the
+        !inner OpenPoints guard drops the rest, so the MIN/MAX reduction result is identical to a
+        !full-WorkSize sweep.
+        JLB_scan = max(Me%CurrentWorkSize%JLB, Me%WorkSize%JLB+1)
+        JUB_scan = Me%CurrentWorkSize%JUB
+        ILB_scan = max(Me%CurrentWorkSize%ILB, Me%WorkSize%ILB+1)
+        IUB_scan = Me%CurrentWorkSize%IUB
+
         if (Me%GridIsConstant) then
             Distance_Courant = sqrt ((Me%DX**2.0) + (Me%DY**2.0)) * Me%CV%MaxCourant
             !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MAX:totalVel)
-            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
+            do j = JLB_scan, JUB_scan
+            do i = ILB_scan, IUB_scan
                 if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                     waterColumn = Me%myWaterColumn(i, j)
                     ! East face (j-1, i)
@@ -17598,8 +17609,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         else
             !$OMP PARALLEL PRIVATE(i,j,aux,celerity,velFace,waterColumn,waterColumn_NE,Distance_Courant)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:nextDTCourant)
-            do j = Me%WorkSize%JLB+1, Me%WorkSize%JUB
-            do i = Me%WorkSize%ILB+1, Me%WorkSize%IUB
+            do j = JLB_scan, JUB_scan
+            do i = ILB_scan, IUB_scan
                 if (Me%ExtVar%BasinPoints(i, j) == Compute) then
                     waterColumn = Me%myWaterColumn(i, j)
                     Distance_Courant = sqrt((Me%ExtVar%DXX(i,j)**2.0) + (Me%ExtVar%DYY(i,j)**2.0)) * Me%CV%MaxCourant

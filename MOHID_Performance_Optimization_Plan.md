@@ -933,7 +933,7 @@ line of both `_default_CG` routines (`DynamicWaveXX` L11644, `DynamicWaveYY` L12
 expected (same class as Phase 5/7/8 bit-identical cleanups). Cold guardrail variants (`_default_VG`,
 `_CG`, `_VG`) intentionally left untouched (only `_default_CG` runs in this model).
 
-### Deferred (HIGH REGRESSION RISK — Phase-1 landmine)
+### Deferred (HIGH REGRESSION RISK — Phase-1 landmine) — PARKED with measured ceiling
 The genuine cube-root `HydraulicRadius**(4./3.)` (varies per timestep) has **no bit-identical**
 reformulation. Phase 1 attempted friction reformulations here (`coeff**2.`→`coeff*coeff`,
 `HydraulicRadius**(4./3.)`→`HydraulicRadius*HydraulicRadius**(1./3.)`) and had to REVERT them —
@@ -942,7 +942,93 @@ they tipped a borderline `OpenPoints` cell across the active threshold in the no
 harness (`CheckProfileMatrixDiff` on `lFlowX`/`lFlowY`) and be validated on BOTH scenarios with
 extreme care. Opus-led. **Not attempted in Phase 11 by user decision.**
 
+**Ceiling measured (WithRain 10T Profile hotspots, post-Phase-11):** `_libm_pow_l9` = **68.7s CPU**
+(a separate symbol from `DynamicWaveXX/YY_default_CG`, which are 103.1s + 107.5s *excluding* the pow).
+After Phase 11 removed the `coeff²` pow, essentially all of that 68.7s is the single remaining
+`HydraulicRadius**(4./3.)` friction cube-root. Wall-clock prize ≈ 68.7 / ~9 (parallel efficiency)
+≈ **7–8s wall WithRain absolute ceiling**; a realistic fast-cbrt lands ~4–6s wall. NoRain is
+negligible (cold friction path). **DECISION (parked):** no bit-identical option exists (even a
+correct `cbrt` differs from `pow(x,1/3)` in the last bit, and `cbrt` is not an `ifx` intrinsic), so
+ANY reformulation trips the `OpenPoints` cell-flip landmine and requires the full A/B +
+bounded-drift long-run study regardless of method. Borderline risk/reward on the model's riskiest
+line → **PARKED** behind Phase 12 (which is NoRain-focused, expected bit-identical, and validated by
+exact equality). If revisited, go aggressive (fast approximate cube-root) since the validation cost
+is fixed either way; go-condition = long-run drift confirmed **bounded** (not accumulating), NoRain
+being the sensitive scenario.
+
 ---
+
+## Phase 12 – `ComputeNextDT_CourantScan` active-box restriction ✅ CONFIRMED & COMMITTED
+
+> **Status:** ✅ COMPLETE on `perf/Phase12_CourantScanBox` (cut from `perf/Phase11_DynamicWave`).
+> Validated bit-identical (exact-equality in-run A/B + `compare_mohid.py` zero-diff both scenarios),
+> A/B scaffolding removed, only the restricted scan remains.
+
+**Location:** `Software/MOHIDLand/ModuleRunOff.F90`, `ComputeNextDT_CourantScan` (~L17553), called
+from the `ComputeNextDT` dispatcher.
+
+### Lever
+`ComputeNextDT_CourantScan` is a top NoRain hotspot (~22s wall / ~114s CPU inside `ModifyRunOff`,
+8.8× of 10 threads → parallelism already good, so the win must **reduce work**, not add threads).
+Its two double-loops (const-grid `REDUCTION(MAX:totalVel)` and variable-grid
+`REDUCTION(MIN:nextDTCourant)`) sweep the **full** `Me%WorkSize` (~1.54M cells) every timestep even
+when the wet box is tiny. Restrict both loops to the dynamic active bounding box `Me%CurrentWorkSize`
+instead (same lever family as the physics loops, which already use `CurrentWorkSize`).
+
+### Why this is expected bit-identical (verified, not trusted)
+- The routine's **only** output is `nextDTCourant` via order-independent `REDUCTION(MIN)` /
+  `REDUCTION(MAX)` → parallel/loop-order changes are bit-exact.
+- Dry cells already contribute **nothing**: the inner guard
+  `if OpenPoints(i,j)==Compute .or. OpenPoints(neighbour)==Compute` skips them.
+- Box invariant: the `.not. Me%HasRainFall` flow-update block (~L10704) grows `CurrentWorkSize` by
+  ±1 around **every** cell set `ActivePoints=1`, and `OpenPoints ⊆ ActivePoints`, so every open cell
+  **and its west/south face neighbour** lie inside `CurrentWorkSize` with a 1-cell halo.
+- ⇒ the cells dropped by the restriction are exactly the ones the `OpenPoints` guard already
+  discards ⇒ identical `nextDTCourant`.
+
+### Exact bounds (the one real risk — off-by-one)
+The loops originally start at `Me%WorkSize%JLB+1` / `Me%WorkSize%ILB+1` (they read `j-1` / `i-1`
+neighbours). The restricted starts keep that halo:
+`JLB_scan = max(Me%CurrentWorkSize%JLB, Me%WorkSize%JLB+1)`,
+`ILB_scan = max(Me%CurrentWorkSize%ILB, Me%WorkSize%ILB+1)`;
+ends `JUB_scan = Me%CurrentWorkSize%JUB`, `IUB_scan = Me%CurrentWorkSize%IUB`.
+
+### Safety property (same as Phase 6 gate)
+WithRain has `HasRainFall` true ⇒ the box == full domain every step ⇒ the restriction is a
+**provable no-op / zero regression**. The benefit is NoRain-only, triggered by box **size**, so the
+change stays 100% generic.
+
+### Validation harness (temporary)
+In-run A/B in `ComputeNextDT`: compute `nextDTCourant` the old way (full `WorkSize`, `useFullBox=.true.`)
+and the new way (`CurrentWorkSize`, `useFullBox=.false.`) each step and assert **exact** scalar
+equality (`nextDTCourant /= nextDTCourant_base` ⇒ stop; tolerance 0). Any single non-zero diff means
+the bounds/halo are wrong. The restricted value is the live one. Harness is removed after validation.
+
+`ModifyGeometryAndMapping` is intentionally **untouched** — its hot geometry loop already uses
+`CurrentWorkSize` (Phase 4), and its remaining full-`WorkSize` `UpdateMapping` block must stay
+full-domain (it detects new wetting, not DT).
+
+### Validation (DONE)
+1. Exact-equality A/B passed every step (the run reached LOG output with no `PHASE12 A/B MISMATCH`
+   stop) ⇒ `nextDTCourant` bit-identical every step — NoRain especially (the sensitive cell-flip
+   scenario).
+2. `python compare_mohid.py` **zero-diff PASS on both** NoRain + WithRain (accepted FAIL:
+   `FloodPeriod.dat` only). WithRain a literal no-op.
+3. NoRain `ModuleStopWatch` split (in-process, noise-cancelled), the two A/B labels:
+
+   | Scan | CPU | Wall |
+   |---|---|---|
+   | `ComputeNextDT_FullBox` (old, full `WorkSize`) | 223.9s | 28.7s |
+   | `ComputeNextDT_ActiveBox` (new, `CurrentWorkSize`) | 86.8s | 13.4s |
+
+   ⇒ **~61% CPU / ~53% wall cut on the Courant scan → ~15.3s wall off the NoRain run** (top of the
+   predicted 8–15s range). WithRain unchanged (box == full domain).
+4. A/B scaffolding removed (`useFullBox` arg + full branch + dispatcher A/B block + the two temporary
+   StopWatch labels + `nextDTCourant_base`); only the restricted scan remains, called under the plain
+   `ComputeNextDT` label.
+
+---
+
 
 ## Phase 10 – `SetMatrixValues2D_R8_FromMatrix` / call-frequency reduction ✅ CONFIRMED & COMMITTED
 
