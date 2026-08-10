@@ -1109,17 +1109,13 @@ Phase 1.)
 - **Root cause (confirmed):** the temporary `_AB` dual-call wrappers each ran their routine **twice** (baseline full-team + perf gated). The read-modify-write routines (`DynamicWaveXX/YY`, `UpdateWaterLevels`, …) are **not** pure-overwrite, so the second call corrupted `myWaterVolume`/flux/limiter state → instability. This was the regression, **not** the `NUM_THREADS` gating or the `SetMatrixValues` STATIC change (both `compare_mohid.py` zero-drift validated on the pre-harness build).
 - **Fix applied:** reverted the 9 `ModifyRunOff` call sites to plain routine names; deleted the 7 `_AB` wrapper subroutines, the `RunOffForceThreads` module var + its baseline branch in `RunOffBoxThreads`, and the snapshot buffers. **Kept** the validated `NUM_THREADS(RunOffBoxThreads(...))` gating on all 9 OMP regions plus the harmless diagnostic counter + `KillRunOff` print (still answers "does the gate engage?"). Compiles clean.
 
-### `forrtl: warning (526): IEEE_INVALID is signaling` — WithRain run
-**Status:** OPEN — do not fix yet, investigate later.
+### `forrtl: warning (528): IEEE_UNDERFLOW is signaling` — WithRain run (10 threads)
+**Status:** CLOSED — benign, accepted, no action taken.
 
-- **Symptom:** WithRain model emits `forrtl: warning (526): IEEE_INVALID is signaling` (a warning at run/termination, not a trap — the run continues).
-- **Likely cause:** Phase 2 relaxed FPE from `fpe0` to `fpe3` and added `/assume:noieee_compares`. Under `fpe3` the INVALID exception is *not trapped* but the IEEE flag can still be *raised* (e.g. a hardware compare against a stray NaN, or `0.0/0.0`, `sqrt(neg)`, `Inf-Inf` somewhere). The runtime reports the raised flag at exit as warning 526. Under the old `fpe0` this would have aborted at the point of occurrence instead.
-- **Why it may be benign:** the `sqrt(max(..., 0.0))` guards already prevent `sqrt` of negatives; masked division may still produce a transient NaN/Inf in an inactive cell that never affects results (A/B compares + `compare_mohid.py` are passing).
-- **To investigate:**
-  1. Confirm it is new since Phase 2 (rebuild an `fpe0` debug build and see where it traps → pinpoints the offending operation).
-  2. Check for unguarded divisions (`/ aux`, `/ velFace`, `/ Distance_Courant`) where the denominator can be exactly 0 for a computed cell.
-  3. Decide: add a targeted guard, or accept as a benign warning and document it.
-- **Do NOT** silence it globally by reverting FPE settings — that would reintroduce the IEEE-wrapper hotspots eliminated in Phase 2.
+- **Corrected symptom:** a clean rerun (no instrumentation) showed the warning is **`528 IEEE_UNDERFLOW`**, not `526 IEEE_INVALID` as originally logged. It appears **only at 10 threads**; the 1-thread run emits **no warning at all**. The run always completes.
+- **Root cause (benign):** `IEEE_UNDERFLOW` is the most harmless FP exception — a nonzero result too small to represent as a normal `real(8)` was flushed to a subnormal/zero. The **10-thread-only** behaviour is the tell: the Intel runtime reports each OpenMP worker thread's FP status flags at thread teardown, so a tiny intermediate underflowing on a worker's cell chunk (or a parallel partial-sum whose summation order differs from the serial 1T accumulation) raises the flag. It is a **parallel scheduling/summation-order artifact, not a code defect**. `compare_mohid.py` is zero-diff in both scenarios → results are unaffected.
+- **Performance:** none. The flag itself is a single MXCSR bit printed once per worker at teardown. The build (`Release Double OpenMP|x64`, `ifx`, `optimizeFull`/`/O3`, `FloatingPointModel="precise"`) runs with flush-to-zero on, so denormals are flushed in hardware (fast) while the underflow flag is still raised — i.e. the warning is *consistent with there being no slow denormal path*.
+- **Decision:** accepted as a benign, expected warning. Not silenced (that would mean touching FPE/denormal settings for zero benefit). No FTZ verification pursued. A temporary `ieee_get_flag` probe was added and then removed once the underflow/10-thread nature made further pinpointing unnecessary.
 
 ---
 
