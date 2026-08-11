@@ -948,6 +948,7 @@ Module ModuleRunOff
         type (T_Size2D)                             :: Size
         type (T_Size2D)                             :: WorkSize
         type (T_Size2D)                             :: CurrentWorkSize
+        type (T_Size2D)                             :: BasinPointsWorkSize
         
         type(T_NodeGridPoint    ), pointer          :: FirstNodeGridPoint        => null()
         type(T_NodeGridPoint    ), pointer          :: LastNodeGridPoint         => null()
@@ -1091,6 +1092,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call AllocateVariables
 
             call InitializeVariables
+            
+            call ComputeBasinPointsWorkSize
             
             call ConstructOverLandCoefficient
             
@@ -11144,6 +11147,35 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
     
     !--------------------------------------------------------------------------
 
+    subroutine ComputeBasinPointsWorkSize
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, MinILB, MaxIUB, MinJLB, MaxJUB
+
+        MinILB = Me%WorkSize%IUB
+        MinJLB = Me%WorkSize%JUB
+        MaxIUB = Me%WorkSize%ILB
+        MaxJUB = Me%WorkSize%JLB
+
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                MinILB = min(MinILB, i - 1)
+                MinJLB = min(MinJLB, j - 1)
+                MaxIUB = max(MaxIUB, i + 1)
+                MaxJUB = max(MaxJUB, j + 1)
+            endif
+        enddo
+        enddo
+
+        Me%BasinPointsWorkSize%ILB = max(MinILB, Me%WorkSize%ILB)
+        Me%BasinPointsWorkSize%IUB = min(MaxIUB, Me%WorkSize%IUB)
+        Me%BasinPointsWorkSize%JLB = max(MinJLB, Me%WorkSize%JLB)
+        Me%BasinPointsWorkSize%JUB = min(MaxJUB, Me%WorkSize%JUB)
+
+    end subroutine ComputeBasinPointsWorkSize
+
+    !--------------------------------------------------------------------------
+
     subroutine SetWorkSize
         !Arguments-------------------------------------------------------------
         !Local-----------------------------------------------------------------
@@ -11159,17 +11191,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         
         if (.not. Me%HasRainFall) then
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "SetWorkSize")
+
+            ! Early return: current box already within 5 cells of basin extent on all sides
+            if (Me%CurrentWorkSize%ILB - Me%BasinPointsWorkSize%ILB <= 5 .and. &
+                Me%BasinPointsWorkSize%IUB - Me%CurrentWorkSize%IUB <= 5 .and. &
+                Me%CurrentWorkSize%JLB - Me%BasinPointsWorkSize%JLB <= 5 .and. &
+                Me%BasinPointsWorkSize%JUB - Me%CurrentWorkSize%JUB <= 5) then
+                Me%CurrentWorkSize = Me%BasinPointsWorkSize
+                if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
+                return
+            endif
             
-            MinILB = Me%WorkSize%IUB
-            MinJLB = Me%WorkSize%JUB
-            MaxIUB = Me%WorkSize%ILB
-            MaxJUB = Me%WorkSize%JLB
+            MinILB = Me%BasinPointsWorkSize%IUB
+            MinJLB = Me%BasinPointsWorkSize%JUB
+            MaxIUB = Me%BasinPointsWorkSize%ILB
+            MaxJUB = Me%BasinPointsWorkSize%JLB
             
             !$OMP PARALLEL PRIVATE(I,J, foundfirst_i)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK) REDUCTION(MIN:MinJLB, MinILB) REDUCTION(MAX:MaxJUB, MaxIUB)
-            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do j = Me%BasinPointsWorkSize%JLB, Me%BasinPointsWorkSize%JUB
                 foundfirst_i = .false.
-            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            do i = Me%BasinPointsWorkSize%ILB, Me%BasinPointsWorkSize%IUB
                 if (Me%ActivePoints(i,j) == 1) then
                     if (.not. foundfirst_i) then
                         MinILB = min(MinILB, i-1)
@@ -11184,10 +11226,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP END DO
             !$OMP END PARALLEL
     
-            Me%CurrentWorkSize%JLB = max(MinJLB, Me%WorkSize%JLB)
-            Me%CurrentWorkSize%JUB = min(MaxJUB, Me%WorkSize%JUB)
-            Me%CurrentWorkSize%ILB = max(MinILB, Me%WorkSize%ILB)
-            Me%CurrentWorkSize%IUB = min(MaxIUB, Me%WorkSize%IUB)
+            Me%CurrentWorkSize%JLB = max(MinJLB, Me%BasinPointsWorkSize%JLB)
+            Me%CurrentWorkSize%JUB = min(MaxJUB, Me%BasinPointsWorkSize%JUB)
+            Me%CurrentWorkSize%ILB = max(MinILB, Me%BasinPointsWorkSize%ILB)
+            Me%CurrentWorkSize%IUB = min(MaxIUB, Me%BasinPointsWorkSize%IUB)
             
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "SetWorkSize")
         endif
