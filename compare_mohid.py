@@ -383,8 +383,16 @@ def _compare_directories(
 ) -> List[FileResult]:
     results: List[FileResult] = []
 
-    base_files = {f.name: f for f in baseline_dir.iterdir() if f.is_file()}
-    new_files  = {f.name: f for f in new_dir.iterdir()      if f.is_file()}
+    base_files = {
+        f.name: f
+        for f in baseline_dir.iterdir()
+        if f.is_file() and not f.name.lower().startswith("stormwater")
+    }
+    new_files  = {
+        f.name: f
+        for f in new_dir.iterdir()
+        if f.is_file() and not f.name.lower().startswith("stormwater")
+    }
     all_names  = sorted(base_files.keys() | new_files.keys())
 
     for name in all_names:

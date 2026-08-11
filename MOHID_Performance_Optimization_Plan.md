@@ -235,6 +235,12 @@ Applied 4 defensive guards to `Software/MOHIDLand/ModuleRunOff.F90`. These are p
 
 Debug configs intentionally left at `fpe0` for development error-trapping.
 
+**Rolled out to `Release Double OpenMP SewerGEMSCoupled|x64`** (the SewerGEMS-coupled build variant, `PreprocessorDefinitions` includes `_SEWERGEMSENGINECOUPLER_`), in the same three projects. Only the two optimization flags were ported — no other differences between the plain and SewerGEMS-coupled configs (include dirs, preprocessor defines, linked libs) were touched:
+- `MOHIDLand.vfproj`: config-level `FloatingPointExceptionHandling="fpe0"` removed (mirrors the plain config, which omits the attribute entirely) and `AdditionalOptions="/assume:noieee_compares"` added; `ModuleRunOff.F90` per-file override extended with a matching (historical/no-op under `/MP`) `FloatingPointExceptionHandling="fpe3"` entry for this config, for parity with the plain config's file entry.
+- `MOHIDBase1.vfproj` / `MOHIDBase2.vfproj`: config-level `FloatingPointExceptionHandling="fpe0"` → `"fpe3"` and `AdditionalOptions="/assume:noieee_compares"` added.
+- `Profile Double OpenMP SewerGEMSCoupled|x64` does not exist (no Profile config was ever added for the SewerGEMS-coupled variant) — nothing to change there.
+- `Release Double OpenMP SewerGEMSCoupled|Win32` (old `ifortCompiler` toolchain) is untouched — the optimization only ever targeted the `x64`/`ifxCompiler` configs.
+
 **Branch:** `PerformanceTestingCopilot` (working tree, uncommitted). `perf/phase1-only` has Phase 1 source changes committed for reference.
 
 ---
