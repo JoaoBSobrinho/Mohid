@@ -47,11 +47,12 @@ Full report: `BranchAnalysis_ExperimentalBranches.md` (diffs of 11 branches vs `
 
 Branch strategy: continuous chain, each `perf/PhaseN` cut from the confirmed+cleaned `perf/Phase(N-1)`, starting from `perf/Phase12`. Validation methodology = the in-run A/B harness from the original plan (`CheckProfileScalarDiff` / `CheckProfileMatrixDiff`, tolerances `ProfileTolAbs_=1e-5`, `ProfileTolRel_=1e-4`).
 
-### Phase 13 — `SetWorkSize` `BasinPointsWorkSize` pre-scan ⏳ TODO  *(Sonnet, Low risk)*
+### Phase 13 — `SetWorkSize` `BasinPointsWorkSize` pre-scan ✅ DONE  *(Sonnet, Low risk)*
 - **From:** `SetWorkSizeTests` (the `BasinPointsWorkSize` parts only, NOT the `HasRainFall` move).
 - **What:** Add `type(T_Size2D) :: BasinPointsWorkSize` to `T_RunOff`; compute a static basin bounding box once at construction; restrict `SetWorkSize`'s per-timestep `ActivePoints` scan (`~L11052`) to that box + early-return when already within ~5 cells of the basin extent.
 - **Why safe:** `ActivePoints ⊆ BasinPoints ⊆ BasinPointsWorkSize`, so the resulting `CurrentWorkSize` is a result-safe superset; downstream loops (incl. Phase-12 Courant scan halo) stay bit-identical. Only `SetWorkSize`'s own cost drops (~7.9s NoRain wall).
 - **Validate:** `compare_mohid` zero-diff both scenarios; `SetWorkSize` `ModuleStopWatch` CPU/Wall delta.
+- **Result (2026-08-17):** ✅ `compare_mohid` no new failures both scenarios. `SetWorkSize` wall **NoRain 7.9s → 0.106s**, **WithRain → 0.012s** (CPU 0.000 both — routine now early-returns / scans only the tiny basin box). Cost essentially eliminated. Committed on `perf/Phase13`; cut `perf/Phase14` from here.
 
 ### Phase 14 — `HasRainFall` reset relocation ⏳ TODO  *(Opus, Medium — behavior-changing)*
 - **From:** `SetWorkSizeTests` commit `0022d1d4`.
@@ -100,10 +101,11 @@ Cluster B (13–16) first: safest, genuinely hot (SetWorkSize), builds the 1D-li
 ## Running Notes / Findings (append as we go)
 
 - 2026-08-11: Phase 0 (branch analysis) done + verified; corrections logged above. Working tree ≈ `MohidLand_Bentley` (Phase 11 `OverLandCoefficientXSquare` absent) — start new phases by checking out `perf/Phase12`.
+- 2026-08-17: **Phase 13 DONE, no new failures.** `SetWorkSize` wall NoRain 7.9s → 0.106s, WithRain → 0.012s (see logs `LOG_WithRain_phase13.dat` / `LOG_NoRain_phase13.dat`). For reference, other NoRain wall costs at this point (10T): `ModifyGeometryAndMapping` 30.7s, `ComputeNextDT` 27.8s, `DynamicWaveXX_default_CG` 36.8s, `DynamicWaveYY_default_CG` 32.5s, `ComputeFaceVelocityModulus` 22.2s, `SetFlowOldXY` 45.4s, `UpdateWaterLevels` 17.7s, `OutputFloodingAll_R4` 13.5s, `ComputeCenterValues_R4` 15.5s. (`SetFlowOldXY` NoRain 45.4s wall is now a notable target — relevant to Phase 15's active-list.)
 - _(add per-phase results, VTune deltas, gotchas here)_
 
 ## Files Modified (fill in as phases land)
 
 | Phase | File | Change | Branch/commit |
 |---|---|---|---|
-| — | — | — | — |
+| 13 | `Software/MOHIDLand/ModuleRunOff.F90` | Added `BasinPointsWorkSize` to `T_RunOff`; construction-time basin bounding box; `SetWorkSize` restricted-scan + early-return | `perf/Phase13` |
