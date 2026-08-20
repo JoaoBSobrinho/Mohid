@@ -60,11 +60,28 @@ Branch strategy: continuous chain, each `perf/PhaseN` cut from the confirmed+cle
 - **Risk:** rain steps switch to full-domain box + skip scan; interacts with `ModifyGeometryAndMapping`/output routines gated on `.not.HasRainFall`. Perf sign ambiguous (could grow the box on partial-rain steps).
 - **Validate:** A/B + `compare_mohid` both scenarios; explicitly confirm **no WithRain regression**. May be dropped if net-negative.
 
-### Phase 15 — `ActivePoints` 1D compact list ⏳ TODO  *(Opus, Medium — timing-sensitive)*
+### Phase 15 — `ActivePoints` 1D compact list ❌ REJECTED (dead end, reverted)  *(Opus, Medium — timing-sensitive)*
 - **From:** `ActivePointsTests`.
 - **What:** Add `ActivePointsI/J(:)`, `NumberOfActivePoints`, `ActivePointsNeedUpdate`; build via a `setActivePointsMapArray` scan; replace masked `CurrentWorkSize`+`ActivePoints` copy/update loops (e.g. Phase-10 `SetFlowOldXY` ~10.9s NoRain; `SetMatrixValue` sites `~L8030-L8114`) with 1D-indexed `SCHEDULE(STATIC)` loops.
 - **Risk:** list goes stale after `UpdateWaterLevels`; the `ActivePointsNeedUpdate` rebuild discipline must be exact. Reconcile with Phase 10's merged X/Y passes.
 - **Validate:** A/B (`CheckProfileMatrixDiff`) on affected arrays; `compare_mohid` both scenarios.
+
+#### Phase 15 — RE-SCOPED (this session, Opus)  *(after code reading)*
+The original "convert per-iteration `SetFlowOldXY` to a rebuild-on-mutation 1D list" premise **does not hold** for this model:
+- `UpdateWaterLevels` mutates `ActivePoints` **every sub-iteration** — it *grows* it (`if (ActivePoints_Left(i,j+1)==1) ActivePoints(i,j)=1`, the X-flux the XX pass defers) and *shrinks* it (dry cells → `=0`) — at [ModuleRunOff.F90 L14005/L14029/L14041/L14063](Software/MOHIDLand/ModuleRunOff.F90#L14005).
+- The 45.4 s consumer `SetFlowOldXY(...ActivePoints)` runs **once per sub-iteration** at [L8135](Software/MOHIDLand/ModuleRunOff.F90#L8135). Because `ActivePoints` changed in the prior iteration, the compact list would need `setActivePointsMapArray` (a serial box scan) **every iteration** — the same masked scan it replaces, but serial vs the current parallel (9.3×) loop → **no-op / regression**. The built-once/consumed-many precondition fails for the per-iteration consumer.
+
+**Re-scoped to (user decision) → then measured → REJECTED:**
+- **Part A (Option 2, implemented + measured, then reverted):** built the compact list **once per outer `ModifyRunOff` step**, while `ActivePoints` is still the stable state inherited from the previous step (right after `ModifyGeometryAndMapping`, *before* the `doIter` loop mutates it), used **only** for the once-per-step `ActivePoints`-masked consumers at [L8055–L8061](Software/MOHIDLand/ModuleRunOff.F90#L8055): `myWaterColumnOld` copy + `SetInitialFlowXY`, fused into one STATIC OMP region `SetInitialWorkSet`. Correct (**bit-identical by construction**; A/B harness `CheckProfileMatrixDiff8` **never tripped** over the full NoRain run) — but a **net performance loss**:
+
+  | label (NoRain, 10T) | CPU s | Wall s |
+  |---|---|---|
+  | `SetInitialWorkSetBaseline` (old masked loops) | 115.9 | **15.64** |
+  | `setActivePointsMapArray` (serial list rebuild) | 11.9 | **24.35** |
+  | `SetInitialWorkSet` (1D-list consume) | 67.7 | **9.30** |
+
+  New = rebuild + consume = 24.35 + 9.30 = **33.6 s** vs baseline **15.64 s** → **+18 s regression**. **Root cause (now measured):** the list can only be built by a serial box scan; `setActivePointsMapArray` runs single-threaded (11.9 CPU / 24.35 wall ≈ one memory-bound core) and *alone* costs more than the entire **parallel** (7.4×) masked baseline it feeds. The cheaper 1D consume (9.3 vs 15.6) can't recover the serial-scan tax. **This is the same wall as the per-iteration `SetFlowOldXY` case, and it also sinks the once-per-step consumers.** ⇒ code reverted to the Phase 13 baseline; `perf/Phase15` carries only this documented negative result. **The only way the 1D list becomes a win is P19 (incremental maintenance, no box scan) — see Candidate future phases.**
+- **Part B (Option 3, pointer-swap for `SetFlowOldXY`) — INVESTIGATED → REJECTED (user decision, keep `SetFlowOldXY` as-is):** `lFlowX/Y` and `FlowXOld/YOld` are both `real(8) pointer` at identical `Me%Size` bounds → a module-level swap is mechanically trivial. **But it is not equivalent to the masked copy:** `DynamicWaveXX_default_CG` writes `lFlowX(i,j)` (value *or* `0.0`) for **every** `CurrentWorkSize` cell ([L11858/L11862](Software/MOHIDLand/ModuleRunOff.F90#L11858)), so after it a full swap sets `FlowOld` at recently-*dried* (now-inactive) cells to the last `lFlow` (≈0), whereas the masked copy leaves a **stale nonzero** `FlowOld` there — and advection reads `FlowXOld(i,j+1)` **unguarded** at [L11724](Software/MOHIDLand/ModuleRunOff.F90#L11724). ⇒ the swap perturbs the trajectory (Phase-1 `OpenPoints` cell-flip landmine, NoRain-sensitive). No bit-identical "avoid the copy" reformulation exists (the copy is inherent double-buffering). Parked like the cube-root landmine — revisit only under explicit accept-small-perturbation + long-run NoRain drift validation.
 
 ### Phase 16 — `BasinPoints` 1D list (optional, low payoff here) ⏳ TODO  *(Sonnet, Low risk)*
 - **From:** `BasinPointsTests`.
@@ -98,10 +115,22 @@ Cluster B (13–16) first: safest, genuinely hot (SetWorkSize), builds the 1D-li
 
 ---
 
+## Candidate future phases (not yet scheduled)
+
+### P19 — Incrementally-maintained active/open 1D list  *(the real lever behind the P15 wall)*
+Both the per-iteration `SetFlowOldXY` copy and the per-step output loops keep hitting the same wall: the compact list is **rebuilt by scanning the box** (`O(box)`), so a per-iteration/per-step rebuild costs the same as the masked scan it replaces (and serial vs the current parallel loop → net loss). **Measured (Phase 15, NoRain):** the serial `setActivePointsMapArray` rebuild = 24.35s wall, worse than the 15.64s parallel masked baseline it replaced → confirmed dead end for any scan-based rebuild. The breakthrough is to **maintain the list incrementally** — update it in place only when a cell toggles `0↔1`, which happens in exactly one per-iteration spot, `UpdateWaterLevels` (grow via `ActivePoints_Left`, shrink on dry-out at [ModuleRunOff.F90 L14005/L14029/L14041/L14063](Software/MOHIDLand/ModuleRunOff.F90#L14005)). Maintenance then becomes `O(changes)` instead of `O(box)`, which would turn the whole family (per-iteration `SetFlowOldXY` **and** the every-step output loops) into genuine NoRain wins.
+- **Cost / risk:** `UpdateWaterLevels` is an OpenMP parallel loop → incremental append needs atomic or thread-local compaction, plus a periodic re-sort to keep the list monotone for cache-friendly `SCHEDULE(STATIC)`. Sizeable, HIGH-risk architectural change; validate with the in-run A/B harness (`CheckProfileMatrixDiff8` on the consumers) + NoRain cell-flip watch. Do standalone, never in flight with 17/18.
+
+### Output-routine reuse of the 1D list — investigated, LOW priority (marginal here)
+Rebuilding the list for the output routines is only *correct* if rebuilt **right before the output block** (after channel interaction / `RouteDFourPoints` / `Modify_Boundary_Condition` / discharges have finished mutating `ActivePoints`/`OpenPoints`), and scoped to the two loops with **no `else`** branch: `ComputeCenterVelocities_R4` non-distortion path and `OutputFloodingAll_R4`. **Excluded:** `ComputeCenterValues_R4` and the distortion branch of `ComputeCenterVelocities_R4` — their `else` zeroes just-dried cells, so a compact list would leave stale nonzero HDF/timeserie output. **Payoff is marginal:** the only every-step `OpenPoints`-guarded consumer (`OutputFloodingAll_R4`) is *single*, so a per-step box-scan rebuild does not beat its current masked scan; the multi-consumer benefit only appears on infrequent output steps (`ComputeCenterVelocities_R4` is output-step-only). `OutputFloodingAll_R4` also has a `Sum` reduction → list iteration changes the grouping (new FP nondeterminism; `FloodPeriod.dat` already the accepted-fail). ⇒ only worthwhile *after* P19 makes the list free to maintain.
+
+---
+
 ## Running Notes / Findings (append as we go)
 
 - 2026-08-11: Phase 0 (branch analysis) done + verified; corrections logged above. Working tree ≈ `MohidLand_Bentley` (Phase 11 `OverLandCoefficientXSquare` absent) — start new phases by checking out `perf/Phase12`.
 - 2026-08-17: **Phase 13 DONE, no new failures.** `SetWorkSize` wall NoRain 7.9s → 0.106s, WithRain → 0.012s (see logs `LOG_WithRain_phase13.dat` / `LOG_NoRain_phase13.dat`). For reference, other NoRain wall costs at this point (10T): `ModifyGeometryAndMapping` 30.7s, `ComputeNextDT` 27.8s, `DynamicWaveXX_default_CG` 36.8s, `DynamicWaveYY_default_CG` 32.5s, `ComputeFaceVelocityModulus` 22.2s, `SetFlowOldXY` 45.4s, `UpdateWaterLevels` 17.7s, `OutputFloodingAll_R4` 13.5s, `ComputeCenterValues_R4` 15.5s. (`SetFlowOldXY` NoRain 45.4s wall is now a notable target — relevant to Phase 15's active-list.)
+- 2026-08-20: **Phase 15 REJECTED — dead end, measured & reverted.** The compact 1D `ActivePoints` list is a net loss even for the safest once-per-step consumers: NoRain the serial `setActivePointsMapArray` rebuild is **24.35s wall alone** vs the **15.64s** parallel masked baseline it replaces (new total rebuild+consume = 33.6s → **+18s**). Confirmed root cause: list compaction is inherently serial (one memory-bound core) and loses to the 7.4×-parallel masked copy; no bit-identical parallel way to build it. A/B harness (`CheckProfileMatrixDiff8`) never tripped → the conversion was correct, just slower. `SetFlowOldXY` left at 45.6s (Part B pointer-swap rejected earlier: not bit-identical). Code reverted to Phase 13; `ModuleRunOff.F90` unchanged. **Next viable idea = P19 (incremental list maintenance).**
 - _(add per-phase results, VTune deltas, gotchas here)_
 
 ## Files Modified (fill in as phases land)
@@ -109,3 +138,4 @@ Cluster B (13–16) first: safest, genuinely hot (SetWorkSize), builds the 1D-li
 | Phase | File | Change | Branch/commit |
 |---|---|---|---|
 | 13 | `Software/MOHIDLand/ModuleRunOff.F90` | Added `BasinPointsWorkSize` to `T_RunOff`; construction-time basin bounding box; `SetWorkSize` restricted-scan + early-return | `perf/Phase13` |
+| 15 | — (reverted) | `ActivePoints` 1D compact list — implemented + measured, **net regression (+18s NoRain)**, code reverted to Phase 13 baseline | `perf/Phase15` (doc only) |
