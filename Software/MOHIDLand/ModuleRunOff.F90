@@ -8320,6 +8320,10 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
                 call ReadUnLockExternalVar (StaticOnly = .false.)
             endif
 
+            !Reset here (after all calculations) so rain steps use the full box + skip the SetWorkSize scan
+            Me%HasRainFall = .false.
+            Me%HasInfiltration = .false.
+
             STAT_ = SUCCESS_
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRunOff")
 
@@ -10903,10 +10907,8 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !$OMP END PARALLEL
         
         nullify (Me%RainFall)
-        Me%HasRainFall = .false.
         if (.not. Me%HasInfiltration) nullify (Me%CellHasRain)
         nullify (Me%InfiltrationRate)
-        Me%HasInfiltration = .false.
         
        if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ModifyRainFall_Infiltration")
     end subroutine ModifyRainFall_Infiltration
