@@ -398,6 +398,12 @@ Module ModuleRunOff
     !behaviour is unchanged. See RunOffBoxThreads.
     integer, parameter                              :: MinCellsPerThread_   = 512
 
+    !Maximum basin density (BasinPoints==1 cells / full WorkSize rectangle) for
+    !which the static basin points list is built and used. Above it the basin is
+    !dense enough that the list saves nothing and the original loops are kept.
+    !Grid-independent constant, NOT a model/grid tuning parameter.
+    real, parameter                                 :: BasinListFraction_   = 0.8
+
     !Types---------------------------------------------------------------------
 
     type T_FVFluxVectorSplitting
@@ -950,6 +956,13 @@ Module ModuleRunOff
         type (T_Size2D)                             :: CurrentWorkSize
         type (T_Size2D)                             :: BasinPointsWorkSize
 
+        !Static compact list of the BasinPoints==1 cells (basin membership never
+        !changes), built once at construction only when the basin is sparse.
+        integer, allocatable, dimension(:)          :: BasinPointsI
+        integer, allocatable, dimension(:)          :: BasinPointsJ
+        integer                                     :: NumberOfBasinPoints = 0
+        logical                                     :: UseBasinPointsList  = .false.
+
         type(T_NodeGridPoint    ), pointer          :: FirstNodeGridPoint        => null()
         type(T_NodeGridPoint    ), pointer          :: LastNodeGridPoint         => null()
         integer                                     :: NodeGridPointNumber     = 0
@@ -1094,6 +1107,8 @@ cd0 :   if (ready_ .EQ. OFF_ERR_) then
             call InitializeVariables
 
             call ComputeBasinPointsWorkSize
+
+            call ConstructBasinPointsList
 
             call ConstructOverLandCoefficient
 
@@ -5512,6 +5527,14 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
             call SetMatrixValue(Me%Output%MaxWaterColumn, Me%Size, Me%MinimumWaterColumn)
             call SetMatrixValue(Me%Output%VelocityAtMaxWaterColumn, Me%Size, null_real)
             call SetMatrixValue(Me%Output%MaxFloodRisk, Me%Size, 0.0)
+
+            !Non-basin cells are never written when the basin points list is used
+            call SetMatrixValue(Me%CenterFlowX, Me%Size, 0.0)
+            call SetMatrixValue(Me%CenterFlowY, Me%Size, 0.0)
+            call SetMatrixValue(Me%FlowModulus, Me%Size, 0.0)
+            call SetMatrixValue(Me%CenterVelocityX, Me%Size, 0.0)
+            call SetMatrixValue(Me%CenterVelocityY, Me%Size, 0.0)
+            call SetMatrixValue(Me%VelocityModulus, Me%Size, 0.0)
         endif
 
         allocate (Me%Output%TimeOfMaxWaterColumn (Me%Size%ILB:Me%Size%IUB, Me%Size%JLB:Me%Size%JUB))
@@ -11175,6 +11198,63 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         Me%BasinPointsWorkSize%JUB = min(MaxJUB, Me%WorkSize%JUB)
 
     end subroutine ComputeBasinPointsWorkSize
+
+    !--------------------------------------------------------------------------
+
+    !Builds the static compact list of BasinPoints==1 cells. Basin membership is
+    !fixed for the whole run, so the list is built once here and never rebuilt.
+    !On dense grids the list saves nothing, so it is only built (and used) when
+    !the basin covers at most BasinListFraction_ of the WorkSize rectangle.
+    subroutine ConstructBasinPointsList
+
+        !Local-----------------------------------------------------------------
+        integer                                     :: i, j, n
+        integer                                     :: fullWorkSizeCells
+
+        fullWorkSizeCells = (Me%WorkSize%IUB - Me%WorkSize%ILB + 1) *            &
+                            (Me%WorkSize%JUB - Me%WorkSize%JLB + 1)
+
+        Me%NumberOfBasinPoints = 0
+        do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+        do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+            if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                Me%NumberOfBasinPoints = Me%NumberOfBasinPoints + 1
+            endif
+        enddo
+        enddo
+
+        Me%UseBasinPointsList = (Me%NumberOfBasinPoints <=                       &
+                                 BasinListFraction_ * real(fullWorkSizeCells))
+
+        if (Me%UseBasinPointsList .and. Me%NumberOfBasinPoints > 0) then
+
+            allocate (Me%BasinPointsI(Me%NumberOfBasinPoints))
+            allocate (Me%BasinPointsJ(Me%NumberOfBasinPoints))
+
+            !Column-major fill (j outer, i inner) to match the loop order of the
+            !consumers, keeping SCHEDULE(STATIC) chunks cache-friendly.
+            n = 0
+            do j = Me%WorkSize%JLB, Me%WorkSize%JUB
+            do i = Me%WorkSize%ILB, Me%WorkSize%IUB
+                if (Me%ExtVar%BasinPoints(i, j) == BasinPoint) then
+                    n = n + 1
+                    Me%BasinPointsI(n) = i
+                    Me%BasinPointsJ(n) = j
+                endif
+            enddo
+            enddo
+        else
+            Me%UseBasinPointsList = .false.
+        endif
+
+        write(*, *)
+        write(*, *) 'RunOff basin points   : ', Me%NumberOfBasinPoints
+        write(*, *) 'RunOff WorkSize cells : ', fullWorkSizeCells
+        write(*, *) 'RunOff basin density  : ', real(Me%NumberOfBasinPoints) / real(fullWorkSizeCells)
+        write(*, *) 'RunOff basin list used: ', Me%UseBasinPointsList
+        write(*, *)
+
+    end subroutine ConstructBasinPointsList
 
     !--------------------------------------------------------------------------
 
@@ -16930,7 +17010,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j
+        integer                                     :: i, j, n
         integer                                     :: CHUNK
         real                                        :: FlowX, FlowY
         real                                        :: cfx, cfy, cvx, cvy
@@ -16953,6 +17033,32 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
 
             if (Me%GridIsRotated) then
+              if (Me%UseBasinPointsList) then
+                !$OMP PARALLEL PRIVATE(N,I,J,FlowX,FlowY)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                        FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
+
+                        Me%CenterFlowX(i, j) = FlowX * Me%GridCosAngleX + FlowY * Me%GridCosAngleY
+                        Me%CenterFlowY(i, j) = FlowX * Me%GridSinAngleX + FlowY * Me%GridSinAngleY
+
+                        Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
+                        Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                    else
+                        Me%CenterFlowX(i,j)     = 0.0
+                        Me%CenterFlowY(i,j)     = 0.0
+                        Me%CenterVelocityX(i,j) = 0.0
+                        Me%CenterVelocityY(i,j) = 0.0
+                    end if
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -16986,7 +17092,30 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
+              endif
             else
+              if (Me%UseBasinPointsList) then
+                !$OMP PARALLEL PRIVATE(N,I,J)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        Me%CenterFlowX(i, j) = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                        Me%CenterFlowY(i, j) = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
+                        Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j) )
+                        Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j) )
+                    else
+                        Me%CenterFlowX(i,j)     = 0.0
+                        Me%CenterFlowY(i,j)     = 0.0
+                        Me%CenterVelocityX(i,j) = 0.0
+                        Me%CenterVelocityY(i,j) = 0.0
+                    end if
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL PRIVATE(I,J)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -17013,11 +17142,36 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
+              endif
             endif
 
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity")
 
         else
+          if (Me%UseBasinPointsList) then
+            !$OMP PARALLEL PRIVATE(N,I,J,FlowX,FlowY)
+            !$OMP DO SCHEDULE(STATIC)
+            do n = 1, Me%NumberOfBasinPoints
+                i = Me%BasinPointsI(n)
+                j = Me%BasinPointsJ(n)
+
+                FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
+
+                Me%CenterFlowX(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
+                Me%CenterFlowY(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
+
+                if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                    Me%CenterVelocityX (i, j) = Me%CenterFlowX (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
+                    Me%CenterVelocityY (i, j) = Me%CenterFlowY (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
+                else
+                    Me%CenterVelocityX(i,j) = 0.0
+                    Me%CenterVelocityY(i,j) = 0.0
+                end if
+            enddo
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL
+          else
             !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -17052,11 +17206,37 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
+          endif
         endif
 
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus")
 
         if(Me%Output%WriteMaxFlowModulus) then
+          if (Me%UseBasinPointsList) then
+            !$OMP PARALLEL PRIVATE(N,I,J,cfx,cfy,cvx,cvy)
+            !$OMP DO SCHEDULE(STATIC)
+            do n = 1, Me%NumberOfBasinPoints
+                i = Me%BasinPointsI(n)
+                j = Me%BasinPointsJ(n)
+
+                if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                    cfx = Me%CenterFlowX(i, j)
+                    cfy = Me%CenterFlowY(i, j)
+                    cvx = Me%CenterVelocityX(i, j)
+                    cvy = Me%CenterVelocityY(i, j)
+                    Me%FlowModulus(i, j) = sqrt (cfx*cfx + cfy*cfy)
+                    Me%VelocityModulus (i, j) = sqrt (cvx*cvx + cvy*cvy)
+                    if (Me%FlowModulus(i, j) > Me%Output%MaxFlowModulus(i, j)) then
+                        Me%Output%MaxFlowModulus(i, j) = Me%FlowModulus(i, j)
+                    end if
+                else
+                    Me%FlowModulus(i,j)     = 0.0
+                    Me%VelocityModulus(i,j) = 0.0
+                end if
+            enddo
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL
+          else
             !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -17087,7 +17267,30 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
+          endif
         else
+          if (Me%UseBasinPointsList) then
+            !$OMP PARALLEL PRIVATE(N,I,J,cfx,cfy,cvx,cvy)
+            !$OMP DO SCHEDULE(STATIC)
+            do n = 1, Me%NumberOfBasinPoints
+                i = Me%BasinPointsI(n)
+                j = Me%BasinPointsJ(n)
+
+                if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                    cfx = Me%CenterFlowX(i, j)
+                    cfy = Me%CenterFlowY(i, j)
+                    cvx = Me%CenterVelocityX(i, j)
+                    cvy = Me%CenterVelocityY(i, j)
+                    Me%FlowModulus(i, j) = sqrt (cfx*cfx + cfy*cfy)
+                    Me%VelocityModulus (i, j) = sqrt (cvx*cvx + cvy*cvy)
+                else
+                    Me%FlowModulus(i,j)     = 0.0
+                    Me%VelocityModulus(i,j) = 0.0
+                end if
+            enddo
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL
+          else
             !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%WorkSize%JLB, Me%WorkSize%JUB
@@ -17115,6 +17318,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
+          endif
         endif
 
         nullify (iFlowX, iflowY)
@@ -17130,8 +17334,10 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j
+        integer                                     :: i, j, n
         integer                                     :: CHUNK, STAT_CALL
+        integer                                     :: bILB, bIUB, bJLB, bJUB
+        logical                                     :: UseList
         real(4)                                     :: FlowX, FlowY, VelocityX, VelocityY
         real(4)                                     :: FlowX_right, FlowX_Center, FlowY_top, FlowY_Center
         real(4)                                     :: cfx, cfy, cvx, cvy
@@ -17177,11 +17383,62 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
 
             CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
 
+            bILB = Me%CurrentWorkSize%ILB
+            bIUB = Me%CurrentWorkSize%IUB
+            bJLB = Me%CurrentWorkSize%JLB
+            bJUB = Me%CurrentWorkSize%JUB
+
+            !The basin list is a superset of the basin cells inside the box, so
+            !iterating it with the same box bounds test visits exactly the same
+            !cells as the box loop. Only worth it when the list is the smaller of
+            !the two.
+            UseList = Me%UseBasinPointsList .and.                                &
+                      Me%NumberOfBasinPoints < (bIUB - bILB + 1) * (bJUB - bJLB + 1)
+
             if(.not. Me%ExtVar%Distortion) then
 
                 if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
 
                 if (Me%GridIsRotated) then
+                  if (UseList) then
+                    !$OMP PARALLEL PRIVATE(N,I,J,FlowX,FlowX_right,FlowX_Center,FlowY,FlowY_top,FlowY_Center,VelocityX,VelocityY)
+                    !$OMP DO SCHEDULE(STATIC)
+                    do n = 1, Me%NumberOfBasinPoints
+                        i = Me%BasinPointsI(n)
+                        j = Me%BasinPointsJ(n)
+                        if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                        if (Me%OpenPoints(i,j) == BasinPoint) then
+                            FlowX = iFlowX(i, j)
+                            FlowX_right = iFlowX(i, j+1)
+                            FlowY = iFlowY(i, j)
+                            FlowY_top = iFlowY(i+1, j)
+
+                            FlowX_Center = (FlowX + FlowX_right) / 2.0
+                            FlowY_Center = (FlowY + FlowY_top) / 2.0
+
+                            Me%CenterFlowX_R4(i, j) = FlowX_Center * Me%GridCosAngleX + FlowY_Center * Me%GridCosAngleY
+                            Me%CenterFlowY_R4(i, j) = FlowX_Center * Me%GridSinAngleX + FlowY_Center * Me%GridSinAngleY
+
+                            VelocityX = (FlowX / Me%AreaU(i,j) + FlowX_right / Me%AreaU(i,j+1)) / 2.0
+                            VelocityY = (FlowY / Me%AreaV(i,j) + FlowY_top / Me%AreaV(i+1,j)) / 2.0
+
+                            Me%CenterVelocityX_R4 (i, j) = VelocityX * Me%GridCosAngleX + VelocityY * Me%GridCosAngleY
+                            Me%CenterVelocityY_R4 (i, j) = VelocityX * Me%GridSinAngleX + VelocityY * Me%GridSinAngleY
+                        else
+                            if (Me%CenterFlowX_R4(i, j) /= 0.0) then
+                                Me%CenterFlowX_R4(i, j) = 0.0
+                                Me%CenterVelocityX_R4(i, j) = 0.0
+                            endif
+                            if (Me%CenterFlowY_R4(i, j) /= 0.0) then
+                                Me%CenterFlowY_R4(i, j) = 0.0
+                                Me%CenterVelocityY_R4(i, j) = 0.0
+                            endif
+                        end if
+                    enddo
+                    !$OMP END DO
+                    !$OMP END PARALLEL
+                  else
                     !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowX_Center,FlowY,FlowY_top,FlowY_Center,VelocityX,VelocityY)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                     do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17219,7 +17476,41 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     enddo
                     !$OMP END DO
                     !$OMP END PARALLEL
+                  endif
                 else
+                  if (UseList) then
+                    !$OMP PARALLEL PRIVATE(N,I,J,FlowX,FlowX_right,FlowY,FlowY_top)
+                    !$OMP DO SCHEDULE(STATIC)
+                    do n = 1, Me%NumberOfBasinPoints
+                        i = Me%BasinPointsI(n)
+                        j = Me%BasinPointsJ(n)
+                        if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                        if (Me%OpenPoints(i,j) == BasinPoint) then
+
+                            FlowX = iFlowX(i, j)
+                            FlowX_right = iFlowX(i, j+1)
+                            FlowY = iFlowY(i, j)
+                            FlowY_top = iFlowY(i+1, j)
+
+                            Me%CenterFlowX_R4(i, j) = (FlowX + FlowX_right) / 2.0
+                            Me%CenterFlowY_R4(i, j) = (FlowY + FlowY_top) / 2.0
+                            Me%CenterVelocityX_R4 (i, j) = (FlowX / Me%AreaU(i,j) + FlowX_right / Me%AreaU(i,j+1)) / 2.0
+                            Me%CenterVelocityY_R4 (i, j) = (FlowY / Me%AreaV(i,j) + FlowY_top / Me%AreaV(i+1,j)) / 2.0
+                        else
+                            if (Me%CenterFlowX_R4(i, j) /= 0.0) then
+                                Me%CenterFlowX_R4(i, j) = 0.0
+                                Me%CenterVelocityX_R4(i, j) = 0.0
+                            endif
+                            if (Me%CenterFlowY_R4(i, j) /= 0.0) then
+                                Me%CenterFlowY_R4(i, j) = 0.0
+                                Me%CenterVelocityY_R4(i, j) = 0.0
+                            endif
+                        end if
+                    enddo
+                    !$OMP END DO
+                    !$OMP END PARALLEL
+                  else
                     !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowX_right,FlowY,FlowY_top)
                     !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                     do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17251,10 +17542,38 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     enddo
                     !$OMP END DO
                     !$OMP END PARALLEL
+                  endif
                 endif
                 if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterValues - CenterVelocity_R4")
 
             else
+              if (UseList) then
+                !$OMP PARALLEL PRIVATE(N,I,J,FlowX,FlowY)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+                    if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                    if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                        FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                        FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
+
+                        Me%CenterFlowX_R4(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
+                        Me%CenterFlowY_R4(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
+
+                        Me%CenterVelocityX_R4 (i, j) = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
+                        Me%CenterVelocityY_R4 (i, j) = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
+                    else
+                        Me%CenterFlowX_R4(i, j) = 0.0
+                        Me%CenterFlowY_R4(i, j) = 0.0
+                        Me%CenterVelocityX_R4(i, j) = 0.0
+                        Me%CenterVelocityY_R4(i, j) = 0.0
+                    end if
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL PRIVATE(I,J,FlowX,FlowY)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17281,11 +17600,39 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
+              endif
             endif
 
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterValues - Modulus_R4")
 
             if(Me%Output%WriteMaxFlowModulus) then
+              if (UseList) then
+                !$OMP PARALLEL PRIVATE(N,I,J,cfx,cfy,cvx,cvy)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+                    if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                    if (Me%OpenPoints(i,j) == BasinPoint) then
+                        cfx = Me%CenterFlowX_R4(i, j)
+                        cfy = Me%CenterFlowY_R4(i, j)
+                        cvx = Me%CenterVelocityX_R4(i, j)
+                        cvy = Me%CenterVelocityY_R4(i, j)
+                        Me%FlowModulus_R4(i, j) = sqrt (cfx*cfx + cfy*cfy)
+                        Me%VelocityModulus_R4 (i, j) = sqrt (cvx*cvx + cvy*cvy)
+
+                        Me%Output%MaxFlowModulus_R4(i, j) = max(Me%Output%MaxFlowModulus_R4(i, j), Me%FlowModulus_R4(i, j))
+                    else
+                        if (Me%FlowModulus_R4(i, j) /= 0.0) then
+                            Me%FlowModulus_R4(i, j) = 0.0
+                            Me%VelocityModulus_R4(i, j) = 0.0
+                        endif
+                    end if
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17311,7 +17658,33 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
+              endif
             else
+              if (UseList) then
+                !$OMP PARALLEL PRIVATE(N,I,J,cfx,cfy,cvx,cvy)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+                    if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                    if (Me%OpenPoints(i,j) == BasinPoint) then
+                        cfx = Me%CenterFlowX_R4(i, j)
+                        cfy = Me%CenterFlowY_R4(i, j)
+                        cvx = Me%CenterVelocityX_R4(i, j)
+                        cvy = Me%CenterVelocityY_R4(i, j)
+                        Me%FlowModulus_R4(i, j) = sqrt (cfx*cfx + cfy*cfy)
+                        Me%VelocityModulus_R4 (i, j) = sqrt (cvx*cvx + cvy*cvy)
+                    else
+                        if (Me%FlowModulus_R4(i, j) /= 0.0) then
+                            Me%FlowModulus_R4(i, j) = 0.0
+                            Me%VelocityModulus_R4(i, j) = 0.0
+                        endif
+                    end if
+                enddo
+                !$OMP END DO NOWAIT
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL PRIVATE(I,J,cfx,cfy,cvx,cvy)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17335,6 +17708,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO NOWAIT
                 !$OMP END PARALLEL
+              endif
             endif
 
 
@@ -17358,14 +17732,27 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
         !Arguments-------------------------------------------------------------
 
         !Local-----------------------------------------------------------------
-        integer                                     :: i, j
+        integer                                     :: i, j, n
         integer                                     :: CHUNK
+        integer                                     :: bILB, bIUB, bJLB, bJUB
+        logical                                     :: UseList
         real(4)                                     :: FlowX, FlowY, VelocityX, VelocityY, cx, cy
         real(8), dimension(:,:), pointer            :: iFlowX, iflowY
         !Begin-----------------------------------------------------------------
         if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterVelocities_R4")
 
         CHUNK = ChunkJ !CHUNK_J(Me%WorkSize%JLB, Me%WorkSize%JUB)
+
+        bILB = Me%CurrentWorkSize%ILB
+        bIUB = Me%CurrentWorkSize%IUB
+        bJLB = Me%CurrentWorkSize%JLB
+        bJUB = Me%CurrentWorkSize%JUB
+
+        !OpenPoints==1 implies BasinPoints==1, so the basin list restricted to the
+        !box visits exactly the cells the box loop acts on. Only worth it when the
+        !list is the smaller of the two.
+        UseList = Me%UseBasinPointsList .and.                                    &
+                  Me%NumberOfBasinPoints < (bIUB - bILB + 1) * (bJUB - bJLB + 1)
 
         if (Me%Restarted) then
             iFlowX => Me%iFlowX
@@ -17380,6 +17767,31 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             if (MonitorPerformance) call StartWatch ("ModuleRunOff", "ComputeCenterVelocities_R4 - CenterVelocity_R4")
 
             if (Me%GridIsRotated) then
+              if (UseList) then
+                !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(N,I,J,VelocityX,VelocityY,cx,cy)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+                    if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                    if (Me%OpenPoints(i,j) == BasinPoint) then
+
+                        VelocityX = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
+                        VelocityY = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
+
+                        cx = VelocityX * Me%GridCosAngleX + VelocityY * Me%GridCosAngleY
+                        cy = VelocityX * Me%GridSinAngleX + VelocityY * Me%GridSinAngleY
+
+                        Me%CenterVelocityX_R4 (i, j) = cx
+                        Me%CenterVelocityY_R4 (i, j) = cy
+
+                        Me%VelocityModulus_R4 (i, j) = sqrt (cx*cx + cy*cy)
+                    end if
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,VelocityX,VelocityY,cx,cy)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17401,7 +17813,30 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
+              endif
             else
+              if (UseList) then
+                !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(N,I,J,cx,cy)
+                !$OMP DO SCHEDULE(STATIC)
+                do n = 1, Me%NumberOfBasinPoints
+                    i = Me%BasinPointsI(n)
+                    j = Me%BasinPointsJ(n)
+                    if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                    if (Me%OpenPoints(i,j) == BasinPoint) then
+
+                        cx = (iFlowX(i, j) / Me%AreaU(i,j) + iFlowX(i, j+1) / Me%AreaU(i,j+1)) / 2.0
+                        cy = (iFlowY(i, j) / Me%AreaV(i,j) + iFlowY(i+1, j) / Me%AreaV(i+1,j)) / 2.0
+
+                        Me%CenterVelocityX_R4 (i, j) = cx
+                        Me%CenterVelocityY_R4 (i, j) = cy
+
+                        Me%VelocityModulus_R4 (i, j) = sqrt (cx*cx + cy*cy)
+                    end if
+                enddo
+                !$OMP END DO
+                !$OMP END PARALLEL
+              else
                 !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,cx,cy)
                 !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
                 do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17420,10 +17855,43 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 enddo
                 !$OMP END DO
                 !$OMP END PARALLEL
+              endif
             endif
             if (MonitorPerformance) call StopWatch ("ModuleRunOff", "ComputeCenterVelocities_R4 - CenterVelocity_R4")
 
         else
+          if (UseList) then
+            !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(N,I,J,FlowX,FlowY,cx,cy)
+            !$OMP DO SCHEDULE(STATIC)
+            do n = 1, Me%NumberOfBasinPoints
+                i = Me%BasinPointsI(n)
+                j = Me%BasinPointsJ(n)
+                if (i < bILB .or. i > bIUB .or. j < bJLB .or. j > bJUB) cycle
+
+                if (Me%myWaterColumn (i,j) > Me%MinimumWaterColumn) then
+                    FlowX = (iFlowX(i, j) + iFlowX(i, j+1)) / 2.0
+                    FlowY = (iFlowY(i, j) + iFlowY(i+1, j)) / 2.0
+
+                    Me%CenterFlowX_R4(i, j) = FlowX * cos(Me%ExtVar%RotationX(i, j)) + FlowY * cos(Me%ExtVar%RotationY(i, j))
+                    Me%CenterFlowY_R4(i, j) = FlowX * sin(Me%ExtVar%RotationX(i, j)) + FlowY * sin(Me%ExtVar%RotationY(i, j))
+
+                    cx = Me%CenterFlowX_R4 (i,j) / ( Me%ExtVar%DYY(i, j) * Me%myWaterColumn (i,j))
+                    cy = Me%CenterFlowY_R4 (i,j) / ( Me%ExtVar%DXX(i, j) * Me%myWaterColumn (i,j))
+
+                    Me%CenterVelocityX_R4 (i, j) = cx
+                    Me%CenterVelocityY_R4 (i, j) = cy
+                    Me%VelocityModulus_R4 (i, j) = sqrt (cx*cx + cy*cy)
+                else
+                    Me%CenterFlowX_R4(i, j) = 0.0
+                    Me%CenterFlowY_R4(i, j) = 0.0
+                    Me%CenterVelocityX_R4(i, j) = 0.0
+                    Me%CenterVelocityY_R4(i, j) = 0.0
+                    Me%VelocityModulus_R4(i, j) = 0.0
+                end if
+            enddo
+            !$OMP END DO NOWAIT
+            !$OMP END PARALLEL
+          else
             !$OMP PARALLEL NUM_THREADS(RunOffBoxThreads(Me%CurrentWorkSize)) PRIVATE(I,J,FlowX,FlowY,cx,cy)
             !$OMP DO SCHEDULE(DYNAMIC, CHUNK)
             do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
@@ -17455,6 +17923,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             enddo
             !$OMP END DO NOWAIT
             !$OMP END PARALLEL
+          endif
         endif
 
         nullify (iFlowX, iflowY)
@@ -20293,6 +20762,9 @@ cd1 :   if (ready_ .NE. OFF_ERR_) then
                 if (nUsers == 0) stop 'KillRunOff - RunOff - ERR170'
 
                 deallocate(Me%myWaterColumnOld)
+
+                if (allocated(Me%BasinPointsI)) deallocate (Me%BasinPointsI)
+                if (allocated(Me%BasinPointsJ)) deallocate (Me%BasinPointsJ)
 
                 deallocate (Me%iFlowX)
                 deallocate (Me%iFlowY)
