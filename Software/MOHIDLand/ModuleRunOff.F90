@@ -792,7 +792,6 @@ Module ModuleRunOff
 
         integer, dimension(:,:), pointer            :: OpenPoints               => null() !Mask for gridcells above min watercolumn
         integer, dimension(:,:), pointer            :: ActivePoints             => null() !Mask for gridcells with water
-        integer, dimension(:,:), pointer            :: ActivePoints_Left        => null() !Mask for gridcells with water
         integer, dimension(:,:), pointer            :: DischargePoints           => null() !Mask for gridcells with discharge
         real,    dimension(:,:), pointer            :: OverLandCoefficient      => null() !Manning or Chezy
         real,    dimension(:,:), pointer            :: OverLandCoefficientDelta => null() !For erosion/deposition
@@ -5422,7 +5421,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
         allocate(Me%ComputeFaceV         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%OpenPoints           (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%ActivePoints         (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
-        allocate(Me%ActivePoints_Left    (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceU          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%VelModFaceV          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
         allocate(Me%Bottom_X          (Me%Size%ILB:Me%Size%IUB,Me%Size%JLB:Me%Size%JUB))
@@ -5442,7 +5440,6 @@ do1:                    do k = 1, size(Me%WaterLevelBoundaryValue)
         call SetMatrixValue(Me%ComputeFaceV, Me%Size, 0)
         call SetMatrixValue(Me%OpenPoints, Me%Size, Me%ExtVar%BasinPoints)
         call SetMatrixValue(Me%ActivePoints, Me%Size, Me%ExtVar%BasinPoints)
-        call SetMatrixValue(Me%ActivePoints_Left, Me%Size, 0)
         call SetMatrixValue(Me%Bottom_X, Me%Size, 0.0)
         call SetMatrixValue(Me%Bottom_Y, Me%Size, 0.0)
 
@@ -11453,11 +11450,9 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                 Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                 Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                Me%ActivePoints_Left(i,j) = 1
             else
 
                 Me%lFlowX(i, j) = 0.0
-                Me%ActivePoints_Left(i,j) = 0
 
             endif
 
@@ -11912,7 +11907,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                         Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                        Me%ActivePoints_Left(i,j) = 1
                     else
                         !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
                         if (Me%lFlowX(i, j) .lt. 0.0) then
@@ -11933,16 +11927,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                         Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                        Me%ActivePoints_Left(i,j) = 1
                     endif
 
                 else
                     Me%lFlowX(i, j) = 0.0
-                    Me%ActivePoints_Left(i,j) = 0
                 endif
             else
                 Me%lFlowX(i, j) = 0.0
-                Me%ActivePoints_Left(i,j) = 0
             endif
         enddo
         enddo
@@ -12167,7 +12158,6 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                         Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                        Me%ActivePoints_Left(i,j) = 1
                     else
                         !Predict water column to avoid negative volumes since 4 fluxes exist and the sum may be more than exists
                         if (Me%lFlowX(i, j) .lt. 0.0) then
@@ -12188,16 +12178,13 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                         Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                         Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                        Me%ActivePoints_Left(i,j) = 1
                     endif
 
                 else
                     Me%lFlowX(i, j) = 0.0
-                    Me%ActivePoints_Left(i,j) = 0
                 endif
             else
                 Me%lFlowX(i, j) = 0.0
-                Me%ActivePoints_Left(i,j) = 0
             endif
         enddo
         enddo
@@ -12523,14 +12510,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                     Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                    Me%ActivePoints_Left(i,j) = 1
                 else
                     Me%lFlowX(i, j) = 0.0
-                    Me%ActivePoints_Left(i,j) = 0
                 endif
             else
                 Me%lFlowX(i, j) = 0.0
-                Me%ActivePoints_Left(i,j) = 0
             endif
         enddo
         enddo
@@ -12857,14 +12841,11 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) + dVol
 
                     Me%ActivePoints(i,j)   = 1 !For use in modifygeometryAndMapping and updatewaterlevels
-                    Me%ActivePoints_Left(i,j) = 1
                 else
                     Me%lFlowX(i, j) = 0.0
-                    Me%ActivePoints_Left(i,j) = 0
                 endif
             else
                 Me%lFlowX(i, j) = 0.0
-                Me%ActivePoints_Left(i,j) = 0
             endif
         enddo
         enddo
@@ -14084,7 +14065,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                if (Me%ActivePoints_Left(i,j+1) == 1) then!because cant update j-1 cell in dynamicwavexx due to paralelization
+                if (Me%lFlowX(i, j+1) /= 0.0) then!P18: bit-equivalent to old ActivePoints_Left(i,j+1)==1 gate
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT
                     Me%ActivePoints(i,j) = 1
                 endif
@@ -14120,7 +14101,7 @@ i2:                 if      (FlowDistribution == DischByCell_ ) then
             !$OMP DO SCHEDULE(DYNAMIC, CHUNKJ)
             do j = Me%CurrentWorkSize%JLB, Me%CurrentWorkSize%JUB
             do i = Me%CurrentWorkSize%ILB, Me%CurrentWorkSize%IUB
-                if (Me%ActivePoints_Left(i,j+1) == 1) then
+                if (Me%lFlowX(i, j+1) /= 0.0) then!P18: bit-equivalent to old ActivePoints_Left(i,j+1)==1 gate
                     Me%myWaterVolume (i, j) = Me%myWaterVolume (i, j) - Me%lFlowX(i, j+1) * LocalDT
                     Me%ActivePoints(i,j) = 1
                 endif
