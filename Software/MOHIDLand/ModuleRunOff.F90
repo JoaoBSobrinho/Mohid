@@ -778,6 +778,11 @@ Module ModuleRunOff
         real(8), dimension(:,:), pointer            :: iFlowX, iFlowY           => null() !Integrated    OverLandFlow (AfterSumDT)
         real(8), dimension(:,:), pointer            :: FlowXOld, FlowYOld       => null() !Flow From previous iteration
         real(8), dimension(:,:), pointer            :: InitialFlowX, InitialFlowY => null() !Initial Flow of convergence
+        !.true. while FlowXOld/YOld still equal InitialFlowX/Y at every non-active
+        !basin cell, so the firstRestart seed can be masked on ActivePoints (the
+        !skipped cells are already correct). The sub-iteration copy (lFlowX into
+        !FlowXOld on ActivePoints) breaks it; a BasinPoints reseed restores it.
+        logical                                     :: FlowOldSeedActiveSafe    = .true.
         real(8), dimension(:,:), pointer            :: VelModFaceU, VelModFaceV => null() !Flow From previous iteration
         real,    dimension(:,:), pointer            :: AreaU, AreaV             => null()
         integer, dimension(:,:), pointer            :: ComputeFaceU             => null()
@@ -8146,13 +8151,23 @@ cd1 :   if ((ready_ .EQ. IDLE_ERR_     ) .OR. &
 
                             if (firstRestart) then
 
-                                call SetFlowOldXY(Me%CurrentWorkSize, Me%InitialFlowX, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                                !Seed FlowXOld/YOld from InitialFlowX/Y. When the invariant holds,
+                                !mask on ActivePoints (the skipped dense-basin cells already equal
+                                !InitialFlow, so the copy is a no-op there); otherwise reseed on
+                                !BasinPoints, which restores the invariant.
+                                if (Me%FlowOldSeedActiveSafe) then
+                                    call SetFlowOldXY(Me%CurrentWorkSize, Me%InitialFlowX, Me%InitialFlowY, Me%ActivePoints)
+                                else
+                                    call SetFlowOldXY(Me%CurrentWorkSize, Me%InitialFlowX, Me%InitialFlowY, Me%ExtVar%BasinPoints)
+                                    Me%FlowOldSeedActiveSafe = .true.
+                                endif
                                 firstRestart = .false.
                             else
                                 !Updates Geometry
                                 call ModifyGeometryAndMapping
 
                                 call SetFlowOldXY(Me%CurrentWorkSize, Me%lFlowX, Me%lFlowY, Me%ActivePoints)
+                                Me%FlowOldSeedActiveSafe = .false.
                             endif
 
 
