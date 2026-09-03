@@ -1,5 +1,11 @@
 # MOHID Land – ModuleRunOff Work-Set & Volume Optimization Plan (Phase 13+)
 
+> **STATUS: CLOSED (2026-09-03).** This optimization campaign is concluded with Phase 20
+> committed on `perf/Phase20` (7e66ebc5). No further phases are planned. The remaining known
+> lever (the `HydraulicRadius**(4./3.)` friction cube-root in DynamicWave) stays parked — no
+> bit-identical reformulation exists, so it is a Phase-1 cell-flip landmine with only a modest
+> (~4–6s WithRain) ceiling; see the cube-root notes in repo memory.
+>
 > Continuation of `MOHID_Performance_Optimization_Plan.md` (Phases 0–12, all DONE/committed on
 > the `perf/Phase12` chain). This plan covers a **new set** of optimizations sourced from 11
 > experimental branches. Update this file incrementally as phases land; other chat sessions
